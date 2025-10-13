@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { GraduationCap, User, BookOpen, Shield } from "lucide-react";
 import { toast } from "sonner";
+import { authenticateUser, setCurrentUser } from "@/lib/localStorage";
 
 type UserRole = "admin" | "teacher" | "student";
 
@@ -47,8 +48,15 @@ const Login = () => {
       return;
     }
 
-    // Mock login - will be replaced with real auth
-    toast.success(`Logged in as ${selectedRole}`);
+    const user = authenticateUser(email, password, selectedRole!);
+    
+    if (!user) {
+      toast.error("Invalid credentials");
+      return;
+    }
+
+    setCurrentUser({ id: user.id, role: selectedRole!, name: user.name });
+    toast.success(`Welcome back, ${user.name}!`);
     navigate(`/${selectedRole}-dashboard`);
   };
 
@@ -144,7 +152,9 @@ const Login = () => {
         </form>
 
         <p className="text-center text-sm text-muted-foreground mt-6">
-          Demo credentials will be provided by admin
+          {selectedRole === 'admin' && 'Admin: admin@smartclass.com / admin123'}
+          {selectedRole === 'teacher' && 'Create teacher accounts in Admin panel'}
+          {selectedRole === 'student' && 'Create student accounts in Admin panel'}
         </p>
       </Card>
     </div>

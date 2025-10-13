@@ -1,14 +1,114 @@
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Users, BookOpen, Calendar, BarChart3, Plus } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Users, BookOpen, Calendar, BarChart3, Plus, X } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
+import {
+  getTeachers,
+  getStudents,
+  getClasses,
+  getBatches,
+  addTeacher,
+  addStudent,
+  addClass,
+  addBatch,
+  Teacher,
+  Student,
+  Class,
+  Batch,
+} from "@/lib/localStorage";
 
 const AdminDashboard = () => {
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [classes, setClasses] = useState<Class[]>([]);
+  const [batches, setBatches] = useState<Batch[]>([]);
+  const [openDialog, setOpenDialog] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = () => {
+    setTeachers(getTeachers());
+    setStudents(getStudents());
+    setClasses(getClasses());
+    setBatches(getBatches());
+  };
+
+  const handleAddTeacher = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const teacher: Teacher = {
+      id: Date.now().toString(),
+      name: formData.get("name") as string,
+      email: formData.get("email") as string,
+      subject: formData.get("subject") as string,
+      password: formData.get("password") as string,
+    };
+    addTeacher(teacher);
+    toast.success("Teacher added successfully");
+    setOpenDialog(null);
+    loadData();
+  };
+
+  const handleAddStudent = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const student: Student = {
+      id: Date.now().toString(),
+      name: formData.get("name") as string,
+      email: formData.get("email") as string,
+      batchId: formData.get("batchId") as string,
+      password: formData.get("password") as string,
+    };
+    addStudent(student);
+    toast.success("Student added successfully");
+    setOpenDialog(null);
+    loadData();
+  };
+
+  const handleAddClass = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const classData: Class = {
+      id: Date.now().toString(),
+      name: formData.get("name") as string,
+      subject: formData.get("subject") as string,
+      teacherId: formData.get("teacherId") as string,
+      batchId: formData.get("batchId") as string,
+      schedule: formData.get("schedule") as string,
+    };
+    addClass(classData);
+    toast.success("Class created successfully");
+    setOpenDialog(null);
+    loadData();
+  };
+
+  const handleAddBatch = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const batch: Batch = {
+      id: Date.now().toString(),
+      name: formData.get("name") as string,
+      year: formData.get("year") as string,
+    };
+    addBatch(batch);
+    toast.success("Batch created successfully");
+    setOpenDialog(null);
+    loadData();
+  };
+
   const stats = [
-    { label: "Total Students", value: "1,234", icon: Users, color: "from-cyan-500 to-cyan-600" },
-    { label: "Total Teachers", value: "48", icon: BookOpen, color: "from-blue-500 to-blue-600" },
-    { label: "Active Classes", value: "24", icon: Calendar, color: "from-purple-500 to-purple-600" },
-    { label: "Attendance Rate", value: "92%", icon: BarChart3, color: "from-green-500 to-green-600" },
+    { label: "Total Students", value: students.length.toString(), icon: Users, color: "from-cyan-500 to-cyan-600" },
+    { label: "Total Teachers", value: teachers.length.toString(), icon: BookOpen, color: "from-blue-500 to-blue-600" },
+    { label: "Active Classes", value: classes.length.toString(), icon: Calendar, color: "from-purple-500 to-purple-600" },
+    { label: "Total Batches", value: batches.length.toString(), icon: BarChart3, color: "from-green-500 to-green-600" },
   ];
 
   return (
@@ -36,54 +136,245 @@ const AdminDashboard = () => {
         })}
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div className="grid lg:grid-cols-2 gap-6 mb-6">
         <Card className="p-6">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-xl font-semibold">Quick Actions</h3>
           </div>
-          <div className="space-y-3">
-            <Button className="w-full justify-start" variant="outline" size="lg">
-              <Plus className="mr-2 h-5 w-5" />
-              Add New Teacher
-            </Button>
-            <Button className="w-full justify-start" variant="outline" size="lg">
-              <Plus className="mr-2 h-5 w-5" />
-              Add New Student
-            </Button>
-            <Button className="w-full justify-start" variant="outline" size="lg">
-              <Plus className="mr-2 h-5 w-5" />
-              Create New Class
-            </Button>
+          <div className="grid grid-cols-2 gap-3">
+            <Dialog open={openDialog === "teacher"} onOpenChange={(open) => setOpenDialog(open ? "teacher" : null)}>
+              <DialogTrigger asChild>
+                <Button className="w-full h-20 flex flex-col gap-2" variant="outline">
+                  <Plus className="h-5 w-5" />
+                  <span className="text-sm">Add Teacher</span>
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Add New Teacher</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleAddTeacher} className="space-y-4">
+                  <div>
+                    <Label htmlFor="teacher-name">Full Name</Label>
+                    <Input id="teacher-name" name="name" required />
+                  </div>
+                  <div>
+                    <Label htmlFor="teacher-email">Email</Label>
+                    <Input id="teacher-email" name="email" type="email" required />
+                  </div>
+                  <div>
+                    <Label htmlFor="teacher-subject">Subject</Label>
+                    <Input id="teacher-subject" name="subject" required />
+                  </div>
+                  <div>
+                    <Label htmlFor="teacher-password">Password</Label>
+                    <Input id="teacher-password" name="password" type="password" required />
+                  </div>
+                  <Button type="submit" className="w-full">Add Teacher</Button>
+                </form>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog open={openDialog === "student"} onOpenChange={(open) => setOpenDialog(open ? "student" : null)}>
+              <DialogTrigger asChild>
+                <Button className="w-full h-20 flex flex-col gap-2" variant="outline">
+                  <Plus className="h-5 w-5" />
+                  <span className="text-sm">Add Student</span>
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Add New Student</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleAddStudent} className="space-y-4">
+                  <div>
+                    <Label htmlFor="student-name">Full Name</Label>
+                    <Input id="student-name" name="name" required />
+                  </div>
+                  <div>
+                    <Label htmlFor="student-email">Email</Label>
+                    <Input id="student-email" name="email" type="email" required />
+                  </div>
+                  <div>
+                    <Label htmlFor="student-batch">Batch</Label>
+                    <Select name="batchId" required>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select batch" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {batches.map((batch) => (
+                          <SelectItem key={batch.id} value={batch.id}>
+                            {batch.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="student-password">Password</Label>
+                    <Input id="student-password" name="password" type="password" required />
+                  </div>
+                  <Button type="submit" className="w-full">Add Student</Button>
+                </form>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog open={openDialog === "class"} onOpenChange={(open) => setOpenDialog(open ? "class" : null)}>
+              <DialogTrigger asChild>
+                <Button className="w-full h-20 flex flex-col gap-2" variant="outline">
+                  <Plus className="h-5 w-5" />
+                  <span className="text-sm">Create Class</span>
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create New Class</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleAddClass} className="space-y-4">
+                  <div>
+                    <Label htmlFor="class-name">Class Name</Label>
+                    <Input id="class-name" name="name" placeholder="e.g., Advanced Mathematics" required />
+                  </div>
+                  <div>
+                    <Label htmlFor="class-subject">Subject</Label>
+                    <Input id="class-subject" name="subject" required />
+                  </div>
+                  <div>
+                    <Label htmlFor="class-teacher">Assign Teacher</Label>
+                    <Select name="teacherId" required>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select teacher" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {teachers.map((teacher) => (
+                          <SelectItem key={teacher.id} value={teacher.id}>
+                            {teacher.name} - {teacher.subject}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="class-batch">Assign Batch</Label>
+                    <Select name="batchId" required>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select batch" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {batches.map((batch) => (
+                          <SelectItem key={batch.id} value={batch.id}>
+                            {batch.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="class-schedule">Schedule</Label>
+                    <Input id="class-schedule" name="schedule" placeholder="e.g., Mon, Wed, Fri - 10:00 AM" required />
+                  </div>
+                  <Button type="submit" className="w-full">Create Class</Button>
+                </form>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog open={openDialog === "batch"} onOpenChange={(open) => setOpenDialog(open ? "batch" : null)}>
+              <DialogTrigger asChild>
+                <Button className="w-full h-20 flex flex-col gap-2" variant="outline">
+                  <Plus className="h-5 w-5" />
+                  <span className="text-sm">Create Batch</span>
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create New Batch</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleAddBatch} className="space-y-4">
+                  <div>
+                    <Label htmlFor="batch-name">Batch Name</Label>
+                    <Input id="batch-name" name="name" placeholder="e.g., Batch D" required />
+                  </div>
+                  <div>
+                    <Label htmlFor="batch-year">Academic Year</Label>
+                    <Input id="batch-year" name="year" placeholder="e.g., 2024" required />
+                  </div>
+                  <Button type="submit" className="w-full">Create Batch</Button>
+                </form>
+              </DialogContent>
+            </Dialog>
           </div>
         </Card>
 
         <Card className="p-6">
-          <h3 className="text-xl font-semibold mb-6">Recent Activity</h3>
-          <div className="space-y-4">
-            <div className="flex items-start gap-4 pb-4 border-b">
-              <div className="w-2 h-2 rounded-full bg-primary mt-2" />
-              <div className="flex-1">
-                <p className="font-medium">New teacher registered</p>
-                <p className="text-sm text-muted-foreground">John Smith joined as Math teacher</p>
-                <p className="text-xs text-muted-foreground mt-1">2 hours ago</p>
+          <h3 className="text-xl font-semibold mb-6">Batches Overview</h3>
+          <div className="space-y-3">
+            {batches.map((batch) => {
+              const batchStudents = students.filter(s => s.batchId === batch.id);
+              const batchClasses = classes.filter(c => c.batchId === batch.id);
+              return (
+                <div key={batch.id} className="p-4 rounded-lg border bg-card">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="font-semibold">{batch.name}</h4>
+                    <span className="text-xs text-muted-foreground">{batch.year}</span>
+                  </div>
+                  <div className="flex gap-4 text-sm text-muted-foreground">
+                    <span>{batchStudents.length} students</span>
+                    <span>{batchClasses.length} classes</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid lg:grid-cols-3 gap-6">
+        <Card className="p-6">
+          <h3 className="text-xl font-semibold mb-4">Teachers ({teachers.length})</h3>
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {teachers.map((teacher) => (
+              <div key={teacher.id} className="p-3 rounded-lg border bg-card text-sm">
+                <p className="font-medium">{teacher.name}</p>
+                <p className="text-xs text-muted-foreground">{teacher.subject}</p>
+                <p className="text-xs text-muted-foreground">{teacher.email}</p>
               </div>
-            </div>
-            <div className="flex items-start gap-4 pb-4 border-b">
-              <div className="w-2 h-2 rounded-full bg-accent mt-2" />
-              <div className="flex-1">
-                <p className="font-medium">Class created</p>
-                <p className="text-sm text-muted-foreground">Advanced Physics - Batch A</p>
-                <p className="text-xs text-muted-foreground mt-1">5 hours ago</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-4">
-              <div className="w-2 h-2 rounded-full bg-primary mt-2" />
-              <div className="flex-1">
-                <p className="font-medium">Students enrolled</p>
-                <p className="text-sm text-muted-foreground">45 students added to Batch B</p>
-                <p className="text-xs text-muted-foreground mt-1">1 day ago</p>
-              </div>
-            </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <h3 className="text-xl font-semibold mb-4">Students ({students.length})</h3>
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {students.map((student) => {
+              const batch = batches.find(b => b.id === student.batchId);
+              return (
+                <div key={student.id} className="p-3 rounded-lg border bg-card text-sm">
+                  <p className="font-medium">{student.name}</p>
+                  <p className="text-xs text-muted-foreground">{batch?.name || 'Unknown batch'}</p>
+                  <p className="text-xs text-muted-foreground">{student.email}</p>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <h3 className="text-xl font-semibold mb-4">Classes ({classes.length})</h3>
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {classes.map((classItem) => {
+              const teacher = teachers.find(t => t.id === classItem.teacherId);
+              const batch = batches.find(b => b.id === classItem.batchId);
+              return (
+                <div key={classItem.id} className="p-3 rounded-lg border bg-card text-sm">
+                  <p className="font-medium">{classItem.name}</p>
+                  <p className="text-xs text-muted-foreground">{classItem.subject}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {teacher?.name} • {batch?.name}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{classItem.schedule}</p>
+                </div>
+              );
+            })}
           </div>
         </Card>
       </div>

@@ -2,6 +2,7 @@ import { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { GraduationCap, LogOut, Bell } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { clearCurrentUser, getCurrentUser } from "@/lib/localStorage";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -11,8 +12,10 @@ interface DashboardLayoutProps {
 
 const DashboardLayout = ({ children, role, title }: DashboardLayoutProps) => {
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
 
   const handleLogout = () => {
+    clearCurrentUser();
     navigate("/login");
   };
 
@@ -31,6 +34,11 @@ const DashboardLayout = ({ children, role, title }: DashboardLayoutProps) => {
           </div>
 
           <div className="flex items-center gap-3">
+            {currentUser && (
+              <span className="text-sm text-muted-foreground mr-2">
+                Welcome, <span className="font-medium text-foreground">{currentUser.name}</span>
+              </span>
+            )}
             <Button variant="ghost" size="icon">
               <Bell className="h-5 w-5" />
             </Button>
