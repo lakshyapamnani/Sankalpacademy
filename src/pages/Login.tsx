@@ -1,0 +1,154 @@
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { GraduationCap, User, BookOpen, Shield } from "lucide-react";
+import { toast } from "sonner";
+
+type UserRole = "admin" | "teacher" | "student";
+
+const Login = () => {
+  const navigate = useNavigate();
+  const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  const roles = [
+    {
+      id: "admin" as UserRole,
+      title: "Administrator",
+      description: "Manage teachers, students, and classes",
+      icon: Shield,
+      color: "from-purple-500 to-purple-600",
+    },
+    {
+      id: "teacher" as UserRole,
+      title: "Teacher",
+      description: "Manage classes, attendance, and assessments",
+      icon: BookOpen,
+      color: "from-blue-500 to-blue-600",
+    },
+    {
+      id: "student" as UserRole,
+      title: "Student",
+      description: "Access classes, notes, and AI learning tools",
+      icon: GraduationCap,
+      color: "from-cyan-500 to-cyan-600",
+    },
+  ];
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!email || !password) {
+      toast.error("Please enter email and password");
+      return;
+    }
+
+    // Mock login - will be replaced with real auth
+    toast.success(`Logged in as ${selectedRole}`);
+    navigate(`/${selectedRole}-dashboard`);
+  };
+
+  if (!selectedRole) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-accent/5 flex items-center justify-center p-4">
+        <div className="w-full max-w-5xl">
+          <div className="text-center mb-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <div className="flex items-center justify-center gap-3 mb-4">
+              <GraduationCap className="h-12 w-12 text-primary" />
+              <h1 className="text-5xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                SmartClass
+              </h1>
+            </div>
+            <p className="text-xl text-muted-foreground">
+              AI-Powered Learning & Management Platform
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-6">
+            {roles.map((role, index) => {
+              const Icon = role.icon;
+              return (
+                <Card
+                  key={role.id}
+                  className="p-8 cursor-pointer transition-all duration-300 hover:shadow-lg hover:-translate-y-1 border-2 hover:border-primary/50 animate-in fade-in slide-in-from-bottom-8"
+                  style={{ animationDelay: `${index * 100}ms` }}
+                  onClick={() => setSelectedRole(role.id)}
+                >
+                  <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${role.color} flex items-center justify-center mb-6 shadow-lg`}>
+                    <Icon className="h-8 w-8 text-white" />
+                  </div>
+                  <h3 className="text-2xl font-bold mb-2">{role.title}</h3>
+                  <p className="text-muted-foreground">{role.description}</p>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const currentRole = roles.find((r) => r.id === selectedRole)!;
+  const Icon = currentRole.icon;
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-accent/5 flex items-center justify-center p-4">
+      <Card className="w-full max-w-md p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <button
+          onClick={() => setSelectedRole(null)}
+          className="text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors"
+        >
+          ← Back to role selection
+        </button>
+
+        <div className="text-center mb-8">
+          <div className={`w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br ${currentRole.color} flex items-center justify-center mb-4 shadow-lg`}>
+            <Icon className="h-10 w-10 text-white" />
+          </div>
+          <h2 className="text-3xl font-bold mb-2">{currentRole.title} Login</h2>
+          <p className="text-muted-foreground">{currentRole.description}</p>
+        </div>
+
+        <form onSubmit={handleLogin} className="space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="email">Email Address</Label>
+            <Input
+              id="email"
+              type="email"
+              placeholder="Enter your email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="password">Password</Label>
+            <Input
+              id="password"
+              type="password"
+              placeholder="Enter your password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          </div>
+
+          <Button type="submit" className="w-full" size="lg">
+            Sign In
+          </Button>
+        </form>
+
+        <p className="text-center text-sm text-muted-foreground mt-6">
+          Demo credentials will be provided by admin
+        </p>
+      </Card>
+    </div>
+  );
+};
+
+export default Login;
