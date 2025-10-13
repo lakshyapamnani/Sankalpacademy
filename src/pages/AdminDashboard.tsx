@@ -28,6 +28,21 @@ import {
   Batch,
 } from "@/lib/localStorage";
 
+const formatFirebaseError = (message: string): string => {
+  const normalized = message.replace(/_/g, " ");
+  const upper = message.toUpperCase();
+
+  if (upper.includes("EMAIL EXISTS")) {
+    return "That email is already registered.";
+  }
+
+  if (upper.includes("WEAK PASSWORD")) {
+    return "Password must be at least 6 characters.";
+  }
+
+  return normalized;
+};
+
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -74,7 +89,7 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleAddTeacher = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleAddTeacher = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const teacher: Teacher = {
@@ -84,13 +99,20 @@ const AdminDashboard = () => {
       subject: formData.get("subject") as string,
       password: formData.get("password") as string,
     };
-    addTeacher(teacher);
-    toast.success("Teacher added successfully");
-    setOpenDialog(null);
-    loadData();
+    const form = e.currentTarget;
+    try {
+      await addTeacher(teacher);
+      form.reset();
+      toast.success("Teacher added successfully");
+      setOpenDialog(null);
+      loadData();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to add teacher";
+      toast.error(formatFirebaseError(message));
+    }
   };
 
-  const handleAddStudent = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleAddStudent = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const student: Student = {
@@ -100,10 +122,17 @@ const AdminDashboard = () => {
       batchId: formData.get("batchId") as string,
       password: formData.get("password") as string,
     };
-    addStudent(student);
-    toast.success("Student added successfully");
-    setOpenDialog(null);
-    loadData();
+    const form = e.currentTarget;
+    try {
+      await addStudent(student);
+      form.reset();
+      toast.success("Student added successfully");
+      setOpenDialog(null);
+      loadData();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to add student";
+      toast.error(formatFirebaseError(message));
+    }
   };
 
   const handleAddClass = (e: React.FormEvent<HTMLFormElement>) => {
