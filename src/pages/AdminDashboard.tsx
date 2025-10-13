@@ -1,13 +1,15 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Users, BookOpen, Calendar, BarChart3, Plus, X } from "lucide-react";
+import { Users, BookOpen, Calendar, BarChart3, Plus } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import {
   getTeachers,
   getStudents,
@@ -17,6 +19,9 @@ import {
   addStudent,
   addClass,
   addBatch,
+  deleteTeacher,
+  deleteStudent,
+  deleteClass,
   Teacher,
   Student,
   Class,
@@ -24,6 +29,7 @@ import {
 } from "@/lib/localStorage";
 
 const AdminDashboard = () => {
+  const navigate = useNavigate();
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
@@ -39,6 +45,33 @@ const AdminDashboard = () => {
     setStudents(getStudents());
     setClasses(getClasses());
     setBatches(getBatches());
+  };
+
+  const handleDeleteTeacher = (teacherId: string) => {
+    if (deleteTeacher(teacherId)) {
+      toast.success("Teacher deleted successfully");
+      loadData();
+    } else {
+      toast.error("Failed to delete teacher");
+    }
+  };
+
+  const handleDeleteStudent = (studentId: string) => {
+    if (deleteStudent(studentId)) {
+      toast.success("Student deleted successfully");
+      loadData();
+    } else {
+      toast.error("Failed to delete student");
+    }
+  };
+
+  const handleDeleteClass = (classId: string) => {
+    if (deleteClass(classId)) {
+      toast.success("Class deleted successfully");
+      loadData();
+    } else {
+      toast.error("Failed to delete class");
+    }
   };
 
   const handleAddTeacher = (e: React.FormEvent<HTMLFormElement>) => {
@@ -307,17 +340,22 @@ const AdminDashboard = () => {
 
         <Card className="p-6">
           <h3 className="text-xl font-semibold mb-6">Batches Overview</h3>
-          <div className="space-y-3">
+          <div className="space-y-4">
             {batches.map((batch) => {
               const batchStudents = students.filter(s => s.batchId === batch.id);
               const batchClasses = classes.filter(c => c.batchId === batch.id);
               return (
                 <div key={batch.id} className="p-4 rounded-lg border bg-card">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-semibold">{batch.name}</h4>
-                    <span className="text-xs text-muted-foreground">{batch.year}</span>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h4 className="font-semibold">{batch.name}</h4>
+                      <span className="text-xs text-muted-foreground">Academic Year {batch.year}</span>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => navigate(`/admin-dashboard/batches/${batch.id}`)}>
+                      View Students
+                    </Button>
                   </div>
-                  <div className="flex gap-4 text-sm text-muted-foreground">
+                  <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
                     <span>{batchStudents.length} students</span>
                     <span>{batchClasses.length} classes</span>
                   </div>
@@ -334,9 +372,18 @@ const AdminDashboard = () => {
           <div className="space-y-2 max-h-96 overflow-y-auto">
             {teachers.map((teacher) => (
               <div key={teacher.id} className="p-3 rounded-lg border bg-card text-sm">
-                <p className="font-medium">{teacher.name}</p>
-                <p className="text-xs text-muted-foreground">{teacher.subject}</p>
-                <p className="text-xs text-muted-foreground">{teacher.email}</p>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="font-medium">{teacher.name}</p>
+                    <p className="text-xs text-muted-foreground">{teacher.subject}</p>
+                    <p className="text-xs text-muted-foreground">{teacher.email}</p>
+                  </div>
+                  <DeleteDialog
+                    title="Delete Teacher"
+                    description={`Are you sure you want to delete ${teacher.name}? This will also delete all their classes and notes. This action cannot be undone.`}
+                    onDelete={() => handleDeleteTeacher(teacher.id)}
+                  />
+                </div>
               </div>
             ))}
           </div>
@@ -349,9 +396,18 @@ const AdminDashboard = () => {
               const batch = batches.find(b => b.id === student.batchId);
               return (
                 <div key={student.id} className="p-3 rounded-lg border bg-card text-sm">
-                  <p className="font-medium">{student.name}</p>
-                  <p className="text-xs text-muted-foreground">{batch?.name || 'Unknown batch'}</p>
-                  <p className="text-xs text-muted-foreground">{student.email}</p>
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-medium">{student.name}</p>
+                      <p className="text-xs text-muted-foreground">{batch?.name || 'Unknown batch'}</p>
+                      <p className="text-xs text-muted-foreground">{student.email}</p>
+                    </div>
+                    <DeleteDialog
+                      title="Delete Student"
+                      description={`Are you sure you want to delete ${student.name}? This will also delete all their attendance records. This action cannot be undone.`}
+                      onDelete={() => handleDeleteStudent(student.id)}
+                    />
+                  </div>
                 </div>
               );
             })}
@@ -366,12 +422,21 @@ const AdminDashboard = () => {
               const batch = batches.find(b => b.id === classItem.batchId);
               return (
                 <div key={classItem.id} className="p-3 rounded-lg border bg-card text-sm">
-                  <p className="font-medium">{classItem.name}</p>
-                  <p className="text-xs text-muted-foreground">{classItem.subject}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {teacher?.name} • {batch?.name}
-                  </p>
-                  <p className="text-xs text-muted-foreground">{classItem.schedule}</p>
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-medium">{classItem.name}</p>
+                      <p className="text-xs text-muted-foreground">{classItem.subject}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {teacher?.name} • {batch?.name}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{classItem.schedule}</p>
+                    </div>
+                    <DeleteDialog
+                      title="Delete Class"
+                      description={`Are you sure you want to delete ${classItem.name}? This will also delete all attendance records for this class. This action cannot be undone.`}
+                      onDelete={() => handleDeleteClass(classItem.id)}
+                    />
+                  </div>
                 </div>
               );
             })}
