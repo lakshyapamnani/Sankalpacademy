@@ -51,6 +51,75 @@ export interface Batch {
   year: string;
 }
 
+// Delete functions
+export const deleteStudent = (studentId: string): boolean => {
+  try {
+    // Delete student
+    const students = getFromStorage<Student>(STORAGE_KEYS.STUDENTS);
+    const filteredStudents = students.filter(s => s.id !== studentId);
+    saveToStorage(STORAGE_KEYS.STUDENTS, filteredStudents);
+    
+    // Delete related attendance records
+    const attendance = getFromStorage<AttendanceRecord>(STORAGE_KEYS.ATTENDANCE);
+    const filteredAttendance = attendance.filter(a => a.studentId !== studentId);
+    saveToStorage(STORAGE_KEYS.ATTENDANCE, filteredAttendance);
+    
+    return true;
+  } catch (error) {
+    console.error('Error deleting student:', error);
+    return false;
+  }
+};
+
+export const deleteTeacher = (teacherId: string): boolean => {
+  try {
+    // Delete teacher
+    const teachers = getFromStorage<Teacher>(STORAGE_KEYS.TEACHERS);
+    const filteredTeachers = teachers.filter(t => t.id !== teacherId);
+    saveToStorage(STORAGE_KEYS.TEACHERS, filteredTeachers);
+    
+    // Delete teacher's classes
+    const classes = getFromStorage<Class>(STORAGE_KEYS.CLASSES);
+    const filteredClasses = classes.filter(c => c.teacherId !== teacherId);
+    saveToStorage(STORAGE_KEYS.CLASSES, filteredClasses);
+    
+    // Delete teacher's notes
+    const notes = getFromStorage<Note>(STORAGE_KEYS.NOTES);
+    const filteredNotes = notes.filter(n => n.teacherId !== teacherId);
+    saveToStorage(STORAGE_KEYS.NOTES, filteredNotes);
+    
+    // Delete attendance records for teacher's classes
+    const attendance = getFromStorage<AttendanceRecord>(STORAGE_KEYS.ATTENDANCE);
+    const deletedClassIds = classes.filter(c => c.teacherId === teacherId).map(c => c.id);
+    const filteredAttendance = attendance.filter(a => !deletedClassIds.includes(a.classId));
+    saveToStorage(STORAGE_KEYS.ATTENDANCE, filteredAttendance);
+    
+    return true;
+  } catch (error) {
+    console.error('Error deleting teacher:', error);
+    return false;
+  }
+};
+
+export const deleteClass = (classId: string): boolean => {
+  try {
+    // Delete class
+    const classes = getFromStorage<Class>(STORAGE_KEYS.CLASSES);
+    const filteredClasses = classes.filter(c => c.id !== classId);
+    saveToStorage(STORAGE_KEYS.CLASSES, filteredClasses);
+    
+    // Delete related attendance records
+    const attendance = getFromStorage<AttendanceRecord>(STORAGE_KEYS.ATTENDANCE);
+    const filteredAttendance = attendance.filter(a => a.classId !== classId);
+    saveToStorage(STORAGE_KEYS.ATTENDANCE, filteredAttendance);
+    
+    return true;
+  } catch (error) {
+    console.error('Error deleting class:', error);
+    return false;
+  }
+};
+
 const STORAGE_KEYS = {
   TEACHERS: 'smartclass_teachers',
   STUDENTS: 'smartclass_students',
@@ -123,6 +192,22 @@ export const addStudent = (student: Student): void => {
 };
 export const getStudentsByBatch = (batchId: string): Student[] => {
   return getStudents().filter(s => s.batchId === batchId);
+};
+
+export const changeStudentPassword = (studentId: string, newPassword: string): boolean => {
+  try {
+    const students = getStudents();
+    const updatedStudents = students.map(student => 
+      student.id === studentId 
+        ? { ...student, password: newPassword }
+        : student
+    );
+    saveToStorage(STORAGE_KEYS.STUDENTS, updatedStudents);
+    return true;
+  } catch (error) {
+    console.error('Error changing student password:', error);
+    return false;
+  }
 };
 
 // Classes
