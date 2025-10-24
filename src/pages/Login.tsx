@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -6,12 +6,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { GraduationCap, User, BookOpen, Shield } from "lucide-react";
 import { toast } from "sonner";
-import { authenticateUser, setCurrentUser } from "@/lib/localStorage";
+import { authenticateUser, getCurrentUser, setCurrentUser } from "@/lib/localStorage";
 
 type UserRole = "admin" | "teacher" | "student";
 
 const Login = () => {
   const navigate = useNavigate();
+  useEffect(() => {
+    const existing = getCurrentUser();
+    if (existing) {
+      // if a user is already stored, skip role selection and go straight to their dashboard
+      navigate(`/${existing.role}-dashboard`);
+    }
+    // run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

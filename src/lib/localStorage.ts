@@ -29,6 +29,24 @@ export interface Class {
   schedule: string;
 }
 
+export interface ClassNotification {
+  id: string;
+  classId: string;
+  batchId: string;
+  teacherId: string;
+  title: string;
+  message: string;
+  createdAt: string;
+}
+
+interface PushNotificationQueueItem {
+  id: string;
+  role: 'teacher' | 'students_batch';
+  referenceId: string;
+  notification: ClassNotification;
+  createdAt: string;
+}
+
 export interface Note {
   id: string;
   title: string;
@@ -157,6 +175,12 @@ const DB_PATHS = {
   NOTES: 'notes',
   ATTENDANCE: 'attendance',
   BATCHES: 'batches',
+  NOTIFICATIONS_TEACHERS: 'notifications/teachers',
+  NOTIFICATIONS_STUDENTS: 'notifications/students',
+  NOTIFICATION_TOKENS_TEACHERS: 'notificationTokens/teachers',
+  NOTIFICATION_TOKENS_STUDENTS: 'notificationTokens/students',
+  NOTIFICATION_TOKENS_STUDENTS_BATCH: 'notificationTokens/studentsByBatch',
+  NOTIFICATION_QUEUE: 'notificationQueue',
 };
 
 // Initialize default data
@@ -257,6 +281,90 @@ void syncRealtimeData();
 
 export const refreshDataFromFirebase = (): Promise<void> => syncRealtimeData();
 
+interface SaveNotificationTokenOptions {
+  batchId?: string;
+}
+
+const sanitizeTokenKey = (token: string): string => encodeURIComponent(token);
+
+export const saveNotificationToken = async (
+  role: 'teacher' | 'student',
+  referenceId: string,
+  token: string,
+  options: SaveNotificationTokenOptions = {},
+): Promise<void> => {
+  if (!referenceId || !token) {
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const tokenKey = sanitizeTokenKey(token);
+  const payload = { token, updatedAt: now };
+  const basePath = role === 'teacher' ? DB_PATHS.NOTIFICATION_TOKENS_TEACHERS : DB_PATHS.NOTIFICATION_TOKENS_STUDENTS;
+
+  try {
+    await set(ref(database, `${basePath}/${referenceId}/${tokenKey}`), payload);
+
+    if (role === 'student' && options.batchId) {
+      await set(
+        ref(database, `${DB_PATHS.NOTIFICATION_TOKENS_STUDENTS_BATCH}/${options.batchId}/${referenceId}/${tokenKey}`),
+        { ...payload, batchId: options.batchId },
+      );
+    }
+  } catch (error) {
+    console.error('Failed to save notification token', error);
+  }
+};
+
+const enqueuePushNotification = async (
+  role: PushNotificationQueueItem['role'],
+  referenceId: string,
+  notification: ClassNotification,
+): Promise<void> => {
+  const item: PushNotificationQueueItem = {
+    id: `${notification.id}_${role}_${referenceId}`,
+    role,
+    referenceId,
+    notification,
+    createdAt: new Date().toISOString(),
+  };
+
+  try {
+    await set(ref(database, `${DB_PATHS.NOTIFICATION_QUEUE}/${item.id}`), item);
+  } catch (error) {
+    console.error('Failed to enqueue push notification', error);
+  }
+};
+
+const buildClassNotificationPayload = (classData: Class): ClassNotification => {
+  return {
+    id: `${classData.id}_${Date.now()}`,
+    classId: classData.id,
+    batchId: classData.batchId,
+    teacherId: classData.teacherId,
+    title: `${classData.name} scheduled`,
+    message: `${classData.subject} • ${classData.schedule}`,
+    createdAt: new Date().toISOString(),
+  };
+};
+
+const notifyClassCreation = async (classData: Class): Promise<void> => {
+  const notification = buildClassNotificationPayload(classData);
+  const teacherPath = `${DB_PATHS.NOTIFICATIONS_TEACHERS}/${classData.teacherId}/${notification.id}`;
+  const studentPath = `${DB_PATHS.NOTIFICATIONS_STUDENTS}/${classData.batchId}/${notification.id}`;
+
+  try {
+    await Promise.all([
+      set(ref(database, teacherPath), notification),
+      set(ref(database, studentPath), notification),
+      enqueuePushNotification('teacher', classData.teacherId, notification),
+      enqueuePushNotification('students_batch', classData.batchId, notification),
+    ]);
+  } catch (error) {
+    console.error('Failed to write class notification to Firebase', error);
+  }
+};
+
 const attachListener = <T>(collection: string, storageKey: string): Unsubscribe => {
   const databaseRef = ref(database, collection);
   const unsubscribe = onValue(
@@ -292,6 +400,48 @@ export const subscribeToRealtimeUpdates = (): Unsubscribe => {
       }
     });
   };
+};
+
+export const subscribeToClassNotifications = (
+  role: 'student' | 'teacher',
+  referenceId: string,
+  callback: (notifications: ClassNotification[]) => void,
+): Unsubscribe => {
+  if (!referenceId) {
+    return () => undefined;
+  }
+
+  const basePath = role === 'teacher' ? DB_PATHS.NOTIFICATIONS_TEACHERS : DB_PATHS.NOTIFICATIONS_STUDENTS;
+  const notificationsRef = ref(database, `${basePath}/${referenceId}`);
+
+  const unsubscribe = onValue(
+    notificationsRef,
+    snapshot => {
+      const data = snapshot.val();
+      const notifications = data ? (Object.values(data) as ClassNotification[]) : [];
+      notifications.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      callback(notifications);
+    },
+    error => {
+      console.error('Failed to listen for class notifications', error);
+    }
+  );
+
+  return unsubscribe;
+};
+
+export const acknowledgeClassNotification = async (
+  role: 'student' | 'teacher',
+  referenceId: string,
+  notificationId: string,
+): Promise<void> => {
+  const basePath = role === 'teacher' ? DB_PATHS.NOTIFICATIONS_TEACHERS : DB_PATHS.NOTIFICATIONS_STUDENTS;
+  const notificationRef = ref(database, `${basePath}/${referenceId}/${notificationId}`);
+  try {
+    await remove(notificationRef);
+  } catch (error) {
+    console.error('Failed to acknowledge class notification', error);
+  }
 };
 
 // Generic functions
@@ -366,6 +516,7 @@ export const addClass = (classData: Class): void => {
   const classes = getClasses();
   saveToStorage(STORAGE_KEYS.CLASSES, [...classes, classData]);
   void writeItemToRealtime(DB_PATHS.CLASSES, classData.id, classData);
+  void notifyClassCreation(classData);
 };
 export const getClassesByTeacher = (teacherId: string): Class[] => {
   return getClasses().filter(c => c.teacherId === teacherId);

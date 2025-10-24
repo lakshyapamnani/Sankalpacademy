@@ -1,7 +1,8 @@
 import { initializeApp } from "firebase/app";
-import { getAnalytics, isSupported } from "firebase/analytics";
+import { getAnalytics, isSupported as isAnalyticsSupported } from "firebase/analytics";
 import { getDatabase } from "firebase/database";
 import { getAuth } from "firebase/auth";
+import { getMessaging, isSupported as isMessagingSupported } from "firebase/messaging";
 
 export const firebaseConfig = {
   apiKey: "AIzaSyAYwUn5GbmrjgPTRHsy2mVWeK3OnMLE5ms",
@@ -18,7 +19,7 @@ export const database = getDatabase(app);
 export const auth = getAuth(app);
 
 // Analytics is optional and only available in supported environments (browser HTTPS)
-export const analyticsPromise = isSupported()
+export const analyticsPromise = isAnalyticsSupported()
   .then(supported => (supported ? getAnalytics(app) : null))
   .catch(() => null);
 
@@ -53,3 +54,7 @@ export const createFirebaseAuthUser = async (email: string, password: string): P
 
   return data.localId;
 };
+
+export const messagingPromise = isMessagingSupported()
+  .then(supported => (supported ? getMessaging(app) : null))
+  .catch(() => null);
