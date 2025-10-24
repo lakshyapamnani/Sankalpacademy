@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,10 +17,14 @@ import {
   getNotes,
   addNote,
   markAttendance,
+  subscribeToClassNotifications,
+  acknowledgeClassNotification,
+  ClassNotification,
   Class,
   Student,
   Note,
 } from "@/lib/localStorage";
+import { registerForPushNotifications } from "@/lib/messaging";
 
 const TeacherDashboard = () => {
   const [classes, setClasses] = useState<Class[]>([]);
@@ -29,6 +33,8 @@ const TeacherDashboard = () => {
   const [notes, setNotes] = useState<Note[]>([]);
   const [attendance, setAttendance] = useState<{ [key: string]: boolean }>({});
   const [openDialog, setOpenDialog] = useState<string | null>(null);
+  const seenNotificationIds = useRef<Set<string>>(new Set());
+  const hasRegisteredForPush = useRef(false);
   const currentUser = getCurrentUser();
 
   useEffect(() => {
@@ -36,6 +42,47 @@ const TeacherDashboard = () => {
       loadData();
     }
   }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser) {
+      return;
+    }
+
+    const seen = seenNotificationIds.current;
+
+    const unsubscribe = subscribeToClassNotifications("teacher", currentUser.id, notifications => {
+      notifications.forEach((notification: ClassNotification) => {
+        if (seen.has(notification.id)) {
+          return;
+        }
+
+        seen.add(notification.id);
+        toast.success(notification.title, {
+          description: notification.message,
+        });
+        void acknowledgeClassNotification("teacher", currentUser.id, notification.id);
+        loadData();
+      });
+    });
+
+    return () => {
+      unsubscribe();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (!currentUser || hasRegisteredForPush.current) {
+      return;
+    }
+
+    hasRegisteredForPush.current = true;
+
+    void registerForPushNotifications("teacher", currentUser.id).catch(error => {
+      console.error("Unable to register teacher for push notifications", error);
+      hasRegisteredForPush.current = false;
+    });
+  }, [currentUser?.id]);
 
   const loadData = () => {
     const teacherClasses = getClassesByTeacher(currentUser!.id);

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar, BookOpen, Brain, TrendingUp, FileText, Home, Bot, UserCircle } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
+import { toast } from "sonner";
 import {
   getClasses,
   getClassesByBatch,
@@ -11,11 +12,15 @@ import {
   getNotesByBatch,
   getStudentAttendance,
   getStudents,
+  subscribeToClassNotifications,
+  acknowledgeClassNotification,
+  ClassNotification,
   AttendanceRecord,
   Class,
   Note,
   Student,
 } from "@/lib/localStorage";
+import { registerForPushNotifications } from "@/lib/messaging";
 
 const tabOptions: { id: "home" | "ai" | "profile"; label: string; icon: LucideIcon }[] = [
   { id: "home", label: "Home", icon: Home },
@@ -31,6 +36,8 @@ const StudentDashboard = () => {
   const [myClasses, setMyClasses] = useState<Class[]>([]);
   const [classLookup, setClassLookup] = useState<Record<string, Class>>({});
   const [activeTab, setActiveTab] = useState<"home" | "ai" | "profile">("home");
+  const seenNotificationIds = useRef<Set<string>>(new Set());
+  const hasRegisteredForPush = useRef(false);
   const currentUser = getCurrentUser();
 
   const normalizeStatus = (status?: string): string => status?.trim().toLowerCase() ?? "";
@@ -89,6 +96,47 @@ const StudentDashboard = () => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (!currentStudent) {
+      return;
+    }
+
+    const seen = seenNotificationIds.current;
+
+    const unsubscribe = subscribeToClassNotifications("student", currentStudent.batchId, notifications => {
+      notifications.forEach((notification: ClassNotification) => {
+        if (seen.has(notification.id)) {
+          return;
+        }
+
+        seen.add(notification.id);
+        toast.success(notification.title, {
+          description: notification.message,
+        });
+        void acknowledgeClassNotification("student", currentStudent.batchId, notification.id);
+        loadData();
+      });
+    });
+
+    return () => {
+      unsubscribe();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStudent?.batchId]);
+
+  useEffect(() => {
+    if (!currentStudent || hasRegisteredForPush.current) {
+      return;
+    }
+
+    hasRegisteredForPush.current = true;
+
+    void registerForPushNotifications("student", currentStudent.id, { batchId: currentStudent.batchId }).catch(error => {
+      console.error("Unable to register student for push notifications", error);
+      hasRegisteredForPush.current = false;
+    });
+  }, [currentStudent?.id, currentStudent?.batchId]);
 
   const stats = useMemo(() => {
     return [
