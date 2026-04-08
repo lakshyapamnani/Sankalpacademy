@@ -18,6 +18,37 @@ export interface Student {
   batchId: string;
   password: string;
   firebaseUid?: string;
+  collegeName?: string;
+  phoneNo?: string;
+  studentClass?: string;
+}
+
+export interface FeePayment {
+  id: string;
+  date: string;
+  amount: number;
+}
+
+export interface FeeRecord {
+  studentId: string;
+  totalFees: number;
+  emiMonths: number;
+  payments: FeePayment[];
+}
+
+export interface Test {
+  id: string;
+  name: string;
+  batchId: string;
+  date: string;
+  totalMarks: number;
+}
+
+export interface TestResult {
+  id: string; // usually studentId_testId
+  testId: string;
+  studentId: string;
+  marksObtained: number;
 }
 
 export interface Class {
@@ -166,6 +197,9 @@ const STORAGE_KEYS = {
   ATTENDANCE: 'smartclass_attendance',
   BATCHES: 'smartclass_batches',
   CURRENT_USER: 'smartclass_current_user',
+  FEES: 'smartclass_fees',
+  TESTS: 'smartclass_tests',
+  TEST_RESULTS: 'smartclass_test_results',
 };
 
 const DB_PATHS = {
@@ -181,6 +215,9 @@ const DB_PATHS = {
   NOTIFICATION_TOKENS_STUDENTS: 'notificationTokens/students',
   NOTIFICATION_TOKENS_STUDENTS_BATCH: 'notificationTokens/studentsByBatch',
   NOTIFICATION_QUEUE: 'notificationQueue',
+  FEES: 'fees',
+  TESTS: 'tests',
+  TEST_RESULTS: 'testResults',
 };
 
 // Initialize default data
@@ -212,6 +249,18 @@ const initializeDefaultData = () => {
 
   if (!localStorage.getItem(STORAGE_KEYS.ATTENDANCE)) {
     localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify([]));
+  }
+
+  if (!localStorage.getItem(STORAGE_KEYS.FEES)) {
+    localStorage.setItem(STORAGE_KEYS.FEES, JSON.stringify([]));
+  }
+
+  if (!localStorage.getItem(STORAGE_KEYS.TESTS)) {
+    localStorage.setItem(STORAGE_KEYS.TESTS, JSON.stringify([]));
+  }
+
+  if (!localStorage.getItem(STORAGE_KEYS.TEST_RESULTS)) {
+    localStorage.setItem(STORAGE_KEYS.TEST_RESULTS, JSON.stringify([]));
   }
 };
 
@@ -248,13 +297,16 @@ const fetchCollectionFromRealtime = async <T>(collection: string): Promise<T[] |
 };
 
 const syncRealtimeData = async () => {
-  const [teachers, students, classes, notes, attendance, batches] = await Promise.all([
+  const [teachers, students, classes, notes, attendance, batches, fees, tests, testResults] = await Promise.all([
     fetchCollectionFromRealtime<Teacher>(DB_PATHS.TEACHERS),
     fetchCollectionFromRealtime<Student>(DB_PATHS.STUDENTS),
     fetchCollectionFromRealtime<Class>(DB_PATHS.CLASSES),
     fetchCollectionFromRealtime<Note>(DB_PATHS.NOTES),
     fetchCollectionFromRealtime<AttendanceRecord>(DB_PATHS.ATTENDANCE),
     fetchCollectionFromRealtime<Batch>(DB_PATHS.BATCHES),
+    fetchCollectionFromRealtime<FeeRecord>(DB_PATHS.FEES),
+    fetchCollectionFromRealtime<Test>(DB_PATHS.TESTS),
+    fetchCollectionFromRealtime<TestResult>(DB_PATHS.TEST_RESULTS),
   ]);
 
   if (teachers) {
@@ -274,6 +326,15 @@ const syncRealtimeData = async () => {
   }
   if (batches && batches.length) {
     saveToStorage(STORAGE_KEYS.BATCHES, batches);
+  }
+  if (fees) {
+    saveToStorage(STORAGE_KEYS.FEES, fees);
+  }
+  if (tests) {
+    saveToStorage(STORAGE_KEYS.TESTS, tests);
+  }
+  if (testResults) {
+    saveToStorage(STORAGE_KEYS.TEST_RESULTS, testResults);
   }
 };
 
@@ -389,6 +450,9 @@ export const subscribeToRealtimeUpdates = (): Unsubscribe => {
     attachListener<Note>(DB_PATHS.NOTES, STORAGE_KEYS.NOTES),
     attachListener<AttendanceRecord>(DB_PATHS.ATTENDANCE, STORAGE_KEYS.ATTENDANCE),
     attachListener<Batch>(DB_PATHS.BATCHES, STORAGE_KEYS.BATCHES),
+    attachListener<FeeRecord>(DB_PATHS.FEES, STORAGE_KEYS.FEES),
+    attachListener<Test>(DB_PATHS.TESTS, STORAGE_KEYS.TESTS),
+    attachListener<TestResult>(DB_PATHS.TEST_RESULTS, STORAGE_KEYS.TEST_RESULTS),
   ];
 
   return () => {
@@ -512,11 +576,16 @@ export const changeStudentPassword = (studentId: string, newPassword: string): b
 
 // Classes
 export const getClasses = (): Class[] => getFromStorage<Class>(STORAGE_KEYS.CLASSES);
-export const addClass = (classData: Class): void => {
+export const addClass = async (classData: Class): Promise<void> => {
   const classes = getClasses();
   saveToStorage(STORAGE_KEYS.CLASSES, [...classes, classData]);
-  void writeItemToRealtime(DB_PATHS.CLASSES, classData.id, classData);
-  void notifyClassCreation(classData);
+  try {
+    await writeItemToRealtime(DB_PATHS.CLASSES, classData.id, classData);
+    await notifyClassCreation(classData);
+  } catch (error) {
+    console.error('Error adding class to realtime or notifying:', error);
+    // still resolve so caller can continue, but error logged
+  }
 };
 export const getClassesByTeacher = (teacherId: string): Class[] => {
   return getClasses().filter(c => c.teacherId === teacherId);
@@ -572,6 +641,97 @@ export const getCurrentUser = (): { id: string; role: string; name: string } | n
 };
 export const clearCurrentUser = (): void => {
   localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+};
+
+// Fees
+export const getFeeRecords = (): FeeRecord[] => getFromStorage<FeeRecord>(STORAGE_KEYS.FEES);
+
+export const getFeeRecordByStudent = (studentId: string): FeeRecord | undefined => {
+  return getFeeRecords().find(f => f.studentId === studentId);
+};
+
+export const updateFeeRecord = (feeRecord: FeeRecord): void => {
+  const records = getFeeRecords();
+  const index = records.findIndex(f => f.studentId === feeRecord.studentId);
+  
+  let newRecords;
+  if (index >= 0) {
+    newRecords = [...records];
+    newRecords[index] = feeRecord;
+  } else {
+    newRecords = [...records, feeRecord];
+  }
+  
+  saveToStorage(STORAGE_KEYS.FEES, newRecords);
+  void writeItemToRealtime(DB_PATHS.FEES, feeRecord.studentId, feeRecord);
+};
+
+export const addFeePayment = (studentId: string, amount: number): FeeRecord | null => {
+  const record = getFeeRecordByStudent(studentId);
+  if (!record) return null;
+  
+  const payment: FeePayment = {
+    id: Date.now().toString(),
+    date: new Date().toISOString(),
+    amount
+  };
+  
+  const updatedRecord = {
+    ...record,
+    payments: [...(record.payments || []), payment]
+  };
+  
+  updateFeeRecord(updatedRecord);
+  return updatedRecord;
+};
+
+// Tests
+export const getTests = (): Test[] => getFromStorage<Test>(STORAGE_KEYS.TESTS);
+export const getTestsByBatch = (batchId: string): Test[] => getTests().filter(t => t.batchId === batchId);
+export const addTest = (test: Test): void => {
+  const tests = getTests();
+  saveToStorage(STORAGE_KEYS.TESTS, [...tests, test]);
+  void writeItemToRealtime(DB_PATHS.TESTS, test.id, test);
+};
+
+export const deleteTest = (testId: string): boolean => {
+  try {
+    const tests = getTests();
+    saveToStorage(STORAGE_KEYS.TESTS, tests.filter(t => t.id !== testId));
+    void removeItemFromRealtime(DB_PATHS.TESTS, testId);
+
+    // Also delete associated results
+    const results = getTestResults();
+    const resultsToRemove = results.filter(r => r.testId === testId);
+    saveToStorage(STORAGE_KEYS.TEST_RESULTS, results.filter(r => r.testId !== testId));
+    resultsToRemove.forEach(r => void removeItemFromRealtime(DB_PATHS.TEST_RESULTS, r.id));
+
+    return true;
+  } catch (error) {
+    console.error('Error deleting test:', error);
+    return false;
+  }
+};
+
+// Test Results
+export const getTestResults = (): TestResult[] => getFromStorage<TestResult>(STORAGE_KEYS.TEST_RESULTS);
+export const getTestResultsByTest = (testId: string): TestResult[] => getTestResults().filter(r => r.testId === testId);
+export const getTestResultsByStudent = (studentId: string): TestResult[] => getTestResults().filter(r => r.studentId === studentId);
+
+export const saveTestResult = (result: TestResult): void => {
+  const results = getTestResults();
+  const existingIndex = results.findIndex(r => r.id === result.id);
+  
+  let newResults;
+  if (existingIndex >= 0) {
+    newResults = [...results];
+    newResults[existingIndex] = result;
+  } else {
+    newResults = [...results, result];
+  }
+  
+  saveToStorage(STORAGE_KEYS.TEST_RESULTS, newResults);
+  void writeItemToRealtime(DB_PATHS.TEST_RESULTS, result.id, result);
 };
 
 // Authentication helper

@@ -13,6 +13,7 @@ import {
   getBatches,
   getClasses,
   getStudentsByBatch,
+  getStudentAttendance,
   deleteStudent,
   changeStudentPassword,
   Batch,
@@ -141,12 +142,19 @@ const BatchDetails = () => {
             <p className="text-sm text-muted-foreground">No students are currently assigned to this batch.</p>
           ) : (
             <div className="space-y-3">
-              {students.map((student) => (
+              {students.map((student) => {
+                const records = getStudentAttendance(student.id);
+                const total = records.length;
+                const present = records.filter(r => (r.status ?? '').toString().toLowerCase() === 'present').length;
+                const percent = total > 0 ? Math.round((present / total) * 100) : 0;
+
+                return (
                 <Card key={student.id} className="p-4">
                   <div className="flex flex-wrap justify-between gap-4">
                     <div>
                       <h3 className="font-semibold">{student.name}</h3>
                       <p className="text-sm text-muted-foreground">{student.email}</p>
+                      <p className="text-xs text-muted-foreground mt-1">Attendance: <span className="font-medium">{total > 0 ? `${percent}%` : 'No records'}</span></p>
                     </div>
                     <div className="flex gap-2">
                       <Dialog
@@ -192,7 +200,8 @@ const BatchDetails = () => {
                     </div>
                   </div>
                 </Card>
-              ))}
+                );
+              })}
             </div>
           )}
         </Card>
