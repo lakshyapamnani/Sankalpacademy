@@ -17,6 +17,7 @@ import {
   getTestsByBatch,
   getTestResultsByStudent,
   getFeeRecordByStudent,
+  getBatches,
   ClassNotification,
   AttendanceRecord,
   Class,
@@ -24,7 +25,8 @@ import {
   Student,
   Test,
   TestResult,
-  FeeRecord
+  FeeRecord,
+  Batch
 } from "@/lib/localStorage";
 import { registerForPushNotifications } from "@/lib/messaging";
 import { sendPromptToGemini } from "@/lib/gemini";
@@ -49,6 +51,7 @@ const StudentDashboard = () => {
   const [tests, setTests] = useState<Test[]>([]);
   const [testResults, setTestResults] = useState<TestResult[]>([]);
   const [feeRecord, setFeeRecord] = useState<FeeRecord | null>(null);
+  const [batches, setBatches] = useState<Batch[]>([]);
 
   const [activeTab, setActiveTab] = useState<"home" | "notes" | "ai" | "tests" | "profile">("home");
   const seenNotificationIds = useRef<Set<string>>(new Set());
@@ -100,6 +103,7 @@ const StudentDashboard = () => {
     setTests([]);
     setTestResults([]);
     setFeeRecord(null);
+    setBatches([]);
   };
 
   const loadData = () => {
@@ -134,12 +138,19 @@ const StudentDashboard = () => {
     setTests(getTestsByBatch(student.batchId));
     setTestResults(getTestResultsByStudent(student.id));
     setFeeRecord(getFeeRecordByStudent(student.id) || null);
+    setBatches(getBatches());
   };
 
   useEffect(() => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id]);
+
+  const isClassPassed = (classItem: Class) => {
+    if (!classItem.date || !classItem.endTime) return false;
+    const classEndTime = new Date(`${classItem.date}T${classItem.endTime}`);
+    return classEndTime < new Date();
+  };
 
   useEffect(() => {
     if (!currentStudent) return;
@@ -180,13 +191,40 @@ const StudentDashboard = () => {
     <Card className="p-6">
       <h3 className="text-xl font-semibold mb-6">Lectures & Schedule</h3>
       <div className="space-y-3">
-        {myClasses.map(classItem => (
-          <div key={classItem.id} className="p-4 rounded-lg border bg-card hover:bg-accent/5 transition-colors">
-            <p className="font-semibold">{classItem.name}</p>
-            <p className="text-sm text-muted-foreground">{classItem.subject}</p>
-            <p className="text-xs text-muted-foreground mt-1">{classItem.schedule}</p>
-          </div>
-        ))}
+        {myClasses.map(classItem => {
+          const passed = isClassPassed(classItem);
+          return (
+            <div 
+              key={classItem.id} 
+              className={`p-4 rounded-lg border transition-all ${
+                passed ? 'opacity-40 bg-muted/20' : 'bg-card hover:bg-accent/5'
+              }`}
+            >
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="font-semibold">{classItem.name}</p>
+                  <p className="text-sm text-muted-foreground">{classItem.subject}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {classItem.date ? (() => {
+                      const format12h = (t24: string) => {
+                        const [h, m] = t24.split(':').map(Number);
+                        const period = h >= 12 ? 'PM' : 'AM';
+                        const displayH = h % 12 || 12;
+                        return `${displayH}:${m.toString().padStart(2, '0')} ${period}`;
+                      };
+                      return `${classItem.date} • ${format12h(classItem.time)} - ${format12h(classItem.endTime)}`;
+                    })() : classItem.schedule}
+                  </p>
+                </div>
+                {passed && (
+                  <span className="text-[10px] bg-muted px-2 py-0.5 rounded-full text-muted-foreground font-medium uppercase tracking-wider">
+                    Finished
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
         {myClasses.length === 0 && (
           <p className="text-sm text-muted-foreground text-center py-4">No classes assigned yet.</p>
         )}
@@ -282,6 +320,9 @@ const StudentDashboard = () => {
     const totalPaid = feeRecord?.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
     const remainingBalance = feeRecord ? feeRecord.totalFees - totalPaid : 0;
     
+    const batch = batches.find(b => b.id === currentStudent?.batchId);
+    const batchDisplayName = batch ? batch.name : (currentStudent?.batchId || 'N/A');
+    
     return (
       <div className="space-y-6">
         <Card className="p-6 bg-primary/5 border-primary/10">
@@ -292,7 +333,7 @@ const StudentDashboard = () => {
             <div>
               <h2 className="text-2xl font-bold">{currentStudent?.name}</h2>
               <p className="text-sm text-muted-foreground">{currentStudent?.email}</p>
-              <p className="text-sm font-medium mt-1">Batch: {currentStudent?.batchId || 'N/A'}</p>
+              <p className="text-sm font-medium mt-1">Batch: {batchDisplayName}</p>
             </div>
           </div>
         </Card>

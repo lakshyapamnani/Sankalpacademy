@@ -32,7 +32,7 @@ const DashboardLayout = ({ children, role, title, sidebarItems = [], activeSideb
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-background via-primary/5 to-accent/5 overflow-hidden">
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-background via-primary/5 to-accent/5 overflow-x-hidden">
       <header className="bg-card border-b sticky top-0 z-40 backdrop-blur-sm bg-card/90 shadow-sm shrink-0">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">

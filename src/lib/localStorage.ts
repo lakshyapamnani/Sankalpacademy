@@ -57,7 +57,10 @@ export interface Class {
   subject: string;
   teacherId: string;
   batchId: string;
-  schedule: string;
+  schedule?: string;
+  date: string;
+  time: string;
+  endTime: string;
 }
 
 export interface ClassNotification {
@@ -404,7 +407,7 @@ const buildClassNotificationPayload = (classData: Class): ClassNotification => {
     batchId: classData.batchId,
     teacherId: classData.teacherId,
     title: `${classData.name} scheduled`,
-    message: `${classData.subject} • ${classData.schedule}`,
+    message: `${classData.subject} • ${classData.date || ''} ${classData.time || ''} - ${classData.endTime || ''} ${classData.schedule || ''}`.trim(),
     createdAt: new Date().toISOString(),
   };
 };

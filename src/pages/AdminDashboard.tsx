@@ -86,6 +86,12 @@ const AdminDashboard = () => {
     loadData();
   }, []);
 
+  const isClassPassed = (classItem: Class) => {
+    if (!classItem.date || !classItem.endTime) return false;
+    const classEndTime = new Date(`${classItem.date}T${classItem.endTime}`);
+    return classEndTime < new Date();
+  };
+
   const loadData = () => {
     setTeachers(getTeachers());
     const loadedStudents = getStudents();
@@ -258,17 +264,34 @@ const AdminDashboard = () => {
   const handleAddClass = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    
+    const startTime = formData.get("time") as string;
+    const startPeriod = formData.get("timePeriod") as string;
+    const endTime = formData.get("endTime") as string;
+    const endPeriod = formData.get("endTimePeriod") as string;
+
+    const convertTo24h = (time: string, period: string) => {
+      let [hours, minutes] = time.split(':');
+      let h = parseInt(hours);
+      if (period === 'PM' && h < 12) h += 12;
+      if (period === 'AM' && h === 12) h = 0;
+      return `${h.toString().padStart(2, '0')}:${minutes}`;
+    };
+
     const classData: Class = {
       id: Date.now().toString(),
       name: formData.get("name") as string,
       subject: formData.get("subject") as string,
       teacherId: formData.get("teacherId") as string,
       batchId: formData.get("batchId") as string,
-      schedule: formData.get("schedule") as string,
+      date: formData.get("date") as string,
+      time: convertTo24h(startTime, startPeriod),
+      endTime: convertTo24h(endTime, endPeriod),
     };
+    
     try {
       await addClass(classData);
-      toast.success("Class created and notifications enqueued");
+      toast.success("Class created successfully");
       setOpenDialog(null);
       loadData();
     } catch (error) {
@@ -860,52 +883,103 @@ const AdminDashboard = () => {
                     </DialogTrigger>
                     <DialogContent>
                       <DialogHeader>
-                        <DialogTitle>Create New Class</DialogTitle>
+                        <DialogTitle className="text-2xl font-black uppercase text-primary">Add Teaching Session</DialogTitle>
                       </DialogHeader>
-                      <form onSubmit={handleAddClass} className="space-y-4">
-                        <div>
-                          <Label htmlFor="class-name">Class Name</Label>
-                          <Input id="class-name" name="name" placeholder="e.g., Advanced Mathematics" required />
+                      <form onSubmit={handleAddClass} className="space-y-6 pt-4">
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="class-name" className="text-xs font-black uppercase tracking-widest text-muted-foreground">Class Name</Label>
+                            <Input id="class-name" name="name" placeholder="e.g., Advanced Mathematics" className="h-12 rounded-xl border-accent/20 focus:ring-primary" required />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="class-subject" className="text-xs font-black uppercase tracking-widest text-muted-foreground">Subject</Label>
+                            <Input id="class-subject" name="subject" placeholder="e.g., Calculus" className="h-12 rounded-xl border-accent/20 focus:ring-primary" required />
+                          </div>
                         </div>
-                        <div>
-                          <Label htmlFor="class-subject">Subject</Label>
-                          <Input id="class-subject" name="subject" required />
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="class-teacher" className="text-xs font-black uppercase tracking-widest text-muted-foreground">Assign Teacher</Label>
+                            <Select name="teacherId" required>
+                              <SelectTrigger className="h-12 rounded-xl border-accent/20">
+                                <SelectValue placeholder="Select teacher" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {teachers.map((teacher) => (
+                                  <SelectItem key={teacher.id} value={teacher.id}>
+                                    {teacher.name} ({teacher.subject})
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="class-batch" className="text-xs font-black uppercase tracking-widest text-muted-foreground">Assign Batch</Label>
+                            <Select name="batchId" required>
+                              <SelectTrigger className="h-12 rounded-xl border-accent/20">
+                                <SelectValue placeholder="Select batch" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {batches.map((batch) => (
+                                  <SelectItem key={batch.id} value={batch.id}>
+                                    {batch.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
                         </div>
-                        <div>
-                          <Label htmlFor="class-teacher">Assign Teacher</Label>
-                          <Select name="teacherId" required>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select teacher" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {teachers.map((teacher) => (
-                                <SelectItem key={teacher.id} value={teacher.id}>
-                                  {teacher.name} - {teacher.subject}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+
+                        <div className="bg-primary/5 p-5 rounded-[24px] border border-primary/10 space-y-4">
+                           <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/60 text-center">Schedule Configuration</p>
+                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-1.5 sm:col-span-2">
+                              <Label htmlFor="class-date" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                                <Calendar className="h-3 w-3" /> Date
+                              </Label>
+                              <Input id="class-date" name="date" type="date" className="h-10 rounded-lg shadow-inner bg-white dark:bg-card" required />
+                            </div>
+                            
+                            <div className="space-y-1.5">
+                              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                                <Plus className="h-3 w-3 rotate-45" /> Start Time
+                              </Label>
+                              <div className="flex gap-2">
+                                <Input name="time" type="time" className="h-10 rounded-lg flex-1" required />
+                                <Select name="timePeriod" defaultValue="AM">
+                                  <SelectTrigger className="w-20 h-10 rounded-lg">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="AM">AM</SelectItem>
+                                    <SelectItem value="PM">PM</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                                <Plus className="h-3 w-3" /> End Time
+                              </Label>
+                              <div className="flex gap-2">
+                                <Input name="endTime" type="time" className="h-10 rounded-lg flex-1" required />
+                                <Select name="endTimePeriod" defaultValue="AM">
+                                  <SelectTrigger className="w-20 h-10 rounded-lg">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="AM">AM</SelectItem>
+                                    <SelectItem value="PM">PM</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                          </div>
                         </div>
-                        <div>
-                          <Label htmlFor="class-batch">Assign Batch</Label>
-                          <Select name="batchId" required>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select batch" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {batches.map((batch) => (
-                                <SelectItem key={batch.id} value={batch.id}>
-                                  {batch.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div>
-                          <Label htmlFor="class-schedule">Schedule</Label>
-                          <Input id="class-schedule" name="schedule" placeholder="e.g., Mon, Wed, Fri - 10:00 AM" required />
-                        </div>
-                        <Button type="submit" className="w-full">Create Class</Button>
+                        <Button type="submit" className="w-full h-14 rounded-2xl font-black text-lg bg-primary hover:scale-[1.01] transition-transform shadow-xl shadow-primary/20">
+                          CREATE CLASS SESSION
+                        </Button>
                       </form>
                     </DialogContent>
                   </Dialog>
@@ -915,12 +989,16 @@ const AdminDashboard = () => {
                   {classes.map((classItem) => {
                     const teacher = teachers.find(t => t.id === classItem.teacherId);
                     const batch = batches.find(b => b.id === classItem.batchId);
+                    const passed = isClassPassed(classItem);
                     return (
-                      <div key={classItem.id} className="p-4 rounded-lg border bg-card text-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+                      <div key={classItem.id} className={`p-4 rounded-lg border bg-card text-sm flex flex-col justify-between hover:shadow-md transition-shadow ${passed ? 'opacity-50 grayscale-[0.2]' : ''}`}>
                         <div>
                           <div className="flex justify-between items-start mb-2">
                             <div>
-                              <p className="font-semibold text-base">{classItem.name}</p>
+                              <div className="flex items-center gap-2">
+                                <p className="font-semibold text-base">{classItem.name}</p>
+                                {passed && <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground font-medium uppercase">Ended</span>}
+                              </div>
                               <p className="text-xs text-muted-foreground">{classItem.subject}</p>
                             </div>
                             <DeleteDialog
@@ -929,16 +1007,25 @@ const AdminDashboard = () => {
                               onDelete={() => handleDeleteClass(classItem.id)}
                             />
                           </div>
-                          <div className="mt-3 space-y-1">
-                            <p className="text-xs">
-                              <span className="font-medium">Instructor:</span> {teacher?.name || 'Unknown'}
-                            </p>
-                            <p className="text-xs">
-                              <span className="font-medium">Batch:</span> {batch?.name || 'Unknown'}
-                            </p>
-                            <p className="text-xs">
-                              <span className="font-medium">Schedule:</span> {classItem.schedule}
-                            </p>
+                          <div className="mt-3 space-y-2">
+                             <div className="flex flex-wrap gap-1.5">
+                                <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-bold">Instructor: {teacher?.name || 'Unknown'}</span>
+                                <span className="text-[10px] bg-secondary text-secondary-foreground px-2 py-0.5 rounded-full font-bold">Batch: {batch?.name || 'Unknown'}</span>
+                             </div>
+                             <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
+                               <Calendar className="h-3 w-3" />
+                               <span>
+                                 {classItem.date} • {(() => {
+                                   const format12h = (t24: string) => {
+                                     const [h, m] = t24.split(':').map(Number);
+                                     const period = h >= 12 ? 'PM' : 'AM';
+                                     const displayH = h % 12 || 12;
+                                     return `${displayH}:${m.toString().padStart(2, '0')} ${period}`;
+                                   };
+                                   return `${format12h(classItem.time)} - ${format12h(classItem.endTime)}`;
+                                 })()}
+                               </span>
+                             </div>
                           </div>
                         </div>
                       </div>
