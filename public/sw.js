@@ -6,8 +6,7 @@ const FILES_TO_CACHE = [
   OFFLINE_URL,
   '/index.html',
   '/manifest.json',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png'
+  '/icons/Screenshot 2026-04-09 135955.ico'
 ];
 
 self.addEventListener('install', event => {
