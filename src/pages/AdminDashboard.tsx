@@ -4,7 +4,8 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, Settings, Award, TrendingUp } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
@@ -31,6 +32,9 @@ import {
   deleteTest,
   getTestResultsByTest,
   saveTestResult,
+  getInstituteSettings,
+  saveInstituteSettings,
+  isClassPast,
   Teacher,
   Student,
   Class,
@@ -39,6 +43,7 @@ import {
   FeePayment,
   Test,
   TestResult,
+  InstituteSettings,
 } from "@/lib/localStorage";
 
 const formatFirebaseError = (message: string): string => {
@@ -58,7 +63,7 @@ const formatFirebaseError = (message: string): string => {
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'batches' | 'students' | 'teachers' | 'classes' | 'fees' | 'tests'>('students');
+  const [activeTab, setActiveTab] = useState<'batches' | 'students' | 'teachers' | 'classes' | 'fees' | 'tests' | 'settings'>('students');
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
@@ -82,6 +87,9 @@ const AdminDashboard = () => {
     record: FeeRecord;
   } | null>(null);
 
+  // Institute Settings State
+  const [instituteSettings, setInstituteSettingsState] = useState<InstituteSettings>(getInstituteSettings());
+
   useEffect(() => {
     loadData();
   }, []);
@@ -93,6 +101,7 @@ const AdminDashboard = () => {
     setClasses(getClasses());
     setBatches(getBatches());
     setTests(getTests());
+    setInstituteSettingsState(getInstituteSettings());
 
     if (selectedStudentForFees) {
       // Reload fee record if editing
@@ -265,6 +274,7 @@ const AdminDashboard = () => {
       teacherId: formData.get("teacherId") as string,
       batchId: formData.get("batchId") as string,
       schedule: formData.get("schedule") as string,
+      endDate: (formData.get("endDate") as string) || undefined,
     };
     try {
       await addClass(classData);
@@ -336,6 +346,36 @@ const AdminDashboard = () => {
     toast.success("Marks saved");
   };
 
+  const handleSaveInstituteSettings = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const settings: InstituteSettings = {
+      name: formData.get("instName") as string || "SmartClass",
+      address: formData.get("instAddress") as string || "",
+      phone: formData.get("instPhone") as string || "",
+      email: formData.get("instEmail") as string || "",
+    };
+    try {
+      await saveInstituteSettings(settings);
+      setInstituteSettingsState(settings);
+      toast.success("Institute settings saved!");
+    } catch {
+      toast.error("Failed to save settings");
+    }
+  };
+
+  const getScoreColor = (percent: number): string => {
+    if (percent >= 75) return "text-emerald-600";
+    if (percent >= 40) return "text-amber-500";
+    return "text-red-500";
+  };
+
+  const getScoreBgColor = (percent: number): string => {
+    if (percent >= 75) return "bg-emerald-500";
+    if (percent >= 40) return "bg-amber-500";
+    return "bg-red-500";
+  };
+
   const sidebarItems: SidebarItem[] = [
     { id: 'students', label: 'Students', icon: Users, action: () => setActiveTab('students') },
     { id: 'teachers', label: 'Teachers', icon: BookOpen, action: () => setActiveTab('teachers') },
@@ -343,6 +383,7 @@ const AdminDashboard = () => {
     { id: 'batches', label: 'Batches', icon: BarChart3, action: () => setActiveTab('batches') },
     { id: 'fees', label: 'Fees Mgmt', icon: IndianRupee, action: () => setActiveTab('fees') },
     { id: 'tests', label: 'Tests', icon: CheckSquare, action: () => setActiveTab('tests') },
+    { id: 'settings', label: 'Settings', icon: Settings, action: () => setActiveTab('settings') },
   ];
 
   return (
@@ -635,138 +676,212 @@ const AdminDashboard = () => {
               </div>
             )}
 
-            {/* TESTS VIEW */}
+            {/* TESTS VIEW - Professional Redesign */}
             {activeTab === 'tests' && (
-              <Card className="p-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
-                  <div>
-                    <h3 className="text-xl font-semibold">Tests Management</h3>
-                    <p className="text-sm text-muted-foreground">Create tests and assign marks</p>
-                  </div>
-                  <Dialog open={openDialog === "test"} onOpenChange={(open) => setOpenDialog(open ? "test" : null)}>
-                    <DialogTrigger asChild>
-                      <Button className="flex items-center gap-2">
-                        <Plus className="h-4 w-4" />
-                        <span>Add Test</span>
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Add New Test</DialogTitle>
-                      </DialogHeader>
-                      <form onSubmit={handleAddTest} className="space-y-4">
-                        <div>
-                          <Label htmlFor="test-name">Test Name</Label>
-                          <Input id="test-name" name="name" placeholder="e.g. Midterm exam" required />
-                        </div>
-                        <div>
-                          <Label htmlFor="test-batch">Batch</Label>
-                          <Select name="batchId" required>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select batch" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {batches.map((batch) => (
-                                <SelectItem key={batch.id} value={batch.id}>
-                                  {batch.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div>
-                          <Label htmlFor="test-date">Date</Label>
-                          <Input id="test-date" name="date" type="date" required />
-                        </div>
-                        <div>
-                          <Label htmlFor="test-marks">Total Marks</Label>
-                          <Input id="test-marks" name="totalMarks" type="number" required />
-                        </div>
-                        <Button type="submit" className="w-full">Create Test</Button>
-                      </form>
-                    </DialogContent>
-                  </Dialog>
+              <div className="space-y-6">
+                {/* Stats Row */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Card className="p-4 bg-gradient-to-br from-blue-500/10 to-blue-600/5 border-blue-200/30">
+                    <CheckSquare className="h-5 w-5 text-blue-500 mb-1" />
+                    <p className="text-2xl font-bold">{tests.length}</p>
+                    <p className="text-xs text-muted-foreground">Total Tests</p>
+                  </Card>
+                  <Card className="p-4 bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 border-emerald-200/30">
+                    <Award className="h-5 w-5 text-emerald-500 mb-1" />
+                    <p className="text-2xl font-bold">{batches.length}</p>
+                    <p className="text-xs text-muted-foreground">Active Batches</p>
+                  </Card>
+                  <Card className="p-4 bg-gradient-to-br from-amber-500/10 to-amber-600/5 border-amber-200/30">
+                    <Users className="h-5 w-5 text-amber-500 mb-1" />
+                    <p className="text-2xl font-bold">{students.length}</p>
+                    <p className="text-xs text-muted-foreground">Total Students</p>
+                  </Card>
+                  <Card className="p-4 bg-gradient-to-br from-purple-500/10 to-purple-600/5 border-purple-200/30">
+                    <TrendingUp className="h-5 w-5 text-purple-500 mb-1" />
+                    <p className="text-2xl font-bold">
+                      {selectedTest && testResults.length > 0
+                        ? Math.round(testResults.reduce((sum, r) => sum + r.marksObtained, 0) / testResults.length)
+                        : '—'}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Avg Score</p>
+                  </Card>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Test List */}
-                  <div className="lg:col-span-1 space-y-3 max-h-[60vh] overflow-y-auto pr-2">
-                    {tests.map(test => {
-                      const batch = batches.find(b => b.id === test.batchId);
-                      return (
-                        <div 
-                          key={test.id} 
-                          className={`p-4 rounded-lg border cursor-pointer hover:shadow-md transition-all ${selectedTest?.id === test.id ? 'border-primary ring-1 ring-primary' : 'bg-card'}`}
-                          onClick={() => handleSelectTest(test)}
-                        >
-                          <div className="flex justify-between items-start mb-2">
-                            <h4 className="font-semibold text-sm">{test.name}</h4>
-                            <DeleteDialog
-                              title="Delete Test"
-                              description="Are you sure? This will remove all student marks for this test."
-                              onDelete={() => handleDeleteTest(test.id)}
-                            />
+                <Card className="p-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+                    <div>
+                      <h3 className="text-xl font-semibold">Tests & Assessments</h3>
+                      <p className="text-sm text-muted-foreground">Create tests and assign marks to students</p>
+                    </div>
+                    <Dialog open={openDialog === "test"} onOpenChange={(open) => setOpenDialog(open ? "test" : null)}>
+                      <DialogTrigger asChild>
+                        <Button className="flex items-center gap-2">
+                          <Plus className="h-4 w-4" />
+                          <span>Add Test</span>
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Add New Test</DialogTitle>
+                        </DialogHeader>
+                        <form onSubmit={handleAddTest} className="space-y-4">
+                          <div>
+                            <Label htmlFor="test-name">Test Name</Label>
+                            <Input id="test-name" name="name" placeholder="e.g. Midterm Exam" required />
                           </div>
-                          <div className="text-xs text-muted-foreground space-y-1">
-                            <p>Batch: {batch?.name}</p>
-                            <p>Date: {new Date(test.date).toLocaleDateString()}</p>
-                            <p>Total Marks: {test.totalMarks}</p>
+                          <div>
+                            <Label htmlFor="test-batch">Batch</Label>
+                            <Select name="batchId" required>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select batch" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {batches.map((batch) => (
+                                  <SelectItem key={batch.id} value={batch.id}>
+                                    {batch.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </div>
-                        </div>
-                      )
-                    })}
-                    {tests.length === 0 && (
-                      <p className="text-sm text-center py-4 text-muted-foreground border-2 border-dashed rounded-lg bg-accent/50">No tests created yet.</p>
-                    )}
+                          <div>
+                            <Label htmlFor="test-date">Date</Label>
+                            <Input id="test-date" name="date" type="date" required />
+                          </div>
+                          <div>
+                            <Label htmlFor="test-marks">Total Marks</Label>
+                            <Input id="test-marks" name="totalMarks" type="number" required />
+                          </div>
+                          <Button type="submit" className="w-full">Create Test</Button>
+                        </form>
+                      </DialogContent>
+                    </Dialog>
                   </div>
 
-                  {/* Student Marks Entry */}
-                  <div className="lg:col-span-2">
-                    {selectedTest ? (
-                      <div className="bg-card border rounded-lg p-4">
-                        <div className="border-b pb-4 mb-4">
-                          <h4 className="text-lg font-semibold">{selectedTest.name} Grading</h4>
-                          <p className="text-sm text-muted-foreground">Max marks: {selectedTest.totalMarks}</p>
-                        </div>
-                        <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2">
-                          {(() => {
-                            const batchStudents = students.filter(s => s.batchId === selectedTest.batchId);
-                            if (batchStudents.length === 0) return <p className="text-sm text-muted-foreground">No students in this batch.</p>;
-                            
-                            return batchStudents.map(student => {
-                              const existingResult = testResults.find(r => r.studentId === student.id);
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Test List */}
+                    <div className="lg:col-span-1 space-y-3 max-h-[60vh] overflow-y-auto pr-2">
+                      {tests.map(test => {
+                        const batch = batches.find(b => b.id === test.batchId);
+                        const isSelected = selectedTest?.id === test.id;
+                        const results = getTestResultsByTest(test.id);
+                        const avgScore = results.length > 0 ? Math.round((results.reduce((s, r) => s + r.marksObtained, 0) / results.length / test.totalMarks) * 100) : null;
+                        
+                        return (
+                          <div 
+                            key={test.id} 
+                            className={`p-4 rounded-lg border cursor-pointer hover:shadow-md transition-all ${isSelected ? 'border-primary ring-1 ring-primary bg-primary/5' : 'bg-card'}`}
+                            onClick={() => handleSelectTest(test)}
+                          >
+                            <div className="flex justify-between items-start mb-2">
+                              <h4 className="font-semibold">{test.name}</h4>
+                              <DeleteDialog
+                                title="Delete Test"
+                                description="Are you sure? This will remove all student marks for this test."
+                                onDelete={() => handleDeleteTest(test.id)}
+                              />
+                            </div>
+                            <div className="text-xs text-muted-foreground space-y-1">
+                              <p>Batch: <span className="font-medium text-foreground">{batch?.name}</span></p>
+                              <p>{new Date(test.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                              <div className="flex items-center justify-between mt-2">
+                                <span>Total: {test.totalMarks} marks</span>
+                                {avgScore !== null && (
+                                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${avgScore >= 75 ? 'bg-emerald-100 text-emerald-700' : avgScore >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                                    Avg: {avgScore}%
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                      {tests.length === 0 && (
+                        <p className="text-sm text-center py-4 text-muted-foreground border-2 border-dashed rounded-lg bg-accent/50">No tests created yet.</p>
+                      )}
+                    </div>
+
+                    {/* Student Marks Entry */}
+                    <div className="lg:col-span-2">
+                      {selectedTest ? (
+                        <div className="bg-card border rounded-lg overflow-hidden">
+                          <div className="bg-gradient-to-r from-primary/10 to-accent/10 border-b p-4">
+                            <h4 className="text-lg font-semibold">{selectedTest.name}</h4>
+                            <p className="text-sm text-muted-foreground">
+                              {new Date(selectedTest.date).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })} • Max: {selectedTest.totalMarks} marks
+                            </p>
+                          </div>
+                          <div className="p-4 space-y-2 max-h-[50vh] overflow-y-auto">
+                            {(() => {
+                              const batchStudents = students.filter(s => s.batchId === selectedTest.batchId);
+                              if (batchStudents.length === 0) return <p className="text-sm text-muted-foreground py-4 text-center">No students in this batch.</p>;
                               
-                              return (
-                                <div key={student.id} className="flex items-center justify-between p-3 border rounded bg-accent/20">
-                                  <div>
-                                    <p className="font-medium text-sm">{student.name}</p>
-                                    <p className="text-xs text-muted-foreground">{student.phoneNo || student.email}</p>
+                              return batchStudents.map(student => {
+                                const existingResult = testResults.find(r => r.studentId === student.id);
+                                const percent = existingResult ? Math.round((existingResult.marksObtained / selectedTest.totalMarks) * 100) : null;
+                                
+                                return (
+                                  <div key={student.id} className="flex items-center justify-between p-3 border rounded-lg bg-background hover:bg-accent/30 transition-colors">
+                                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                                      <div className={`h-9 w-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                                        percent === null ? 'bg-muted text-muted-foreground'
+                                        : percent >= 75 ? 'bg-emerald-100 text-emerald-700'
+                                        : percent >= 40 ? 'bg-amber-100 text-amber-700'
+                                        : 'bg-red-100 text-red-700'
+                                      }`}>
+                                        {percent !== null ? `${percent}%` : '—'}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <p className="font-medium text-sm truncate">{student.name}</p>
+                                        <p className="text-xs text-muted-foreground truncate">{student.phoneNo || student.email}</p>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0 ml-3">
+                                      <Input 
+                                        type="number" 
+                                        className="w-20 text-right text-sm" 
+                                        placeholder="—"
+                                        defaultValue={existingResult?.marksObtained}
+                                        onBlur={(e) => handleSaveMarks(student.id, e.target.value)}
+                                      />
+                                      <span className="text-xs text-muted-foreground whitespace-nowrap">/ {selectedTest.totalMarks}</span>
+                                    </div>
                                   </div>
-                                  <div className="flex items-center gap-2">
-                                    <Input 
-                                      type="number" 
-                                      className="w-24 text-right" 
-                                      placeholder="Marks"
-                                      defaultValue={existingResult?.marksObtained}
-                                      onBlur={(e) => handleSaveMarks(student.id, e.target.value)}
-                                    />
-                                    <span className="text-sm text-muted-foreground">/ {selectedTest.totalMarks}</span>
+                                );
+                              });
+                            })()}
+                          </div>
+                          {/* Score Distribution */}
+                          {testResults.length > 0 && (
+                            <div className="border-t p-4 bg-muted/30">
+                              <p className="text-xs font-medium text-muted-foreground mb-2">Score Distribution</p>
+                              <div className="flex gap-3">
+                                {[
+                                  { label: '≥75%', count: testResults.filter(r => (r.marksObtained / selectedTest.totalMarks) * 100 >= 75).length, color: 'bg-emerald-500' },
+                                  { label: '40-74%', count: testResults.filter(r => { const p = (r.marksObtained / selectedTest.totalMarks) * 100; return p >= 40 && p < 75; }).length, color: 'bg-amber-500' },
+                                  { label: '<40%', count: testResults.filter(r => (r.marksObtained / selectedTest.totalMarks) * 100 < 40).length, color: 'bg-red-500' },
+                                ].map(seg => (
+                                  <div key={seg.label} className="flex items-center gap-1.5 text-xs">
+                                    <div className={`h-2.5 w-2.5 rounded-full ${seg.color}`} />
+                                    <span className="text-muted-foreground">{seg.label}: <strong className="text-foreground">{seg.count}</strong></span>
                                   </div>
-                                </div>
-                              );
-                            });
-                          })()}
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ) : (
-                      <div className="h-full min-h-[200px] flex items-center justify-center text-muted-foreground border-2 border-dashed rounded-lg bg-accent/50">
-                        Select a test from the left to enter marks.
-                      </div>
-                    )}
+                      ) : (
+                        <div className="h-full min-h-[200px] flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed rounded-lg bg-accent/50 py-12">
+                          <CheckSquare className="h-12 w-12 mb-3 opacity-20" />
+                          <p className="font-medium">Select a test</p>
+                          <p className="text-sm">Choose a test from the list to enter marks</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
 
-              </Card>
+                </Card>
+              </div>
             )}
 
             {/* TEACHERS VIEW */}
@@ -849,7 +964,7 @@ const AdminDashboard = () => {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
                   <div>
                     <h3 className="text-xl font-semibold">Classes</h3>
-                    <p className="text-sm text-muted-foreground">Manage your {classes.length} active classes</p>
+                    <p className="text-sm text-muted-foreground">Manage your {classes.length} classes</p>
                   </div>
                   <Dialog open={openDialog === "class"} onOpenChange={(open) => setOpenDialog(open ? "class" : null)}>
                     <DialogTrigger asChild>
@@ -905,6 +1020,11 @@ const AdminDashboard = () => {
                           <Label htmlFor="class-schedule">Schedule</Label>
                           <Input id="class-schedule" name="schedule" placeholder="e.g., Mon, Wed, Fri - 10:00 AM" required />
                         </div>
+                        <div>
+                          <Label htmlFor="class-endDate">End Date (optional)</Label>
+                          <Input id="class-endDate" name="endDate" type="date" />
+                          <p className="text-xs text-muted-foreground mt-1">Classes past this date will appear as completed.</p>
+                        </div>
                         <Button type="submit" className="w-full">Create Class</Button>
                       </form>
                     </DialogContent>
@@ -912,15 +1032,26 @@ const AdminDashboard = () => {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {classes.map((classItem) => {
+                  {[...classes].sort((a, b) => {
+                    const aPast = isClassPast(a);
+                    const bPast = isClassPast(b);
+                    if (aPast === bPast) return 0;
+                    return aPast ? 1 : -1;
+                  }).map((classItem) => {
                     const teacher = teachers.find(t => t.id === classItem.teacherId);
                     const batch = batches.find(b => b.id === classItem.batchId);
+                    const isPast = isClassPast(classItem);
                     return (
-                      <div key={classItem.id} className="p-4 rounded-lg border bg-card text-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+                      <div key={classItem.id} className={`p-4 rounded-lg border text-sm flex flex-col justify-between transition-shadow ${isPast ? 'bg-muted/50 opacity-60' : 'bg-card hover:shadow-md'}`}>
                         <div>
                           <div className="flex justify-between items-start mb-2">
                             <div>
-                              <p className="font-semibold text-base">{classItem.name}</p>
+                              <div className="flex items-center gap-2">
+                                <p className="font-semibold text-base">{classItem.name}</p>
+                                {isPast && (
+                                  <span className="text-[10px] font-semibold uppercase tracking-wider bg-muted-foreground/20 text-muted-foreground px-1.5 py-0.5 rounded">Completed</span>
+                                )}
+                              </div>
                               <p className="text-xs text-muted-foreground">{classItem.subject}</p>
                             </div>
                             <DeleteDialog
@@ -939,6 +1070,11 @@ const AdminDashboard = () => {
                             <p className="text-xs">
                               <span className="font-medium">Schedule:</span> {classItem.schedule}
                             </p>
+                            {classItem.endDate && (
+                              <p className="text-xs">
+                                <span className="font-medium">End Date:</span> {new Date(classItem.endDate).toLocaleDateString()}
+                              </p>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1021,77 +1157,176 @@ const AdminDashboard = () => {
                 </div>
               </Card>
             )}
+
+            {/* SETTINGS VIEW */}
+            {activeTab === 'settings' && (
+              <Card className="p-6 max-w-2xl">
+                <div className="mb-6">
+                  <h3 className="text-xl font-semibold flex items-center gap-2"><Settings className="h-5 w-5" /> Institute Settings</h3>
+                  <p className="text-sm text-muted-foreground mt-1">Configure institute details that appear on fee receipts and invoices.</p>
+                </div>
+                <form onSubmit={handleSaveInstituteSettings} className="space-y-5">
+                  <div>
+                    <Label htmlFor="instName">Institute / Organization Name</Label>
+                    <Input id="instName" name="instName" defaultValue={instituteSettings.name} placeholder="e.g., ABC Coaching Classes" required />
+                  </div>
+                  <div>
+                    <Label htmlFor="instAddress">Address</Label>
+                    <Textarea id="instAddress" name="instAddress" defaultValue={instituteSettings.address} placeholder="e.g., 123 Main Street, City, State - 400001" rows={2} />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="instPhone">Phone Number</Label>
+                      <Input id="instPhone" name="instPhone" defaultValue={instituteSettings.phone} placeholder="e.g., +91 98765 43210" />
+                    </div>
+                    <div>
+                      <Label htmlFor="instEmail">Email</Label>
+                      <Input id="instEmail" name="instEmail" type="email" defaultValue={instituteSettings.email} placeholder="e.g., info@institute.com" />
+                    </div>
+                  </div>
+                  <Button type="submit" className="w-full sm:w-auto">Save Settings</Button>
+                </form>
+                
+                {/* Preview */}
+                <div className="mt-8 border-t pt-6">
+                  <p className="text-sm font-medium text-muted-foreground mb-3">Receipt Header Preview</p>
+                  <div className="border rounded-lg p-6 bg-white text-black text-center">
+                    <h2 className="text-xl font-bold uppercase tracking-wide">{instituteSettings.name || 'SmartClass'}</h2>
+                    {instituteSettings.address && <p className="text-sm text-gray-600 mt-1">{instituteSettings.address}</p>}
+                    <div className="flex items-center justify-center gap-4 mt-1 text-xs text-gray-500">
+                      {instituteSettings.phone && <span>📞 {instituteSettings.phone}</span>}
+                      {instituteSettings.email && <span>✉ {instituteSettings.email}</span>}
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            )}
+
           </div>
         </DashboardLayout>
       </div>
 
-      {/* PRINT RECEIPT LAYER - Hidden unless printing */}
+      {/* PROFESSIONAL INVOICE RECEIPT - Visible only when printing */}
       {receiptData && (
-        <div className="hidden print:block absolute top-0 left-0 w-full p-8 bg-white text-black min-h-screen font-sans">
-          <div className="max-w-2xl mx-auto border-2 border-black p-8 rounded-lg">
+        <div className="hidden print:block absolute top-0 left-0 w-full bg-white text-black min-h-screen" style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
+          <div className="max-w-[210mm] mx-auto px-10 py-8">
             
-            <div className="text-center mb-8 border-b-2 border-black pb-4">
-              <h1 className="text-3xl font-bold uppercase tracking-widest text-black">SmartClass</h1>
-              <p className="text-gray-600 mt-1">Official Fee Receipt</p>
+            {/* Invoice Header */}
+            <div className="border-b-2 border-gray-800 pb-5 mb-6">
+              <div className="text-center">
+                <h1 className="text-2xl font-bold uppercase tracking-widest text-gray-900">{instituteSettings.name || 'SmartClass'}</h1>
+                {instituteSettings.address && (
+                  <p className="text-sm text-gray-600 mt-1">{instituteSettings.address}</p>
+                )}
+                <div className="flex items-center justify-center gap-6 mt-1 text-xs text-gray-500">
+                  {instituteSettings.phone && <span>Phone: {instituteSettings.phone}</span>}
+                  {instituteSettings.email && <span>Email: {instituteSettings.email}</span>}
+                </div>
+              </div>
+              <div className="mt-4 text-center">
+                <span className="inline-block bg-gray-900 text-white text-xs font-bold uppercase tracking-widest px-4 py-1 rounded-sm">
+                  Fee Receipt
+                </span>
+              </div>
             </div>
 
-            <div className="flex justify-between items-start mb-8 text-black">
+            {/* Receipt Meta & Student Details */}
+            <div className="grid grid-cols-2 gap-8 mb-6 text-sm">
               <div>
-                <p className="font-bold text-lg mb-2">Student Details:</p>
-                <p><strong>Name:</strong> {receiptData.student.name}</p>
-                <p><strong>Phone:</strong> {receiptData.student.phoneNo || 'N/A'}</p>
-                <p><strong>College:</strong> {receiptData.student.collegeName || 'N/A'}</p>
-                <p><strong>Class:</strong> {receiptData.student.studentClass || 'N/A'}</p>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Student Details</h3>
+                <table className="text-sm">
+                  <tbody>
+                    <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Name:</td><td className="font-semibold">{receiptData.student.name}</td></tr>
+                    <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Phone:</td><td>{receiptData.student.phoneNo || 'N/A'}</td></tr>
+                    <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">College:</td><td>{receiptData.student.collegeName || 'N/A'}</td></tr>
+                    <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Class:</td><td>{receiptData.student.studentClass || 'N/A'}</td></tr>
+                  </tbody>
+                </table>
               </div>
               <div className="text-right">
-                <p><strong>Receipt Date:</strong> {new Date(receiptData.payment.date).toLocaleDateString()}</p>
-                <p><strong>Receipt ID:</strong> RCPT-{receiptData.payment.id.slice(-6)}</p>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Receipt Info</h3>
+                <table className="text-sm ml-auto">
+                  <tbody>
+                    <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Receipt No:</td><td className="font-mono font-semibold">RCPT-{receiptData.payment.id.slice(-6).toUpperCase()}</td></tr>
+                    <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Date:</td><td>{new Date(receiptData.payment.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td></tr>
+                    <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Time:</td><td>{new Date(receiptData.payment.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</td></tr>
+                  </tbody>
+                </table>
               </div>
             </div>
 
-            <div className="mb-8 border border-black rounded">
-              <table className="w-full text-left">
-                <thead className="bg-gray-100 border-b border-black text-black">
-                  <tr>
-                    <th className="p-3">Description</th>
-                    <th className="p-3 text-right">Amount (INR)</th>
+            {/* Itemized Table */}
+            <div className="mb-6">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="bg-gray-100">
+                    <th className="border border-gray-300 px-4 py-2.5 text-left font-semibold text-gray-700">#</th>
+                    <th className="border border-gray-300 px-4 py-2.5 text-left font-semibold text-gray-700">Description</th>
+                    <th className="border border-gray-300 px-4 py-2.5 text-right font-semibold text-gray-700">Amount (₹)</th>
                   </tr>
                 </thead>
-                <tbody className="text-black">
+                <tbody>
                   <tr>
-                    <td className="p-3 font-medium">Fee Payment Installment</td>
-                    <td className="p-3 text-right text-lg font-bold">₹{receiptData.payment.amount.toLocaleString()}</td>
+                    <td className="border border-gray-300 px-4 py-3 text-gray-600">1</td>
+                    <td className="border border-gray-300 px-4 py-3">
+                      <p className="font-medium">Fee Payment — Installment #{receiptData.record.payments?.findIndex(p => p.id === receiptData.payment.id)! + 1}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">Course Fee Installment</p>
+                    </td>
+                    <td className="border border-gray-300 px-4 py-3 text-right text-lg font-bold">₹{receiptData.payment.amount.toLocaleString('en-IN')}</td>
                   </tr>
                 </tbody>
+                <tfoot>
+                  <tr className="bg-gray-50">
+                    <td colSpan={2} className="border border-gray-300 px-4 py-2.5 text-right font-bold text-gray-700 uppercase text-xs tracking-wider">Total Paid (This Receipt)</td>
+                    <td className="border border-gray-300 px-4 py-2.5 text-right font-bold text-lg text-gray-900">₹{receiptData.payment.amount.toLocaleString('en-IN')}</td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
 
-            <div className="flex justify-end mb-12 text-black">
-              <div className="w-1/2 bg-gray-50 border border-gray-300 p-4 rounded text-sm space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Total Course Fees:</span>
-                  <span className="font-semibold text-black">₹{receiptData.record.totalFees.toLocaleString()}</span>
+            {/* Fee Summary Box */}
+            <div className="flex justify-end mb-10">
+              <div className="w-72 border border-gray-300 rounded text-sm">
+                <div className="flex justify-between px-4 py-2 border-b border-gray-200">
+                  <span className="text-gray-500">Total Course Fees</span>
+                  <span className="font-semibold">₹{receiptData.record.totalFees.toLocaleString('en-IN')}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Total Paid (including this):</span>
-                  <span className="font-semibold text-black">₹{receiptData.record.payments.reduce((a, b) => a + b.amount, 0).toLocaleString()}</span>
+                <div className="flex justify-between px-4 py-2 border-b border-gray-200">
+                  <span className="text-gray-500">Total Paid (All)</span>
+                  <span className="font-semibold text-green-700">₹{receiptData.record.payments.reduce((a, b) => a + b.amount, 0).toLocaleString('en-IN')}</span>
                 </div>
-                <div className="flex justify-between border-t border-gray-300 pt-2 pb-1 text-black">
-                  <span className="font-bold">Remaining Balance:</span>
-                  <span className="font-bold text-red-600">₹{(receiptData.record.totalFees - receiptData.record.payments.reduce((a, b) => a + b.amount, 0)).toLocaleString()}</span>
+                <div className="flex justify-between px-4 py-2.5 bg-gray-50">
+                  <span className="font-bold text-gray-800">Outstanding Balance</span>
+                  <span className="font-bold text-red-600">₹{(receiptData.record.totalFees - receiptData.record.payments.reduce((a, b) => a + b.amount, 0)).toLocaleString('en-IN')}</span>
                 </div>
               </div>
             </div>
 
-            <div className="mt-16 flex justify-between text-black">
+            {/* Terms */}
+            <div className="mb-12 text-xs text-gray-400 border-t border-gray-200 pt-4">
+              <p className="font-semibold text-gray-500 mb-1">Terms & Conditions:</p>
+              <ol className="list-decimal list-inside space-y-0.5">
+                <li>Fees once paid are non-refundable.</li>
+                <li>This is a computer-generated receipt and does not require a physical signature.</li>
+                <li>Please retain this receipt for your records.</li>
+              </ol>
+            </div>
+
+            {/* Signatures */}
+            <div className="flex justify-between items-end">
               <div className="text-center">
-                <div className="w-32 border-b-2 border-black mb-2"></div>
-                <p className="text-sm text-gray-600">Student Signature</p>
+                <div className="w-40 border-b-2 border-gray-400 mb-1"></div>
+                <p className="text-xs text-gray-500">Student / Guardian Signature</p>
               </div>
               <div className="text-center">
-                <div className="w-32 border-b-2 border-black mb-2"></div>
-                <p className="text-sm text-gray-600">Authorized Signatory</p>
+                <div className="w-40 border-b-2 border-gray-400 mb-1"></div>
+                <p className="text-xs text-gray-500">Authorized Signatory</p>
               </div>
+            </div>
+
+            {/* Footer */}
+            <div className="mt-8 text-center text-[10px] text-gray-300 border-t pt-3">
+              Generated by {instituteSettings.name || 'SmartClass'} Management System • {new Date().toLocaleDateString()}
             </div>
 
           </div>

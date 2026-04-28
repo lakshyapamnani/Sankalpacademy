@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar, BookOpen, Brain, FileText, Home, Bot, UserCircle, MessageSquare, CheckSquare, IndianRupee } from "lucide-react";
+import { Calendar, BookOpen, Brain, FileText, Home, Bot, UserCircle, MessageSquare, CheckSquare, IndianRupee, Award, TrendingUp } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { toast } from "sonner";
@@ -17,6 +17,7 @@ import {
   getTestsByBatch,
   getTestResultsByStudent,
   getFeeRecordByStudent,
+  isClassPast,
   ClassNotification,
   AttendanceRecord,
   Class,
@@ -180,13 +181,26 @@ const StudentDashboard = () => {
     <Card className="p-6">
       <h3 className="text-xl font-semibold mb-6">Lectures & Schedule</h3>
       <div className="space-y-3">
-        {myClasses.map(classItem => (
-          <div key={classItem.id} className="p-4 rounded-lg border bg-card hover:bg-accent/5 transition-colors">
-            <p className="font-semibold">{classItem.name}</p>
-            <p className="text-sm text-muted-foreground">{classItem.subject}</p>
-            <p className="text-xs text-muted-foreground mt-1">{classItem.schedule}</p>
-          </div>
-        ))}
+        {[...myClasses].sort((a, b) => {
+          const aPast = isClassPast(a);
+          const bPast = isClassPast(b);
+          if (aPast === bPast) return 0;
+          return aPast ? 1 : -1;
+        }).map(classItem => {
+          const isPast = isClassPast(classItem);
+          return (
+            <div key={classItem.id} className={`p-4 rounded-lg border transition-colors ${isPast ? 'bg-muted/50 opacity-60 border-muted' : 'bg-card hover:bg-accent/5'}`}>
+              <div className="flex items-center gap-2">
+                <p className="font-semibold">{classItem.name}</p>
+                {isPast && (
+                  <span className="text-[10px] font-semibold uppercase tracking-wider bg-muted-foreground/20 text-muted-foreground px-1.5 py-0.5 rounded">Completed</span>
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground">{classItem.subject}</p>
+              <p className="text-xs text-muted-foreground mt-1">{classItem.schedule}</p>
+            </div>
+          );
+        })}
         {myClasses.length === 0 && (
           <p className="text-sm text-muted-foreground text-center py-4">No classes assigned yet.</p>
         )}
@@ -245,38 +259,91 @@ const StudentDashboard = () => {
     </Card>
   );
 
-  const renderTestsCard = () => (
-    <Card className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h3 className="text-xl font-semibold">Tests & Marks</h3>
-      </div>
+  const renderTestsCard = () => {
+    const gradedTests = tests.filter(t => testResults.find(r => r.testId === t.id));
+    const overallAvg = gradedTests.length > 0
+      ? Math.round(
+          gradedTests.reduce((sum, t) => {
+            const r = testResults.find(res => res.testId === t.id);
+            return sum + (r ? (r.marksObtained / t.totalMarks) * 100 : 0);
+          }, 0) / gradedTests.length
+        )
+      : null;
+
+    const getScoreColor = (pct: number) => {
+      if (pct >= 75) return 'text-emerald-600';
+      if (pct >= 40) return 'text-amber-500';
+      return 'text-red-500';
+    };
+    const getBarColor = (pct: number) => {
+      if (pct >= 75) return 'bg-emerald-500';
+      if (pct >= 40) return 'bg-amber-500';
+      return 'bg-red-500';
+    };
+
+    return (
       <div className="space-y-4">
-        {tests.map(test => {
-          const result = testResults.find(r => r.testId === test.id);
-          const hasResult = !!result;
-          
-          return (
-            <div key={test.id} className="p-4 rounded-lg border bg-card flex items-center justify-between">
-              <div>
-                <p className="font-semibold text-lg">{test.name}</p>
-                <p className="text-xs text-muted-foreground">{new Date(test.date).toLocaleDateString()}</p>
-              </div>
-              <div className={`text-right px-4 py-2 rounded-md ${hasResult ? 'bg-primary/10' : 'bg-muted'}`}>
-                {hasResult ? (
-                  <p className="font-bold text-xl text-primary">{result.marksObtained} <span className="text-sm text-muted-foreground font-normal">/ {test.totalMarks}</span></p>
-                ) : (
-                  <p className="text-sm text-muted-foreground font-medium">Not Graded</p>
+        {/* Summary Cards */}
+        <div className="grid grid-cols-3 gap-3">
+          <Card className="p-3 text-center bg-gradient-to-br from-blue-500/10 to-blue-600/5 border-blue-200/30">
+            <CheckSquare className="h-5 w-5 text-blue-500 mx-auto mb-1" />
+            <p className="text-xl font-bold">{tests.length}</p>
+            <p className="text-[10px] sm:text-xs text-muted-foreground">Total Tests</p>
+          </Card>
+          <Card className="p-3 text-center bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 border-emerald-200/30">
+            <Award className="h-5 w-5 text-emerald-500 mx-auto mb-1" />
+            <p className="text-xl font-bold">{gradedTests.length}</p>
+            <p className="text-[10px] sm:text-xs text-muted-foreground">Graded</p>
+          </Card>
+          <Card className="p-3 text-center bg-gradient-to-br from-purple-500/10 to-purple-600/5 border-purple-200/30">
+            <TrendingUp className="h-5 w-5 text-purple-500 mx-auto mb-1" />
+            <p className={`text-xl font-bold ${overallAvg !== null ? getScoreColor(overallAvg) : ''}`}>{overallAvg !== null ? `${overallAvg}%` : '—'}</p>
+            <p className="text-[10px] sm:text-xs text-muted-foreground">Average</p>
+          </Card>
+        </div>
+
+        {/* Test List */}
+        <Card className="divide-y overflow-hidden">
+          {tests.map(test => {
+            const result = testResults.find(r => r.testId === test.id);
+            const hasResult = !!result;
+            const pct = hasResult ? Math.round((result.marksObtained / test.totalMarks) * 100) : 0;
+
+            return (
+              <div key={test.id} className="p-4">
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    <p className="font-semibold">{test.name}</p>
+                    <p className="text-xs text-muted-foreground">{new Date(test.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                  </div>
+                  {hasResult ? (
+                    <div className="text-right">
+                      <p className={`text-xl font-bold ${getScoreColor(pct)}`}>{result.marksObtained}<span className="text-sm text-muted-foreground font-normal">/{test.totalMarks}</span></p>
+                      <p className={`text-xs font-semibold ${getScoreColor(pct)}`}>{pct}%</p>
+                    </div>
+                  ) : (
+                    <span className="text-xs font-medium text-muted-foreground bg-muted px-2.5 py-1 rounded-full">Not Graded</span>
+                  )}
+                </div>
+                {hasResult && (
+                  <div className="h-2 bg-muted rounded-full overflow-hidden mt-1">
+                    <div className={`h-full rounded-full transition-all duration-500 ${getBarColor(pct)}`} style={{ width: `${pct}%` }} />
+                  </div>
                 )}
               </div>
+            );
+          })}
+          {tests.length === 0 && (
+            <div className="text-center py-12">
+              <CheckSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-20" />
+              <p className="text-muted-foreground">No tests recorded yet</p>
+              <p className="text-sm text-muted-foreground mt-1">Tests will appear here once your teacher creates them</p>
             </div>
-          )
-        })}
-        {tests.length === 0 && (
-          <p className="text-sm text-muted-foreground text-center py-8">No tests recorded yet.</p>
-        )}
+          )}
+        </Card>
       </div>
-    </Card>
-  );
+    );
+  };
 
   const renderProfileAndFees = () => {
     const totalPaid = feeRecord?.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;

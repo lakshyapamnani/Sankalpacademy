@@ -21,7 +21,9 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />
-          <Route path="/student" element={<Navigate to="/login" replace />} />
+          <Route path="/student" element={<Login defaultRole="student" />} />
+          <Route path="/admin" element={<Login defaultRole="admin" />} />
+          <Route path="/teacher" element={<Login defaultRole="teacher" />} />
           <Route path="/login" element={<Login />} />
           <Route path="/admin-dashboard" element={<AdminDashboard />} />
           <Route path="/admin-dashboard/batches/:batchId" element={<BatchDetails />} />

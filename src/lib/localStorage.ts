@@ -58,6 +58,14 @@ export interface Class {
   teacherId: string;
   batchId: string;
   schedule: string;
+  endDate?: string; // ISO date string (YYYY-MM-DD)
+}
+
+export interface InstituteSettings {
+  name: string;
+  address: string;
+  phone: string;
+  email: string;
 }
 
 export interface ClassNotification {
@@ -200,6 +208,7 @@ const STORAGE_KEYS = {
   FEES: 'smartclass_fees',
   TESTS: 'smartclass_tests',
   TEST_RESULTS: 'smartclass_test_results',
+  INSTITUTE_SETTINGS: 'smartclass_institute_settings',
 };
 
 const DB_PATHS = {
@@ -218,6 +227,7 @@ const DB_PATHS = {
   FEES: 'fees',
   TESTS: 'tests',
   TEST_RESULTS: 'testResults',
+  INSTITUTE_SETTINGS: 'instituteSettings',
 };
 
 // Initialize default data
@@ -335,6 +345,16 @@ const syncRealtimeData = async () => {
   }
   if (testResults) {
     saveToStorage(STORAGE_KEYS.TEST_RESULTS, testResults);
+  }
+
+  // Sync institute settings (single object, not a collection)
+  try {
+    const snapshot = await get(child(ref(database), DB_PATHS.INSTITUTE_SETTINGS));
+    if (snapshot.exists()) {
+      localStorage.setItem(STORAGE_KEYS.INSTITUTE_SETTINGS, JSON.stringify(snapshot.val()));
+    }
+  } catch (error) {
+    console.error('Failed to sync institute settings from Firebase', error);
   }
 };
 
@@ -754,4 +774,35 @@ export const authenticateUser = (email: string, password: string, role: string):
   }
 
   return null;
+};
+
+// Institute Settings
+export const getInstituteSettings = (): InstituteSettings => {
+  const data = localStorage.getItem(STORAGE_KEYS.INSTITUTE_SETTINGS);
+  if (data) {
+    try {
+      return JSON.parse(data) as InstituteSettings;
+    } catch {
+      // fallback
+    }
+  }
+  return { name: 'SmartClass', address: '', phone: '', email: '' };
+};
+
+export const saveInstituteSettings = async (settings: InstituteSettings): Promise<void> => {
+  localStorage.setItem(STORAGE_KEYS.INSTITUTE_SETTINGS, JSON.stringify(settings));
+  try {
+    await set(ref(database, DB_PATHS.INSTITUTE_SETTINGS), settings);
+  } catch (error) {
+    console.error('Failed to save institute settings to Firebase', error);
+  }
+};
+
+// Class date helpers
+export const isClassPast = (classItem: Class): boolean => {
+  if (!classItem.endDate) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const endDate = new Date(classItem.endDate + 'T00:00:00');
+  return endDate < today;
 };
