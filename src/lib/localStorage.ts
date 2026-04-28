@@ -61,7 +61,16 @@ export interface Class {
   date: string;
   time: string;
   endTime: string;
+  endDate?: string; // ISO date string (YYYY-MM-DD)
 }
+
+export interface InstituteSettings {
+  name: string;
+  address: string;
+  phone: string;
+  email: string;
+}
+
 
 export interface ClassNotification {
   id: string;
@@ -203,6 +212,7 @@ const STORAGE_KEYS = {
   FEES: 'smartclass_fees',
   TESTS: 'smartclass_tests',
   TEST_RESULTS: 'smartclass_test_results',
+  INSTITUTE_SETTINGS: 'smartclass_institute_settings',
 };
 
 const DB_PATHS = {
@@ -221,6 +231,7 @@ const DB_PATHS = {
   FEES: 'fees',
   TESTS: 'tests',
   TEST_RESULTS: 'testResults',
+  INSTITUTE_SETTINGS: 'instituteSettings',
 };
 
 // Initialize default data
@@ -338,6 +349,16 @@ const syncRealtimeData = async () => {
   }
   if (testResults) {
     saveToStorage(STORAGE_KEYS.TEST_RESULTS, testResults);
+  }
+
+  // Sync institute settings (single object, not a collection)
+  try {
+    const snapshot = await get(child(ref(database), DB_PATHS.INSTITUTE_SETTINGS));
+    if (snapshot.exists()) {
+      localStorage.setItem(STORAGE_KEYS.INSTITUTE_SETTINGS, JSON.stringify(snapshot.val()));
+    }
+  } catch (error) {
+    console.error('Failed to sync institute settings from Firebase', error);
   }
 };
 
@@ -757,4 +778,54 @@ export const authenticateUser = (email: string, password: string, role: string):
   }
 
   return null;
+};
+
+// Institute Settings
+export const getInstituteSettings = (): InstituteSettings => {
+  const data = localStorage.getItem(STORAGE_KEYS.INSTITUTE_SETTINGS);
+  if (data) {
+    try {
+      return JSON.parse(data) as InstituteSettings;
+    } catch {
+      // fallback
+    }
+  }
+  return { name: 'SmartClass', address: '', phone: '', email: '' };
+};
+
+export const saveInstituteSettings = async (settings: InstituteSettings): Promise<void> => {
+  localStorage.setItem(STORAGE_KEYS.INSTITUTE_SETTINGS, JSON.stringify(settings));
+  try {
+    await set(ref(database, DB_PATHS.INSTITUTE_SETTINGS), settings);
+  } catch (error) {
+    console.error('Failed to save institute settings to Firebase', error);
+  }
+};
+
+// Class date helpers
+export const isClassPast = (classItem: Class): boolean => {
+  // Primary check: use date + endTime fields (structured schedule)
+  if (classItem.date && classItem.endTime) {
+    const classEndTime = new Date(`${classItem.date}T${classItem.endTime}`);
+    return classEndTime < new Date();
+  }
+  // Fallback: use endDate field
+  if (classItem.endDate) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const endDate = new Date(classItem.endDate + 'T00:00:00');
+    return endDate < today;
+  }
+  return false;
+};
+
+// Format time helper for 12h display
+export const format12h = (time24: string): string => {
+  if (!time24) return '';
+  const [hStr, mStr] = time24.split(':');
+  let h = parseInt(hStr, 10);
+  const period = h >= 12 ? 'PM' : 'AM';
+  if (h > 12) h -= 12;
+  if (h === 0) h = 12;
+  return `${h}:${mStr} ${period}`;
 };
