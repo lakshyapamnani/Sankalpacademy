@@ -57,7 +57,10 @@ export interface Class {
   subject: string;
   teacherId: string;
   batchId: string;
-  schedule: string;
+  schedule?: string;
+  date: string;
+  time: string;
+  endTime: string;
   endDate?: string; // ISO date string (YYYY-MM-DD)
 }
 
@@ -67,6 +70,7 @@ export interface InstituteSettings {
   phone: string;
   email: string;
 }
+
 
 export interface ClassNotification {
   id: string;
@@ -424,7 +428,7 @@ const buildClassNotificationPayload = (classData: Class): ClassNotification => {
     batchId: classData.batchId,
     teacherId: classData.teacherId,
     title: `${classData.name} scheduled`,
-    message: `${classData.subject} • ${classData.schedule}`,
+    message: `${classData.subject} • ${classData.date || ''} ${classData.time || ''} - ${classData.endTime || ''} ${classData.schedule || ''}`.trim(),
     createdAt: new Date().toISOString(),
   };
 };
@@ -800,9 +804,28 @@ export const saveInstituteSettings = async (settings: InstituteSettings): Promis
 
 // Class date helpers
 export const isClassPast = (classItem: Class): boolean => {
-  if (!classItem.endDate) return false;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const endDate = new Date(classItem.endDate + 'T00:00:00');
-  return endDate < today;
+  // Primary check: use date + endTime fields (structured schedule)
+  if (classItem.date && classItem.endTime) {
+    const classEndTime = new Date(`${classItem.date}T${classItem.endTime}`);
+    return classEndTime < new Date();
+  }
+  // Fallback: use endDate field
+  if (classItem.endDate) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const endDate = new Date(classItem.endDate + 'T00:00:00');
+    return endDate < today;
+  }
+  return false;
+};
+
+// Format time helper for 12h display
+export const format12h = (time24: string): string => {
+  if (!time24) return '';
+  const [hStr, mStr] = time24.split(':');
+  let h = parseInt(hStr, 10);
+  const period = h >= 12 ? 'PM' : 'AM';
+  if (h > 12) h -= 12;
+  if (h === 0) h = 12;
+  return `${h}:${mStr} ${period}`;
 };

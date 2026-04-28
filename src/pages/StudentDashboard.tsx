@@ -18,6 +18,7 @@ import {
   getTestResultsByStudent,
   getFeeRecordByStudent,
   isClassPast,
+  format12h,
   ClassNotification,
   AttendanceRecord,
   Class,
@@ -197,7 +198,7 @@ const StudentDashboard = () => {
                 )}
               </div>
               <p className="text-sm text-muted-foreground">{classItem.subject}</p>
-              <p className="text-xs text-muted-foreground mt-1">{classItem.schedule}</p>
+              <p className="text-xs text-muted-foreground mt-1">{classItem.date} • {format12h(classItem.time)} - {format12h(classItem.endTime)}</p>
             </div>
           );
         })}

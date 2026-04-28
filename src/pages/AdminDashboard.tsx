@@ -35,6 +35,7 @@ import {
   getInstituteSettings,
   saveInstituteSettings,
   isClassPast,
+  format12h,
   Teacher,
   Student,
   Class,
@@ -273,7 +274,10 @@ const AdminDashboard = () => {
       subject: formData.get("subject") as string,
       teacherId: formData.get("teacherId") as string,
       batchId: formData.get("batchId") as string,
-      schedule: formData.get("schedule") as string,
+      schedule: formData.get("schedule") as string || undefined,
+      date: formData.get("date") as string,
+      time: formData.get("time") as string,
+      endTime: formData.get("endTime") as string,
       endDate: (formData.get("endDate") as string) || undefined,
     };
     try {
@@ -1017,8 +1021,22 @@ const AdminDashboard = () => {
                           </Select>
                         </div>
                         <div>
-                          <Label htmlFor="class-schedule">Schedule</Label>
-                          <Input id="class-schedule" name="schedule" placeholder="e.g., Mon, Wed, Fri - 10:00 AM" required />
+                          <Label htmlFor="class-schedule">Schedule (optional text)</Label>
+                          <Input id="class-schedule" name="schedule" placeholder="e.g., Mon, Wed, Fri" />
+                        </div>
+                        <div>
+                          <Label htmlFor="class-date">Date</Label>
+                          <Input id="class-date" name="date" type="date" required />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <Label htmlFor="class-time">Start Time</Label>
+                            <Input id="class-time" name="time" type="time" required />
+                          </div>
+                          <div>
+                            <Label htmlFor="class-endTime">End Time</Label>
+                            <Input id="class-endTime" name="endTime" type="time" required />
+                          </div>
                         </div>
                         <div>
                           <Label htmlFor="class-endDate">End Date (optional)</Label>
@@ -1068,7 +1086,7 @@ const AdminDashboard = () => {
                               <span className="font-medium">Batch:</span> {batch?.name || 'Unknown'}
                             </p>
                             <p className="text-xs">
-                              <span className="font-medium">Schedule:</span> {classItem.schedule}
+                              <span className="font-medium">Schedule:</span> {classItem.date} • {format12h(classItem.time)} - {format12h(classItem.endTime)}
                             </p>
                             {classItem.endDate && (
                               <p className="text-xs">

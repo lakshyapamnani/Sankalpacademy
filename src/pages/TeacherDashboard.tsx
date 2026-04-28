@@ -42,6 +42,7 @@ import {
   subscribeToClassNotifications,
   acknowledgeClassNotification,
   isClassPast,
+  format12h,
   ClassNotification,
   Class,
   Student,
@@ -392,7 +393,7 @@ const TeacherDashboard = () => {
                   {classItem.subject}
                 </p>
                 <p className="text-xs font-medium text-primary mt-1">
-                  {classItem.schedule}
+                  {classItem.date} • {format12h(classItem.time)} - {format12h(classItem.endTime)}
                 </p>
               </div>
               {!isPast && (
@@ -490,7 +491,7 @@ const TeacherDashboard = () => {
                   {selectedClass.name}
                 </h3>
                 <p className="text-xs sm:text-sm text-muted-foreground">
-                  {selectedClass.subject} • {selectedClass.schedule}
+                  {selectedClass.subject} • {selectedClass.date} {format12h(selectedClass.time)} to {format12h(selectedClass.endTime)}
                 </p>
               </div>
             </div>
