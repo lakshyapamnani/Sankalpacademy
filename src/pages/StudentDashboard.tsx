@@ -57,6 +57,8 @@ const StudentDashboard = () => {
   const [feeRecord, setFeeRecord] = useState<FeeRecord | null>(null);
 
   const [activeTab, setActiveTab] = useState<"home" | "notes" | "ai" | "tests" | "profile">("home");
+  const [activeTest, setActiveTest] = useState<Test | null>(null);
+  const [testAnswers, setTestAnswers] = useState<Record<string, string>>({});
   const seenNotificationIds = useRef<Set<string>>(new Set());
   const hasRegisteredForPush = useRef(false);
   const currentUser = getCurrentUser();
