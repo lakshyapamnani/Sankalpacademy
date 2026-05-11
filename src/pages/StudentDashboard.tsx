@@ -380,6 +380,10 @@ const StudentDashboard = () => {
                       <p className={`text-xl font-bold ${getScoreColor(pct)}`}>{result.marksObtained}<span className="text-sm text-muted-foreground font-normal">/{test.totalMarks}</span></p>
                       <p className={`text-xs font-semibold ${getScoreColor(pct)}`}>{pct}%</p>
                     </div>
+                  ) : test.questions && test.questions.length > 0 ? (
+                    <Button size="sm" onClick={() => { setActiveTest(test); setTestAnswers({}); }}>
+                      Take Test
+                    </Button>
                   ) : (
                     <span className="text-xs font-medium text-muted-foreground bg-muted px-2.5 py-1 rounded-full">Not Graded</span>
                   )}
