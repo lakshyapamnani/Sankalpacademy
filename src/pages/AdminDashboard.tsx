@@ -1007,10 +1007,10 @@ const AdminDashboard = () => {
                               />
                             </div>
                             <div className="text-xs text-muted-foreground space-y-1">
-                              <p>Batch: <span className="font-medium text-foreground">{batch?.name}</span></p>
+                              <p>Batches: <span className="font-medium text-foreground">{batchNames}</span></p>
                               <p>{new Date(test.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
                               <div className="flex items-center justify-between mt-2">
-                                <span>Total: {test.totalMarks} marks</span>
+                                <span>{test.questions ? `${test.questions.length} MCQ` : `Total: ${test.totalMarks} marks`}</span>
                                 {avgScore !== null && (
                                   <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${avgScore >= 75 ? 'bg-emerald-100 text-emerald-700' : avgScore >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
                                     Avg: {avgScore}%
