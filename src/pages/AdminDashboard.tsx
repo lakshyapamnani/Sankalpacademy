@@ -254,6 +254,7 @@ const AdminDashboard = () => {
       password: formData.get("password") as string,
       collegeName: formData.get("collegeName") as string,
       phoneNo: formData.get("phoneNo") as string,
+      whatsappNo: formData.get("whatsappNo") as string,
       studentClass: formData.get("studentClass") as string,
     };
     const form = e.currentTarget;
