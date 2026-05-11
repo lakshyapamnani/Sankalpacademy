@@ -327,21 +327,94 @@ const AdminDashboard = () => {
     loadData();
   };
 
-  const handleAddTest = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
+  const handleCreateMCQTest = () => {
+    const { name, date, batchIds, questions } = testForm;
+    if (!name.trim()) { toast.error("Test name is required"); return; }
+    if (batchIds.length === 0) { toast.error("Select at least one batch"); return; }
+    if (questions.length === 0) { toast.error("Add at least one question"); return; }
+    for (const q of questions) {
+      if (!q.question.trim()) { toast.error("Every question needs text"); return; }
+      if (q.options.some(o => !o.text.trim())) { toast.error("All options need text"); return; }
+      if (!q.options.find(o => o.id === q.correctOptionId)) { toast.error("Pick a correct answer for every question"); return; }
+    }
     const test: Test = {
       id: Date.now().toString(),
-      name: formData.get("name") as string,
-      batchId: formData.get("batchId") as string,
-      date: formData.get("date") as string,
-      totalMarks: Number(formData.get("totalMarks")),
+      name: name.trim(),
+      batchIds,
+      date,
+      totalMarks: questions.length,
+      questions,
     };
     addTest(test);
-    toast.success("Test added successfully");
+    toast.success("MCQ test created");
     setOpenDialog(null);
+    setTestForm({
+      name: '', date: new Date().toISOString().split('T')[0], batchIds: [],
+      questions: [{ id: 'q1', question: '', options: [
+        { id: 'o1', text: '' }, { id: 'o2', text: '' }, { id: 'o3', text: '' }, { id: 'o4', text: '' }
+      ], correctOptionId: 'o1' }],
+    });
     loadData();
   };
+
+  const addQuestionToForm = () => {
+    const qid = `q${Date.now()}`;
+    setTestForm(prev => ({
+      ...prev,
+      questions: [...prev.questions, {
+        id: qid, question: '',
+        options: [
+          { id: `${qid}_o1`, text: '' }, { id: `${qid}_o2`, text: '' },
+          { id: `${qid}_o3`, text: '' }, { id: `${qid}_o4`, text: '' },
+        ],
+        correctOptionId: `${qid}_o1`,
+      }],
+    }));
+  };
+
+  const removeQuestionFromForm = (qid: string) => {
+    setTestForm(prev => ({ ...prev, questions: prev.questions.filter(q => q.id !== qid) }));
+  };
+
+  const updateQuestionField = (qid: string, patch: Partial<MCQQuestion>) => {
+    setTestForm(prev => ({
+      ...prev,
+      questions: prev.questions.map(q => q.id === qid ? { ...q, ...patch } : q),
+    }));
+  };
+
+  const updateOptionText = (qid: string, oid: string, text: string) => {
+    setTestForm(prev => ({
+      ...prev,
+      questions: prev.questions.map(q => q.id === qid ? {
+        ...q, options: q.options.map(o => o.id === oid ? { ...o, text } : o)
+      } : q),
+    }));
+  };
+
+  const toggleBatchInTestForm = (batchId: string, checked: boolean) => {
+    setTestForm(prev => ({
+      ...prev,
+      batchIds: checked ? [...prev.batchIds, batchId] : prev.batchIds.filter(b => b !== batchId),
+    }));
+  };
+
+  const saveWaTemplate = (val: string) => {
+    setWaMessageTemplate(val);
+    localStorage.setItem('smartclass_wa_template', val);
+  };
+
+  const buildWaLink = (student: Student, dateStr: string): string | null => {
+    const phone = (student.whatsappNo || student.phoneNo || '').replace(/\D/g, '');
+    if (!phone) return null;
+    const formattedDate = new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    const text = waMessageTemplate
+      .replace(/\{name\}/g, student.name)
+      .replace(/\{date\}/g, formattedDate)
+      .replace(/\{institute\}/g, instituteSettings.name || 'SmartClass');
+    return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+  };
+
 
   const handleSaveMarks = (studentId: string, marksRaw: string) => {
     if (!selectedTest) return;
