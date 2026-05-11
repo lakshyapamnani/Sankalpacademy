@@ -581,7 +581,8 @@ const AdminDashboard = () => {
                             <div>
                               <p className="font-semibold text-base">{student.name}</p>
                               <p className="text-xs text-muted-foreground">{student.email}</p>
-                              {student.phoneNo && <p className="text-xs text-muted-foreground">{student.phoneNo}</p>}
+                             {student.phoneNo && <p className="text-xs text-muted-foreground">📞 {student.phoneNo}</p>}
+                             {student.whatsappNo && <p className="text-xs text-emerald-600">💬 {student.whatsappNo}</p>}
                             </div>
                             <DeleteDialog
                               title="Delete Student"
