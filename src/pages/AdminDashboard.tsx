@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, Settings, Award, TrendingUp } from "lucide-react";
+import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, Settings, Award, TrendingUp, UserX, MessageCircle, Trash2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
@@ -34,6 +35,7 @@ import {
   saveTestResult,
   getInstituteSettings,
   saveInstituteSettings,
+  getAbsentStudentsForDate,
   isClassPast,
   format12h,
   Teacher,
@@ -44,6 +46,8 @@ import {
   FeePayment,
   Test,
   TestResult,
+  MCQQuestion,
+  MCQOption,
   InstituteSettings,
 } from "@/lib/localStorage";
 
@@ -64,7 +68,7 @@ const formatFirebaseError = (message: string): string => {
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'batches' | 'students' | 'teachers' | 'classes' | 'fees' | 'tests' | 'settings'>('students');
+  const [activeTab, setActiveTab] = useState<'batches' | 'students' | 'teachers' | 'classes' | 'fees' | 'tests' | 'absent' | 'settings'>('students');
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
