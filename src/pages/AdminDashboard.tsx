@@ -95,6 +95,23 @@ const AdminDashboard = () => {
   // Institute Settings State
   const [instituteSettings, setInstituteSettingsState] = useState<InstituteSettings>(getInstituteSettings());
 
+  // Absent Today State
+  const [absentDate, setAbsentDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [waMessageTemplate, setWaMessageTemplate] = useState<string>(
+    () => localStorage.getItem('smartclass_wa_template') ||
+      'Hello Parent, your child {name} was absent today {date}. Kindly look into this. - {institute}'
+  );
+
+  // MCQ Test Builder State
+  const [testForm, setTestForm] = useState<{ name: string; date: string; batchIds: string[]; questions: MCQQuestion[] }>({
+    name: '',
+    date: new Date().toISOString().split('T')[0],
+    batchIds: [],
+    questions: [{ id: 'q1', question: '', options: [
+      { id: 'o1', text: '' }, { id: 'o2', text: '' }, { id: 'o3', text: '' }, { id: 'o4', text: '' }
+    ], correctOptionId: 'o1' }],
+  });
+
   useEffect(() => {
     loadData();
   }, []);
