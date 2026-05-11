@@ -617,6 +617,79 @@ const AdminDashboard = () => {
               </Card>
             )}
 
+            {/* ABSENT TODAY VIEW */}
+            {activeTab === 'absent' && (() => {
+              const absentList = getAbsentStudentsForDate(absentDate);
+              return (
+                <div className="space-y-6">
+                  <Card className="p-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-4">
+                      <div>
+                        <h3 className="text-xl font-semibold flex items-center gap-2"><UserX className="h-5 w-5 text-red-500" /> Absent Students</h3>
+                        <p className="text-sm text-muted-foreground">Notify parents via WhatsApp with one click</p>
+                      </div>
+                      <div>
+                        <Label htmlFor="absent-date" className="text-xs">Date</Label>
+                        <Input id="absent-date" type="date" value={absentDate} onChange={(e) => setAbsentDate(e.target.value)} />
+                      </div>
+                    </div>
+
+                    <div className="mb-6 p-4 rounded-lg border bg-accent/30">
+                      <Label htmlFor="wa-template" className="text-sm font-medium">WhatsApp Message Template</Label>
+                      <p className="text-xs text-muted-foreground mb-2">
+                        Available placeholders: <code className="bg-muted px-1 rounded">{"{name}"}</code>, <code className="bg-muted px-1 rounded">{"{date}"}</code>, <code className="bg-muted px-1 rounded">{"{institute}"}</code>
+                      </p>
+                      <Textarea
+                        id="wa-template"
+                        rows={3}
+                        value={waMessageTemplate}
+                        onChange={(e) => saveWaTemplate(e.target.value)}
+                      />
+                    </div>
+
+                    {absentList.length === 0 ? (
+                      <div className="py-12 text-center text-muted-foreground bg-accent/20 rounded-lg border-2 border-dashed">
+                        🎉 No absent students recorded for this date.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {absentList.map(({ student }) => {
+                          const link = buildWaLink(student, absentDate);
+                          const batch = batches.find(b => b.id === student.batchId);
+                          return (
+                            <div key={student.id} className="p-4 rounded-lg border bg-card hover:shadow-md transition-shadow">
+                              <div className="flex items-start justify-between mb-3">
+                                <div>
+                                  <p className="font-semibold">{student.name}</p>
+                                  <p className="text-xs text-muted-foreground">{batch?.name || 'No batch'}</p>
+                                </div>
+                                <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">Absent</span>
+                              </div>
+                              <p className="text-xs text-muted-foreground mb-3">
+                                {student.whatsappNo ? `WhatsApp: ${student.whatsappNo}` : student.phoneNo ? `Phone: ${student.phoneNo}` : 'No contact number'}
+                              </p>
+                              {link ? (
+                                <a
+                                  href={link}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-3 py-2 transition-colors"
+                                >
+                                  <MessageCircle className="h-4 w-4" /> Send WhatsApp
+                                </a>
+                              ) : (
+                                <Button disabled variant="outline" className="w-full" size="sm">No WhatsApp number</Button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </Card>
+                </div>
+              );
+            })()}
+
             {/* FEES VIEW */}
             {activeTab === 'fees' && (
               <div className="space-y-6">
