@@ -480,6 +480,7 @@ const AdminDashboard = () => {
     { id: 'teachers', label: 'Teachers', icon: BookOpen, action: () => setActiveTab('teachers') },
     { id: 'classes', label: 'Classes', icon: Calendar, action: () => setActiveTab('classes') },
     { id: 'batches', label: 'Batches', icon: BarChart3, action: () => setActiveTab('batches') },
+    { id: 'absent', label: 'Absent Today', icon: UserX, action: () => setActiveTab('absent') },
     { id: 'fees', label: 'Fees Mgmt', icon: IndianRupee, action: () => setActiveTab('fees') },
     { id: 'tests', label: 'Tests', icon: CheckSquare, action: () => setActiveTab('tests') },
     { id: 'settings', label: 'Settings', icon: Settings, action: () => setActiveTab('settings') },
@@ -527,6 +528,10 @@ const AdminDashboard = () => {
                         <div>
                           <Label htmlFor="student-phoneNo">Phone Number</Label>
                           <Input id="student-phoneNo" name="phoneNo" />
+                        </div>
+                        <div>
+                          <Label htmlFor="student-whatsappNo">WhatsApp Number (with country code, e.g. 9198XXXXXXXX)</Label>
+                          <Input id="student-whatsappNo" name="whatsappNo" placeholder="e.g. 919876543210" />
                         </div>
                         <div>
                           <Label htmlFor="student-collegeName">College Name</Label>
