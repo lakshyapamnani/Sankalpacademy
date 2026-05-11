@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 import { Calendar, BookOpen, Brain, FileText, Home, Bot, UserCircle, MessageSquare, CheckSquare, IndianRupee, Award, TrendingUp } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -17,6 +20,7 @@ import {
   getTestsByBatch,
   getTestResultsByStudent,
   getFeeRecordByStudent,
+  saveTestResult,
   isClassPast,
   format12h,
   ClassNotification,
@@ -53,6 +57,8 @@ const StudentDashboard = () => {
   const [feeRecord, setFeeRecord] = useState<FeeRecord | null>(null);
 
   const [activeTab, setActiveTab] = useState<"home" | "notes" | "ai" | "tests" | "profile">("home");
+  const [activeTest, setActiveTest] = useState<Test | null>(null);
+  const [testAnswers, setTestAnswers] = useState<Record<string, string>>({});
   const seenNotificationIds = useRef<Set<string>>(new Set());
   const hasRegisteredForPush = useRef(false);
   const currentUser = getCurrentUser();
@@ -261,6 +267,58 @@ const StudentDashboard = () => {
   );
 
   const renderTestsCard = () => {
+    // Test-taking interface
+    if (activeTest && activeTest.questions && currentStudent) {
+      const questions = activeTest.questions;
+      const allAnswered = questions.every(q => testAnswers[q.id]);
+      const handleSubmit = () => {
+        if (!allAnswered) { toast.error("Please answer all questions"); return; }
+        let score = 0;
+        questions.forEach(q => { if (testAnswers[q.id] === q.correctOptionId) score += 1; });
+        saveTestResult({
+          id: `${currentStudent.id}_${activeTest.id}`,
+          testId: activeTest.id,
+          studentId: currentStudent.id,
+          marksObtained: score,
+          answers: testAnswers,
+          submittedAt: new Date().toISOString(),
+        });
+        toast.success(`Submitted! You scored ${score}/${questions.length}`);
+        setActiveTest(null);
+        setTestAnswers({});
+        setTestResults(getTestResultsByStudent(currentStudent.id));
+      };
+      return (
+        <div className="space-y-4">
+          <Card className="p-4 sticky top-0 z-10 bg-card/95 backdrop-blur">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h3 className="font-semibold">{activeTest.name}</h3>
+                <p className="text-xs text-muted-foreground">{questions.length} questions • {Object.keys(testAnswers).length} answered</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => { setActiveTest(null); setTestAnswers({}); }}>Cancel</Button>
+            </div>
+          </Card>
+          {questions.map((q, idx) => (
+            <Card key={q.id} className="p-5">
+              <p className="font-medium mb-3">Q{idx + 1}. {q.question}</p>
+              <RadioGroup value={testAnswers[q.id] || ''} onValueChange={(v) => setTestAnswers(prev => ({ ...prev, [q.id]: v }))}>
+                <div className="space-y-2">
+                  {q.options.map(opt => (
+                    <div key={opt.id} className="flex items-center gap-3 p-2 rounded border hover:bg-accent/30">
+                      <RadioGroupItem value={opt.id} id={`${q.id}-${opt.id}`} />
+                      <Label htmlFor={`${q.id}-${opt.id}`} className="cursor-pointer flex-1">{opt.text}</Label>
+                    </div>
+                  ))}
+                </div>
+              </RadioGroup>
+            </Card>
+          ))}
+          <Button className="w-full" onClick={handleSubmit} disabled={!allAnswered}>Submit Test</Button>
+        </div>
+      );
+    }
+
     const gradedTests = tests.filter(t => testResults.find(r => r.testId === t.id));
     const overallAvg = gradedTests.length > 0
       ? Math.round(
@@ -322,6 +380,10 @@ const StudentDashboard = () => {
                       <p className={`text-xl font-bold ${getScoreColor(pct)}`}>{result.marksObtained}<span className="text-sm text-muted-foreground font-normal">/{test.totalMarks}</span></p>
                       <p className={`text-xs font-semibold ${getScoreColor(pct)}`}>{pct}%</p>
                     </div>
+                  ) : test.questions && test.questions.length > 0 ? (
+                    <Button size="sm" onClick={() => { setActiveTest(test); setTestAnswers({}); }}>
+                      Take Test
+                    </Button>
                   ) : (
                     <span className="text-xs font-medium text-muted-foreground bg-muted px-2.5 py-1 rounded-full">Not Graded</span>
                   )}

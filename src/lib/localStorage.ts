@@ -20,6 +20,7 @@ export interface Student {
   firebaseUid?: string;
   collegeName?: string;
   phoneNo?: string;
+  whatsappNo?: string;
   studentClass?: string;
 }
 
@@ -36,12 +37,26 @@ export interface FeeRecord {
   payments: FeePayment[];
 }
 
+export interface MCQOption {
+  id: string;
+  text: string;
+}
+
+export interface MCQQuestion {
+  id: string;
+  question: string;
+  options: MCQOption[];
+  correctOptionId: string;
+}
+
 export interface Test {
   id: string;
   name: string;
-  batchId: string;
+  batchId?: string; // legacy single-batch
+  batchIds?: string[]; // new multi-batch assignment
   date: string;
   totalMarks: number;
+  questions?: MCQQuestion[];
 }
 
 export interface TestResult {
@@ -49,6 +64,8 @@ export interface TestResult {
   testId: string;
   studentId: string;
   marksObtained: number;
+  answers?: Record<string, string>; // questionId -> selectedOptionId
+  submittedAt?: string;
 }
 
 export interface Class {
@@ -711,7 +728,23 @@ export const addFeePayment = (studentId: string, amount: number): FeeRecord | nu
 
 // Tests
 export const getTests = (): Test[] => getFromStorage<Test>(STORAGE_KEYS.TESTS);
-export const getTestsByBatch = (batchId: string): Test[] => getTests().filter(t => t.batchId === batchId);
+export const getTestsByBatch = (batchId: string): Test[] => getTests().filter(t => t.batchId === batchId || (t.batchIds && t.batchIds.includes(batchId)));
+
+export const getAbsentStudentsForDate = (date: string): { student: Student; classId: string }[] => {
+  const records = getAttendance().filter(a => a.date === date && String(a.status).toLowerCase() === 'absent');
+  const students = getStudents();
+  const seen = new Set<string>();
+  const result: { student: Student; classId: string }[] = [];
+  for (const r of records) {
+    if (seen.has(r.studentId)) continue;
+    const s = students.find(st => st.id === r.studentId);
+    if (s) {
+      seen.add(r.studentId);
+      result.push({ student: s, classId: r.classId });
+    }
+  }
+  return result;
+};
 export const addTest = (test: Test): void => {
   const tests = getTests();
   saveToStorage(STORAGE_KEYS.TESTS, [...tests, test]);
