@@ -898,40 +898,85 @@ const AdminDashboard = () => {
                           <span>Add Test</span>
                         </Button>
                       </DialogTrigger>
-                      <DialogContent>
+                      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                         <DialogHeader>
-                          <DialogTitle>Add New Test</DialogTitle>
+                          <DialogTitle>Create MCQ Test</DialogTitle>
                         </DialogHeader>
-                        <form onSubmit={handleAddTest} className="space-y-4">
-                          <div>
-                            <Label htmlFor="test-name">Test Name</Label>
-                            <Input id="test-name" name="name" placeholder="e.g. Midterm Exam" required />
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <Label htmlFor="test-name">Test Name</Label>
+                              <Input id="test-name" value={testForm.name} onChange={(e) => setTestForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Midterm Exam" />
+                            </div>
+                            <div>
+                              <Label htmlFor="test-date">Date</Label>
+                              <Input id="test-date" type="date" value={testForm.date} onChange={(e) => setTestForm(p => ({ ...p, date: e.target.value }))} />
+                            </div>
                           </div>
+
                           <div>
-                            <Label htmlFor="test-batch">Batch</Label>
-                            <Select name="batchId" required>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select batch" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {batches.map((batch) => (
-                                  <SelectItem key={batch.id} value={batch.id}>
-                                    {batch.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            <Label className="mb-2 block">Assign to Batches (select one or more)</Label>
+                            <div className="grid grid-cols-2 gap-2 p-3 border rounded-md bg-accent/20">
+                              {batches.map(batch => (
+                                <label key={batch.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                                  <Checkbox
+                                    checked={testForm.batchIds.includes(batch.id)}
+                                    onCheckedChange={(c) => toggleBatchInTestForm(batch.id, !!c)}
+                                  />
+                                  <span>{batch.name}</span>
+                                </label>
+                              ))}
+                              {batches.length === 0 && <p className="text-xs text-muted-foreground col-span-2">No batches available</p>}
+                            </div>
                           </div>
-                          <div>
-                            <Label htmlFor="test-date">Date</Label>
-                            <Input id="test-date" name="date" type="date" required />
+
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <Label>Questions ({testForm.questions.length})</Label>
+                              <Button type="button" size="sm" variant="outline" onClick={addQuestionToForm}>
+                                <Plus className="h-3 w-3 mr-1" /> Add Question
+                              </Button>
+                            </div>
+                            {testForm.questions.map((q, qIdx) => (
+                              <div key={q.id} className="border rounded-md p-4 bg-card space-y-3">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex-1">
+                                    <Label className="text-xs text-muted-foreground">Question {qIdx + 1}</Label>
+                                    <Textarea
+                                      rows={2}
+                                      placeholder="Enter the question"
+                                      value={q.question}
+                                      onChange={(e) => updateQuestionField(q.id, { question: e.target.value })}
+                                    />
+                                  </div>
+                                  {testForm.questions.length > 1 && (
+                                    <Button type="button" size="icon" variant="ghost" className="text-red-500 mt-5" onClick={() => removeQuestionFromForm(q.id)}>
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                </div>
+                                <div className="space-y-2">
+                                  <p className="text-xs text-muted-foreground">Tick the correct answer</p>
+                                  {q.options.map((opt, optIdx) => (
+                                    <div key={opt.id} className="flex items-center gap-2">
+                                      <Checkbox
+                                        checked={q.correctOptionId === opt.id}
+                                        onCheckedChange={(c) => { if (c) updateQuestionField(q.id, { correctOptionId: opt.id }); }}
+                                      />
+                                      <Input
+                                        placeholder={`Option ${optIdx + 1}`}
+                                        value={opt.text}
+                                        onChange={(e) => updateOptionText(q.id, opt.id, e.target.value)}
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                          <div>
-                            <Label htmlFor="test-marks">Total Marks</Label>
-                            <Input id="test-marks" name="totalMarks" type="number" required />
-                          </div>
-                          <Button type="submit" className="w-full">Create Test</Button>
-                        </form>
+
+                          <Button onClick={handleCreateMCQTest} className="w-full">Create Test</Button>
+                        </div>
                       </DialogContent>
                     </Dialog>
                   </div>
@@ -940,7 +985,9 @@ const AdminDashboard = () => {
                     {/* Test List */}
                     <div className="lg:col-span-1 space-y-3 max-h-[60vh] overflow-y-auto pr-2">
                       {tests.map(test => {
-                        const batch = batches.find(b => b.id === test.batchId);
+                        const batchNames = (test.batchIds && test.batchIds.length > 0)
+                          ? test.batchIds.map(bid => batches.find(b => b.id === bid)?.name).filter(Boolean).join(', ')
+                          : (batches.find(b => b.id === test.batchId)?.name || 'Unknown');
                         const isSelected = selectedTest?.id === test.id;
                         const results = getTestResultsByTest(test.id);
                         const avgScore = results.length > 0 ? Math.round((results.reduce((s, r) => s + r.marksObtained, 0) / results.length / test.totalMarks) * 100) : null;
