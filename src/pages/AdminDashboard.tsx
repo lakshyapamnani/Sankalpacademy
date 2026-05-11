@@ -1038,7 +1038,8 @@ const AdminDashboard = () => {
                           </div>
                           <div className="p-4 space-y-2 max-h-[50vh] overflow-y-auto">
                             {(() => {
-                              const batchStudents = students.filter(s => s.batchId === selectedTest.batchId);
+                              const allowedBatchIds = (selectedTest.batchIds && selectedTest.batchIds.length > 0) ? selectedTest.batchIds : (selectedTest.batchId ? [selectedTest.batchId] : []);
+                              const batchStudents = students.filter(s => allowedBatchIds.includes(s.batchId));
                               if (batchStudents.length === 0) return <p className="text-sm text-muted-foreground py-4 text-center">No students in this batch.</p>;
                               
                               return batchStudents.map(student => {
