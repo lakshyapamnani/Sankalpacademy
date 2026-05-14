@@ -190,6 +190,7 @@ const STORAGE_KEYS = {
   TESTS: 'smartclass_tests',
   TEST_RESULTS: 'smartclass_test_results',
   STAFF: 'smartclass_staff',
+  INSTITUTE_SETTINGS: 'smartclass_institute_settings',
 };
 
 const DB_PATHS = {
@@ -206,6 +207,7 @@ const DB_PATHS = {
   TESTS: 'tests',
   TEST_RESULTS: 'testResults',
   STAFF: 'staff',
+  INSTITUTE_SETTINGS: 'instituteSettings',
 };
 
 // Initialize default data
@@ -256,7 +258,9 @@ initializeDefaultData();
 
 const writeItemToRealtime = async (collection: string, id: string, value: unknown) => {
   try {
-    await set(ref(database, `${collection}/${id}`), value);
+    // Strip undefined values – Firebase Realtime Database rejects them
+    const cleanValue = JSON.parse(JSON.stringify(value));
+    await set(ref(database, `${collection}/${id}`), cleanValue);
   } catch (error) {
     console.error(`Failed to write ${collection}/${id} to Firebase`, error);
   }
