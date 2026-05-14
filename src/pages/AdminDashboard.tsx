@@ -334,6 +334,11 @@ const AdminDashboard = () => {
     loadData();
   };
 
+  const handleAddTest = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    handleCreateMCQTest();
+  };
+
   const handleCreateMCQTest = () => {
     const { name, date, batchIds, questions } = testForm;
     if (!name.trim()) { toast.error("Test name is required"); return; }
