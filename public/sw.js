@@ -4,7 +4,7 @@ const OFFLINE_URL = '/index.html';
 const FILES_TO_CACHE = [
   '/',
   '/manifest.json',
-  '/icons/Screenshot 2026-04-09 135955.ico'
+  '/icons/rct.ico'
 ];
 
 self.addEventListener('install', event => {

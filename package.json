@@ -103,7 +103,7 @@
       "target": [
         "nsis"
       ],
-      "icon": "public/favicon.ico"
+      "icon": "public/icons/rct.ico"
     },
     "nsis": {
       "oneClick": false,
