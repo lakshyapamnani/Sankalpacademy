@@ -39,16 +39,11 @@ export interface FeeRecord {
   payments: FeePayment[];
 }
 
-export interface MCQOption {
-  id: string;
-  text: string;
-}
-
 export interface MCQQuestion {
   id: string;
   question: string;
-  options: MCQOption[];
-  correctOptionId: string;
+  options: string[];
+  correctOptionIndex: number;
 }
 
 export interface Test {
@@ -67,7 +62,7 @@ export interface TestResult {
   testId: string;
   studentId: string;
   marksObtained: number;
-  answers?: Record<string, string>; // questionId -> selectedOptionId
+  answers?: Record<string, number>; // questionId -> selectedOptionIndex
   submittedAt?: string;
 }
 

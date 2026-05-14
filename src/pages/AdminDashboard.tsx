@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -81,6 +81,7 @@ const AdminDashboard = () => {
 
   // Tests State
   const [selectedTest, setSelectedTest] = useState<Test | null>(null);
+  const selectedTestIdRef = useRef<string | null>(null);
   const [testResults, setTestResults] = useState<TestResult[]>([]);
   const [absentMessage, setAbsentMessage] = useState<string>("Hello parent, your child {name} was absent today {date}.");
   const [birthdayMessage, setBirthdayMessage] = useState<string>("Happy Birthday {name}! 🎂 Wishing you a fantastic day ahead! 🎉");
@@ -107,14 +108,12 @@ const AdminDashboard = () => {
       'Hello Parent, your child {name} was absent today {date}. Kindly look into this. - {institute}'
   );
 
-  // MCQ Test Builder State
+  // MCQ Test Builder State (unused legacy – kept for potential future use)
   const [testForm, setTestForm] = useState<{ name: string; date: string; batchIds: string[]; questions: MCQQuestion[] }>({
     name: '',
     date: new Date().toISOString().split('T')[0],
     batchIds: [],
-    questions: [{ id: 'q1', question: '', options: [
-      { id: 'o1', text: '' }, { id: 'o2', text: '' }, { id: 'o3', text: '' }, { id: 'o4', text: '' }
-    ], correctOptionId: 'o1' }],
+    questions: [{ id: 'q1', question: '', options: ['', '', '', ''], correctOptionIndex: 0 }],
   });
 
   const [studentSearch, setStudentSearch] = useState('');
@@ -135,7 +134,7 @@ const AdminDashboard = () => {
     return classEndTime < new Date();
   };
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     const loadedStudents = getStudents();
     setStudents(loadedStudents);
     setClasses(getClasses());
@@ -149,11 +148,13 @@ const AdminDashboard = () => {
       setFeeRecord(freshRecord || null);
     }
     
-    if (selectedTest) {
-      const results = getTestResultsByTest(selectedTest.id);
+    // Always refresh test results for the currently selected test
+    const currentTestId = selectedTestIdRef.current;
+    if (currentTestId) {
+      const results = getTestResultsByTest(currentTestId);
       setTestResults(results);
     }
-  };
+  }, [selectedStudentForFees]);
 
   const handleSelectStudentForFees = async (student: Student) => {
     setSelectedStudentForFees(student);
@@ -164,6 +165,7 @@ const AdminDashboard = () => {
 
   const handleSelectTest = (test: Test) => {
     setSelectedTest(test);
+    selectedTestIdRef.current = test.id;
     const results = getTestResultsByTest(test.id);
     setTestResults(results);
   };
@@ -263,7 +265,10 @@ const AdminDashboard = () => {
   const handleDeleteTest = (testId: string) => {
     if (deleteTest(testId)) {
       toast.success("Test deleted successfully");
-      if (selectedTest?.id === testId) setSelectedTest(null);
+      if (selectedTest?.id === testId) {
+        setSelectedTest(null);
+        selectedTestIdRef.current = null;
+      }
       loadData();
     } else {
       toast.error("Failed to delete test");
@@ -367,7 +372,7 @@ const AdminDashboard = () => {
     const test: Test = {
       id: Date.now().toString(),
       name: formData.get("name") as string,
-      batchId: selectedBatches[0] || "", // Keep for legacy if needed
+      batchId: selectedBatches[0] || "",
       batchIds: selectedBatches,
       date: formData.get("date") as string,
       totalMarks: testType === 'mcq' ? mcqQuestions.length : Number(formData.get("totalMarks")),
@@ -382,43 +387,12 @@ const AdminDashboard = () => {
        for (const q of mcqQuestions) {
          if (!q.question.trim()) { toast.error("Every question needs text"); return; }
          if (q.options.some(o => !o.trim())) { toast.error("All options need text"); return; }
+         if (q.correctOptionIndex < 0 || q.correctOptionIndex >= q.options.length) {
+           toast.error("Select a correct answer for every question");
+           return;
+         }
        }
     }
-
-    if (selectedBatches.length === 0) {
-      toast.error("Please select at least one batch");
-      return;
-    }
-
-    addTest(test);
-    toast.success(`${testType.toUpperCase()} Test added successfully`);
-    setOpenDialog(null);
-    setMcqQuestions([]);
-    setSelectedBatches([]);
-    setTestType('subjective');
-    loadData();
-  };
-
-  const handleCreateMCQTest = () => {
-    const { name, date, batchIds, questions } = testForm;
-    if (!name.trim()) { toast.error("Test name is required"); return; }
-    if (batchIds.length === 0) { toast.error("Select at least one batch"); return; }
-    if (questions.length === 0) { toast.error("Add at least one question"); return; }
-    for (const q of questions) {
-      if (!q.question.trim()) { toast.error("Every question needs text"); return; }
-      if (q.options.some(o => !o.text.trim())) { toast.error("All options need text"); return; }
-      if (!q.options.find(o => o.id === q.correctOptionId)) { toast.error("Pick a correct answer for every question"); return; }
-    }
-    const test: Test = {
-      id: Date.now().toString(),
-      name: formData.get("name") as string,
-      batchId: selectedBatches[0] || "", // Keep for legacy if needed
-      batchIds: selectedBatches,
-      date: formData.get("date") as string,
-      totalMarks: testType === 'mcq' ? mcqQuestions.length : Number(formData.get("totalMarks")),
-      type: testType,
-      questions: testType === 'mcq' ? mcqQuestions : undefined,
-    };
 
     if (selectedBatches.length === 0) {
       toast.error("Please select at least one batch");

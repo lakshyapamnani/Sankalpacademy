@@ -17,6 +17,7 @@ import {
   acknowledgeClassNotification,
   getTestsByBatch,
   getTestResultsByStudent,
+  saveTestResult,
   getBatches,
   isClassPast,
   format12h,
@@ -144,9 +145,12 @@ const StudentDashboard = () => {
 
     setBatches(getBatches());
     
-    // Also fetch tests that have this student's batch in their batchIds array
+    // Fetch tests for this student's batch
     const allTests = getTestsByBatch(student.batchId);
     setTests(allTests);
+    
+    // Fetch this student's test results
+    setTestResults(getTestResultsByStudent(student.id));
   };
 
   useEffect(() => {
@@ -483,11 +487,15 @@ const StudentDashboard = () => {
                   {(() => {
                     const q = activeTakingTest.questions?.[currentQuestionIdx];
                     if (!q) return null;
+                    // Normalize options: support both string[] and MCQOption[] (legacy)
+                    const optionTexts: string[] = q.options.map((opt: any) =>
+                      typeof opt === 'string' ? opt : (opt?.text ?? String(opt))
+                    );
                     return (
                       <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
                         <h5 className="text-2xl font-bold leading-tight">{q.question}</h5>
                         <div className="grid gap-3">
-                          {q.options.map((opt, idx) => (
+                          {optionTexts.map((optText, idx) => (
                             <button
                               key={idx}
                               onClick={() => setSelectedAnswers({ ...selectedAnswers, [q.id]: idx })}
@@ -501,7 +509,7 @@ const StudentDashboard = () => {
                                 <div className={`h-6 w-6 rounded-full border-2 flex items-center justify-center transition-colors ${selectedAnswers[q.id] === idx ? 'border-primary bg-primary' : 'border-muted-foreground/30'}`}>
                                   {selectedAnswers[q.id] === idx && <div className="h-2 w-2 rounded-full bg-white" />}
                                 </div>
-                                <span className="text-lg">{opt}</span>
+                                <span className="text-lg">{optText}</span>
                               </div>
                             </button>
                           ))}
@@ -531,10 +539,17 @@ const StudentDashboard = () => {
                   ) : (
                     <Button 
                       onClick={() => {
-                        // AUTO GRADING LOGIC
+                        // AUTO GRADING: 1 question = 1 point
                         let score = 0;
+                        const answers: Record<string, number> = {};
                         activeTakingTest.questions?.forEach(q => {
-                          if (selectedAnswers[q.id] === q.correctOptionIndex) {
+                          const selected = selectedAnswers[q.id];
+                          if (selected !== undefined) {
+                            answers[q.id] = selected;
+                          }
+                          // Support both correctOptionIndex (new) and legacy correctOptionId
+                          const correctIdx = (q as any).correctOptionIndex;
+                          if (correctIdx !== undefined && selected === correctIdx) {
                             score++;
                           }
                         });
@@ -543,11 +558,16 @@ const StudentDashboard = () => {
                           id: `${currentStudent?.id}_${activeTakingTest.id}`,
                           testId: activeTakingTest.id,
                           studentId: currentStudent?.id || "",
-                          marksObtained: score
+                          marksObtained: score,
+                          answers,
+                          submittedAt: new Date().toISOString(),
                         };
                         
                         saveTestResult(result);
-                        setTestResults([...testResults, result]);
+                        setTestResults(prev => {
+                          const filtered = prev.filter(r => r.id !== result.id);
+                          return [...filtered, result];
+                        });
                         setTestCompleted(true);
                         toast.success("Test submitted successfully!");
                       }}
@@ -568,9 +588,10 @@ const StudentDashboard = () => {
                 <div className="bg-primary/5 rounded-[24px] p-8 inline-block min-w-[200px] border border-primary/10">
                    <p className="text-sm font-bold uppercase tracking-widest text-primary/60 mb-1">Your Score</p>
                    <p className="text-5xl font-black text-primary">
-                    {testResults.find(r => r.testId === activeTakingTest.id)?.marksObtained}
+                    {testResults.find(r => r.testId === activeTakingTest.id)?.marksObtained ?? 0}
                     <span className="text-xl text-muted-foreground font-normal"> / {activeTakingTest.totalMarks}</span>
                    </p>
+                   <p className="text-xs text-muted-foreground mt-2">1 point per correct answer</p>
                 </div>
                 <div>
                   <Button 
