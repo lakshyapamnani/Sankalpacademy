@@ -33,6 +33,15 @@ const StaffDashboard = () => {
 
   const currentUser = getCurrentUser();
 
+  // Returns YYYY-MM-DD in the local timezone (not UTC)
+  const getLocalDateString = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   const loadData = () => {
     setStudents(getStudents());
     setClasses(getClasses());
@@ -49,7 +58,7 @@ const StaffDashboard = () => {
 
   useEffect(() => {
     if (selectedAttendanceBatch) {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getLocalDateString();
       const batchStudents = students.filter(s => s.batchId === selectedAttendanceBatch);
       const attendance = getAttendance();
       
@@ -68,7 +77,7 @@ const StaffDashboard = () => {
 
   const handleSaveDailyAttendance = () => {
     if (!selectedAttendanceBatch) return;
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
     const timestamp = new Date().toLocaleTimeString();
     
     // For every student in the batch, if not in dailyAttendance (isAbsent), mark as present
@@ -93,7 +102,7 @@ const StaffDashboard = () => {
   };
 
   const isBatchMarkedToday = (batchId: string) => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
     const batchStudents = students.filter(s => s.batchId === batchId);
     if (batchStudents.length === 0) return false;
     

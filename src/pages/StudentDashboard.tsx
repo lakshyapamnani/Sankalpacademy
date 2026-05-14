@@ -287,7 +287,7 @@ const StudentDashboard = () => {
       </div>
       <div className="space-y-4">
         {tests.map(test => {
-          const result = testResults.find(r => r.testId === test.id);
+          const result = testResults.find(r => String(r.testId) === String(test.id));
           const hasResult = !!result;
           const isMcq = test.type === 'mcq' && test.questions && test.questions.length > 0;
           
@@ -538,7 +538,10 @@ const StudentDashboard = () => {
                     </Button>
                   ) : (
                     <Button 
-                      onClick={() => {
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
                         // AUTO GRADING: 1 question = 1 point
                         let score = 0;
                         const answers: Record<string, number> = {};
@@ -555,9 +558,9 @@ const StudentDashboard = () => {
                         });
 
                         const result: TestResult = {
-                          id: `${currentStudent?.id}_${activeTakingTest.id}`,
-                          testId: activeTakingTest.id,
-                          studentId: currentStudent?.id || "",
+                          id: String(`${currentStudent?.id}_${activeTakingTest.id}`),
+                          testId: String(activeTakingTest.id),
+                          studentId: String(currentStudent?.id || ""),
                           marksObtained: score,
                           answers,
                           submittedAt: new Date().toISOString(),
@@ -588,7 +591,7 @@ const StudentDashboard = () => {
                 <div className="bg-primary/5 rounded-[24px] p-8 inline-block min-w-[200px] border border-primary/10">
                    <p className="text-sm font-bold uppercase tracking-widest text-primary/60 mb-1">Your Score</p>
                    <p className="text-5xl font-black text-primary">
-                    {testResults.find(r => r.testId === activeTakingTest.id)?.marksObtained ?? 0}
+                    {testResults.find(r => String(r.testId) === String(activeTakingTest.id))?.marksObtained ?? 0}
                     <span className="text-xl text-muted-foreground font-normal"> / {activeTakingTest.totalMarks}</span>
                    </p>
                    <p className="text-xs text-muted-foreground mt-2">1 point per correct answer</p>
