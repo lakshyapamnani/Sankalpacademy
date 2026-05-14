@@ -1433,10 +1433,10 @@ const AdminDashboard = () => {
                           </Button>
                         </div>
                         <div className="flex gap-4">
-                          <div className="bg-primary text-primary px-3 py-1.5 rounded-md text-sm font-medium">
+                          <div className="bg-primary/10 text-primary px-3 py-1.5 rounded-md text-sm font-medium">
                             {batchStudents.length} Students
                           </div>
-                          <div className="bg-primary text-primary px-3 py-1.5 rounded-md text-sm font-medium">
+                          <div className="bg-primary/10 text-primary px-3 py-1.5 rounded-md text-sm font-medium">
                             {batchClasses.length} Classes
                           </div>
                         </div>
