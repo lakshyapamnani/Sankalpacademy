@@ -4,24 +4,20 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, Settings, Award, TrendingUp, UserX, MessageCircle, Trash2 } from "lucide-react";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import DashboardLayout, { SidebarItem } from "@/components/DashboardLayout";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import {
-  getTeachers,
   getStudents,
   getClasses,
   getBatches,
-  addTeacher,
   addStudent,
   addClass,
   addBatch,
-  deleteTeacher,
   deleteStudent,
   deleteClass,
   getStudentAttendance,
@@ -33,12 +29,11 @@ import {
   deleteTest,
   getTestResultsByTest,
   saveTestResult,
-  getInstituteSettings,
-  saveInstituteSettings,
-  getAbsentStudentsForDate,
-  isClassPast,
-  format12h,
-  Teacher,
+  subscribeToRealtimeUpdates,
+  markAttendance,
+  getStaff,
+  addStaff,
+  deleteStaff,
   Student,
   Class,
   Batch,
@@ -46,13 +41,12 @@ import {
   FeePayment,
   Test,
   TestResult,
+  Staff,
   MCQQuestion,
-  MCQOption,
-  InstituteSettings,
 } from "@/lib/localStorage";
 
 const formatFirebaseError = (message: string): string => {
-  const normalized = message.replace(/_/g, " ");
+  const normalized = message.split("_").join(" ");
   const upper = message.toUpperCase();
 
   if (upper.includes("EMAIL EXISTS")) {
@@ -68,13 +62,14 @@ const formatFirebaseError = (message: string): string => {
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'batches' | 'students' | 'teachers' | 'classes' | 'fees' | 'tests' | 'absent' | 'settings'>('students');
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [activeTab, setActiveTab] = useState<'batches' | 'students' | 'staff' | 'classes' | 'fees' | 'tests' | 'attendance' | 'birthdays'>('students');
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [tests, setTests] = useState<Test[]>([]);
+  const [staff, setStaff] = useState<Staff[]>([]);
   const [openDialog, setOpenDialog] = useState<string | null>(null);
+  const [selectedReportBatch, setSelectedReportBatch] = useState<string | null>(null);
 
   // Fees State
   const [selectedStudentForFees, setSelectedStudentForFees] = useState<Student | null>(null);
@@ -84,6 +79,13 @@ const AdminDashboard = () => {
   // Tests State
   const [selectedTest, setSelectedTest] = useState<Test | null>(null);
   const [testResults, setTestResults] = useState<TestResult[]>([]);
+  const [absentMessage, setAbsentMessage] = useState<string>("Hello parent, your child {name} was absent today {date}.");
+  const [birthdayMessage, setBirthdayMessage] = useState<string>("Happy Birthday {name}! 🎂 Wishing you a fantastic day ahead! 🎉");
+
+  // MCQ Creation State
+  const [mcqQuestions, setMcqQuestions] = useState<MCQQuestion[]>([]);
+  const [selectedBatches, setSelectedBatches] = useState<string[]>([]);
+  const [testType, setTestType] = useState<'subjective' | 'mcq'>('subjective');
 
   // Print state
   const [receiptData, setReceiptData] = useState<{
@@ -114,20 +116,30 @@ const AdminDashboard = () => {
 
   useEffect(() => {
     loadData();
+    // Subscribe to realtime updates
+    const unsubscribe = subscribeToRealtimeUpdates(() => {
+      loadData();
+    });
+    return () => unsubscribe();
   }, []);
 
-  const loadData = () => {
-    setTeachers(getTeachers());
+  const isClassPassed = (classItem: Class) => {
+    if (!classItem.date || !classItem.endTime) return false;
+    const classEndTime = new Date(`${classItem.date}T${classItem.endTime}`);
+    return classEndTime < new Date();
+  };
+
+  const loadData = async () => {
     const loadedStudents = getStudents();
     setStudents(loadedStudents);
     setClasses(getClasses());
     setBatches(getBatches());
     setTests(getTests());
-    setInstituteSettingsState(getInstituteSettings());
+    setStaff(getStaff());
 
     if (selectedStudentForFees) {
       // Reload fee record if editing
-      const freshRecord = getFeeRecordByStudent(selectedStudentForFees.id);
+      const freshRecord = await getFeeRecordByStudent(selectedStudentForFees.id);
       setFeeRecord(freshRecord || null);
     }
     
@@ -137,9 +149,9 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleSelectStudentForFees = (student: Student) => {
+  const handleSelectStudentForFees = async (student: Student) => {
     setSelectedStudentForFees(student);
-    const record = getFeeRecordByStudent(student.id);
+    const record = await getFeeRecordByStudent(student.id);
     setFeeRecord(record || null);
     setPaymentAmount("");
   };
@@ -150,7 +162,7 @@ const AdminDashboard = () => {
     setTestResults(results);
   };
 
-  const handleSaveFeeStructure = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSaveFeeStructure = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!selectedStudentForFees) return;
     const formData = new FormData(e.currentTarget);
@@ -163,12 +175,12 @@ const AdminDashboard = () => {
       emiMonths,
       payments: feeRecord?.payments || [],
     };
-    updateFeeRecord(newRecord);
+    await updateFeeRecord(newRecord);
     setFeeRecord(newRecord);
     toast.success("Fee structure saved successfully");
   };
 
-  const handleAddPayment = () => {
+  const handleAddPayment = async () => {
     if (!selectedStudentForFees || !feeRecord || !paymentAmount) return;
     const amount = Number(paymentAmount);
     if (isNaN(amount) || amount <= 0) {
@@ -176,7 +188,7 @@ const AdminDashboard = () => {
       return;
     }
     
-    const updatedRecord = addFeePayment(selectedStudentForFees.id, amount);
+    const updatedRecord = await addFeePayment(selectedStudentForFees.id, amount);
     if (updatedRecord) {
       setFeeRecord(updatedRecord);
       setPaymentAmount("");
@@ -200,13 +212,28 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleDeleteTeacher = (teacherId: string) => {
-    if (deleteTeacher(teacherId)) {
-      toast.success("Teacher deleted successfully");
-      loadData();
-    } else {
-      toast.error("Failed to delete teacher");
-    }
+  // Staff Attendance State
+  const [selectedAttendanceBatch, setSelectedAttendanceBatch] = useState<string | null>(null);
+  const [dailyAttendance, setDailyAttendance] = useState<Record<string, 'present' | 'absent'>>({});
+
+  const handleSaveDailyAttendance = () => {
+    if (!selectedAttendanceBatch) return;
+    const today = new Date().toISOString().split('T')[0];
+    
+    Object.entries(dailyAttendance).forEach(([studentId, status]) => {
+      markAttendance({
+        id: `${studentId}_${today}`,
+        studentId,
+        classId: 'daily',
+        date: today,
+        status
+      });
+    });
+    
+    toast.success(`Attendance for ${batches.find(b => b.id === selectedAttendanceBatch)?.name} saved!`);
+    setSelectedAttendanceBatch(null);
+    setDailyAttendance({});
+    loadData();
   };
 
   const handleDeleteStudent = (studentId: string) => {
@@ -237,29 +264,6 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleAddTeacher = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const teacher: Teacher = {
-      id: Date.now().toString(),
-      name: formData.get("name") as string,
-      email: formData.get("email") as string,
-      subject: formData.get("subject") as string,
-      password: formData.get("password") as string,
-    };
-    const form = e.currentTarget;
-    try {
-      await addTeacher(teacher);
-      form.reset();
-      toast.success("Teacher added successfully");
-      setOpenDialog(null);
-      loadData();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to add teacher";
-      toast.error(formatFirebaseError(message));
-    }
-  };
-
   const handleAddStudent = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
@@ -273,6 +277,8 @@ const AdminDashboard = () => {
       phoneNo: formData.get("phoneNo") as string,
       whatsappNo: formData.get("whatsappNo") as string,
       studentClass: formData.get("studentClass") as string,
+      parentWhatsApp: formData.get("parentWhatsApp") as string,
+      dob: formData.get("dob") as string,
     };
     const form = e.currentTarget;
     try {
@@ -294,7 +300,6 @@ const AdminDashboard = () => {
       id: Date.now().toString(),
       name: formData.get("name") as string,
       subject: formData.get("subject") as string,
-      teacherId: formData.get("teacherId") as string,
       batchId: formData.get("batchId") as string,
       schedule: formData.get("schedule") as string || undefined,
       date: formData.get("date") as string,
@@ -339,82 +344,66 @@ const AdminDashboard = () => {
     }
     const test: Test = {
       id: Date.now().toString(),
-      name: name.trim(),
-      batchIds,
-      date,
-      totalMarks: questions.length,
-      questions,
+      name: formData.get("name") as string,
+      batchId: selectedBatches[0] || "", // Keep for legacy if needed
+      batchIds: selectedBatches,
+      date: formData.get("date") as string,
+      totalMarks: testType === 'mcq' ? mcqQuestions.length : Number(formData.get("totalMarks")),
+      type: testType,
+      questions: testType === 'mcq' ? mcqQuestions : undefined,
     };
+
+    if (selectedBatches.length === 0) {
+      toast.error("Please select at least one batch");
+      return;
+    }
+
     addTest(test);
-    toast.success("MCQ test created");
+    toast.success(`${testType.toUpperCase()} Test added successfully`);
     setOpenDialog(null);
-    setTestForm({
-      name: '', date: new Date().toISOString().split('T')[0], batchIds: [],
-      questions: [{ id: 'q1', question: '', options: [
-        { id: 'o1', text: '' }, { id: 'o2', text: '' }, { id: 'o3', text: '' }, { id: 'o4', text: '' }
-      ], correctOptionId: 'o1' }],
-    });
+    setMcqQuestions([]);
+    setSelectedBatches([]);
+    setTestType('subjective');
     loadData();
   };
 
-  const addQuestionToForm = () => {
-    const qid = `q${Date.now()}`;
-    setTestForm(prev => ({
-      ...prev,
-      questions: [...prev.questions, {
-        id: qid, question: '',
-        options: [
-          { id: `${qid}_o1`, text: '' }, { id: `${qid}_o2`, text: '' },
-          { id: `${qid}_o3`, text: '' }, { id: `${qid}_o4`, text: '' },
-        ],
-        correctOptionId: `${qid}_o1`,
-      }],
+  const handleAddMcqQuestion = () => {
+    const newQuestion: MCQQuestion = {
+      id: Date.now().toString(),
+      question: "",
+      options: ["", ""],
+      correctOptionIndex: 0
+    };
+    setMcqQuestions([...mcqQuestions, newQuestion]);
+  };
+
+  const updateMcqQuestion = (id: string, field: keyof MCQQuestion, value: any) => {
+    setMcqQuestions(mcqQuestions.map(q => q.id === id ? { ...q, [field]: value } : q));
+  };
+
+  const addOption = (qId: string) => {
+    setMcqQuestions(mcqQuestions.map(q => {
+      if (q.id === qId) {
+        return { ...q, options: [...q.options, ""] };
+      }
+      return q;
     }));
   };
 
-  const removeQuestionFromForm = (qid: string) => {
-    setTestForm(prev => ({ ...prev, questions: prev.questions.filter(q => q.id !== qid) }));
-  };
-
-  const updateQuestionField = (qid: string, patch: Partial<MCQQuestion>) => {
-    setTestForm(prev => ({
-      ...prev,
-      questions: prev.questions.map(q => q.id === qid ? { ...q, ...patch } : q),
+  const updateOption = (qId: string, optIdx: number, value: string) => {
+    setMcqQuestions(mcqQuestions.map(q => {
+      if (q.id === qId) {
+        const newOptions = [...q.options];
+        newOptions[optIdx] = value;
+        return { ...q, options: newOptions };
+      }
+      return q;
     }));
   };
 
-  const updateOptionText = (qid: string, oid: string, text: string) => {
-    setTestForm(prev => ({
-      ...prev,
-      questions: prev.questions.map(q => q.id === qid ? {
-        ...q, options: q.options.map(o => o.id === oid ? { ...o, text } : o)
-      } : q),
-    }));
+  const removeMcqQuestion = (id: string) => {
+    setMcqQuestions(mcqQuestions.filter(q => q.id !== id));
   };
-
-  const toggleBatchInTestForm = (batchId: string, checked: boolean) => {
-    setTestForm(prev => ({
-      ...prev,
-      batchIds: checked ? [...prev.batchIds, batchId] : prev.batchIds.filter(b => b !== batchId),
-    }));
-  };
-
-  const saveWaTemplate = (val: string) => {
-    setWaMessageTemplate(val);
-    localStorage.setItem('smartclass_wa_template', val);
-  };
-
-  const buildWaLink = (student: Student, dateStr: string): string | null => {
-    const phone = (student.whatsappNo || student.phoneNo || '').replace(/\D/g, '');
-    if (!phone) return null;
-    const formattedDate = new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-    const text = waMessageTemplate
-      .replace(/\{name\}/g, student.name)
-      .replace(/\{date\}/g, formattedDate)
-      .replace(/\{institute\}/g, instituteSettings.name || 'SmartClass');
-    return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
-  };
-
 
   const handleSaveMarks = (studentId: string, marksRaw: string) => {
     if (!selectedTest) return;
@@ -445,45 +434,51 @@ const AdminDashboard = () => {
     toast.success("Marks saved");
   };
 
-  const handleSaveInstituteSettings = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSaveStaff = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const settings: InstituteSettings = {
-      name: formData.get("instName") as string || "SmartClass",
-      address: formData.get("instAddress") as string || "",
-      phone: formData.get("instPhone") as string || "",
-      email: formData.get("instEmail") as string || "",
-    };
+    const name = formData.get('name') as string;
+    const email = formData.get('email') as string;
+    const password = formData.get('password') as string;
+
+    if (!name || !email || !password) {
+      toast.error("Please fill all fields");
+      return;
+    }
+
     try {
-      await saveInstituteSettings(settings);
-      setInstituteSettingsState(settings);
-      toast.success("Institute settings saved!");
-    } catch {
-      toast.error("Failed to save settings");
+      const newStaff: Staff = {
+        id: Date.now().toString(),
+        name,
+        email,
+        password,
+        role: 'staff'
+      };
+      await addStaff(newStaff);
+      setStaff(prev => [...prev, newStaff]);
+      setOpenDialog(null);
+      toast.success("Staff account created successfully");
+    } catch (error: any) {
+      toast.error(formatFirebaseError(error.message));
     }
   };
 
-  const getScoreColor = (percent: number): string => {
-    if (percent >= 75) return "text-emerald-600";
-    if (percent >= 40) return "text-amber-500";
-    return "text-red-500";
-  };
-
-  const getScoreBgColor = (percent: number): string => {
-    if (percent >= 75) return "bg-emerald-500";
-    if (percent >= 40) return "bg-amber-500";
-    return "bg-red-500";
+  const handleDeleteStaff = (staffId: string) => {
+    if (deleteStaff(staffId)) {
+      setStaff(staff.filter(s => s.id !== staffId));
+      toast.success("Staff member deleted");
+    }
   };
 
   const sidebarItems: SidebarItem[] = [
     { id: 'students', label: 'Students', icon: Users, action: () => setActiveTab('students') },
-    { id: 'teachers', label: 'Teachers', icon: BookOpen, action: () => setActiveTab('teachers') },
+    { id: 'staff', label: 'Staff', icon: ClipboardCheck, action: () => setActiveTab('staff') },
     { id: 'classes', label: 'Classes', icon: Calendar, action: () => setActiveTab('classes') },
-    { id: 'batches', label: 'Batches', icon: BarChart3, action: () => setActiveTab('batches') },
-    { id: 'absent', label: 'Absent Today', icon: UserX, action: () => setActiveTab('absent') },
+    { id: 'batches', label: 'Batches', icon: BookOpen, action: () => setActiveTab('batches') },
     { id: 'fees', label: 'Fees Mgmt', icon: IndianRupee, action: () => setActiveTab('fees') },
+    { id: 'attendance', label: 'Reports', icon: BarChart3, action: () => setActiveTab('attendance') },
     { id: 'tests', label: 'Tests', icon: CheckSquare, action: () => setActiveTab('tests') },
-    { id: 'settings', label: 'Settings', icon: Settings, action: () => setActiveTab('settings') },
+    { id: 'birthdays', label: 'Birthdays', icon: Cake, action: () => setActiveTab('birthdays') },
   ];
 
   return (
@@ -497,7 +492,7 @@ const AdminDashboard = () => {
         >
           <div className="space-y-6">
             
-            {/* STUDENTS VIEW */}
+            
             {activeTab === 'students' && (
               <Card className="p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
@@ -530,8 +525,8 @@ const AdminDashboard = () => {
                           <Input id="student-phoneNo" name="phoneNo" />
                         </div>
                         <div>
-                          <Label htmlFor="student-whatsappNo">WhatsApp Number (with country code, e.g. 9198XXXXXXXX)</Label>
-                          <Input id="student-whatsappNo" name="whatsappNo" placeholder="e.g. 919876543210" />
+                          <Label htmlFor="student-parentWhatsApp">Parent WhatsApp Number</Label>
+                          <Input id="student-parentWhatsApp" name="parentWhatsApp" placeholder="Include country code e.g. 91..." />
                         </div>
                         <div>
                           <Label htmlFor="student-collegeName">College Name</Label>
@@ -555,6 +550,10 @@ const AdminDashboard = () => {
                               ))}
                             </SelectContent>
                           </Select>
+                        </div>
+                        <div>
+                          <Label htmlFor="student-dob">Date of Birth</Label>
+                          <Input id="student-dob" name="dob" type="date" />
                         </div>
                         <div>
                           <Label htmlFor="student-password">Password</Label>
@@ -594,6 +593,9 @@ const AdminDashboard = () => {
                             {student.collegeName && (
                               <p className="col-span-2"><span className="font-medium">College:</span> {student.collegeName}</p>
                             )}
+                            {student.parentWhatsApp && (
+                              <p className="col-span-2"><span className="font-medium">Parent WA:</span> {student.parentWhatsApp}</p>
+                            )}
                             {student.studentClass && (
                               <p><span className="font-medium">Class:</span> {student.studentClass}</p>
                             )}
@@ -609,7 +611,7 @@ const AdminDashboard = () => {
                     );
                   })}
                   {students.length === 0 && (
-                    <div className="col-span-full py-8 text-center text-muted-foreground bg-accent/50 rounded-lg border-2 border-dashed">
+                    <div className="col-span-full py-8 text-center text-muted-foreground bg-accent rounded-lg border-2 border-dashed">
                       No students found. Add your first student to get started.
                     </div>
                   )}
@@ -617,86 +619,13 @@ const AdminDashboard = () => {
               </Card>
             )}
 
-            {/* ABSENT TODAY VIEW */}
-            {activeTab === 'absent' && (() => {
-              const absentList = getAbsentStudentsForDate(absentDate);
-              return (
-                <div className="space-y-6">
-                  <Card className="p-6">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-4">
-                      <div>
-                        <h3 className="text-xl font-semibold flex items-center gap-2"><UserX className="h-5 w-5 text-red-500" /> Absent Students</h3>
-                        <p className="text-sm text-muted-foreground">Notify parents via WhatsApp with one click</p>
-                      </div>
-                      <div>
-                        <Label htmlFor="absent-date" className="text-xs">Date</Label>
-                        <Input id="absent-date" type="date" value={absentDate} onChange={(e) => setAbsentDate(e.target.value)} />
-                      </div>
-                    </div>
-
-                    <div className="mb-6 p-4 rounded-lg border bg-accent/30">
-                      <Label htmlFor="wa-template" className="text-sm font-medium">WhatsApp Message Template</Label>
-                      <p className="text-xs text-muted-foreground mb-2">
-                        Available placeholders: <code className="bg-muted px-1 rounded">{"{name}"}</code>, <code className="bg-muted px-1 rounded">{"{date}"}</code>, <code className="bg-muted px-1 rounded">{"{institute}"}</code>
-                      </p>
-                      <Textarea
-                        id="wa-template"
-                        rows={3}
-                        value={waMessageTemplate}
-                        onChange={(e) => saveWaTemplate(e.target.value)}
-                      />
-                    </div>
-
-                    {absentList.length === 0 ? (
-                      <div className="py-12 text-center text-muted-foreground bg-accent/20 rounded-lg border-2 border-dashed">
-                        🎉 No absent students recorded for this date.
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {absentList.map(({ student }) => {
-                          const link = buildWaLink(student, absentDate);
-                          const batch = batches.find(b => b.id === student.batchId);
-                          return (
-                            <div key={student.id} className="p-4 rounded-lg border bg-card hover:shadow-md transition-shadow">
-                              <div className="flex items-start justify-between mb-3">
-                                <div>
-                                  <p className="font-semibold">{student.name}</p>
-                                  <p className="text-xs text-muted-foreground">{batch?.name || 'No batch'}</p>
-                                </div>
-                                <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">Absent</span>
-                              </div>
-                              <p className="text-xs text-muted-foreground mb-3">
-                                {student.whatsappNo ? `WhatsApp: ${student.whatsappNo}` : student.phoneNo ? `Phone: ${student.phoneNo}` : 'No contact number'}
-                              </p>
-                              {link ? (
-                                <a
-                                  href={link}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-3 py-2 transition-colors"
-                                >
-                                  <MessageCircle className="h-4 w-4" /> Send WhatsApp
-                                </a>
-                              ) : (
-                                <Button disabled variant="outline" className="w-full" size="sm">No WhatsApp number</Button>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </Card>
-                </div>
-              );
-            })()}
-
-            {/* FEES VIEW */}
+            
             {activeTab === 'fees' && (
               <div className="space-y-6">
                 <Card className="p-6">
                   <h3 className="text-xl font-semibold mb-4">Fees Management</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {/* Student Selector */}
+                    
                     <div className="col-span-1 border-r pr-6 border-border hidden md:block max-h-[60vh] overflow-y-auto">
                       <h4 className="font-medium text-sm text-muted-foreground mb-3 uppercase tracking-wider">Select Student</h4>
                       <div className="space-y-2">
@@ -707,7 +636,7 @@ const AdminDashboard = () => {
                             className={`p-3 rounded-md cursor-pointer transition-colors ${selectedStudentForFees?.id === s.id ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}
                           >
                             <p className="font-medium text-sm">{s.name}</p>
-                            <p className={`text-xs ${selectedStudentForFees?.id === s.id ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>{s.phoneNo || s.email}</p>
+                            <p className={`text-xs ${selectedStudentForFees?.id === s.id ? 'text-primary-foreground' : 'text-muted-foreground'}`}>{s.phoneNo || s.email}</p>
                           </div>
                         ))}
                         {students.length === 0 && (
@@ -716,7 +645,7 @@ const AdminDashboard = () => {
                       </div>
                     </div>
 
-                    {/* Mobile Selector */}
+                    
                     <div className="md:hidden block mb-4">
                        <h4 className="font-medium text-sm text-muted-foreground mb-2">Select Student</h4>
                        <Select onValueChange={(val) => {
@@ -736,7 +665,7 @@ const AdminDashboard = () => {
                       </Select>
                     </div>
 
-                    {/* Student Fees Data */}
+                    
                     <div className="col-span-1 md:col-span-2">
                       {!selectedStudentForFees ? (
                         <div className="h-full flex items-center justify-center text-muted-foreground py-12 text-sm border-2 border-dashed rounded-lg">
@@ -758,7 +687,7 @@ const AdminDashboard = () => {
                           </div>
 
                           {!feeRecord ? (
-                            <div className="bg-accent/50 p-6 rounded-lg border">
+                            <div className="bg-accent p-6 rounded-lg border">
                               <h4 className="font-semibold mb-2">Create Fee Structure</h4>
                               <form onSubmit={handleSaveFeeStructure} className="space-y-4 max-w-sm">
                                 <div>
@@ -774,7 +703,7 @@ const AdminDashboard = () => {
                             </div>
                           ) : (
                             <div className="space-y-6">
-                              {/* Structure Summary */}
+                              
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                 {(() => {
                                   const totalPaid = feeRecord.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
@@ -806,8 +735,8 @@ const AdminDashboard = () => {
                                 })()}
                               </div>
 
-                              {/* Add Payment form */}
-                              <div className="bg-accent/30 p-4 rounded-lg flex items-end gap-4 max-w-lg">
+                              
+                              <div className="bg-accent p-4 rounded-lg flex items-end gap-4 max-w-lg">
                                 <div className="flex-1">
                                   <Label htmlFor="paymentAmount">Add Payment Amount</Label>
                                   <div className="relative">
@@ -825,7 +754,7 @@ const AdminDashboard = () => {
                                 <Button onClick={handleAddPayment}>Record Payment</Button>
                               </div>
 
-                              {/* Payment History */}
+                              
                               <div>
                                 <h4 className="font-semibold mb-3">Payment History</h4>
                                 <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
@@ -854,100 +783,251 @@ const AdminDashboard = () => {
               </div>
             )}
 
-            {/* TESTS VIEW - Professional Redesign */}
+            
             {activeTab === 'tests' && (
-              <div className="space-y-6">
-                {/* Stats Row */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <Card className="p-4 bg-gradient-to-br from-blue-500/10 to-blue-600/5 border-blue-200/30">
-                    <CheckSquare className="h-5 w-5 text-blue-500 mb-1" />
-                    <p className="text-2xl font-bold">{tests.length}</p>
-                    <p className="text-xs text-muted-foreground">Total Tests</p>
-                  </Card>
-                  <Card className="p-4 bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 border-emerald-200/30">
-                    <Award className="h-5 w-5 text-emerald-500 mb-1" />
-                    <p className="text-2xl font-bold">{batches.length}</p>
-                    <p className="text-xs text-muted-foreground">Active Batches</p>
-                  </Card>
-                  <Card className="p-4 bg-gradient-to-br from-amber-500/10 to-amber-600/5 border-amber-200/30">
-                    <Users className="h-5 w-5 text-amber-500 mb-1" />
-                    <p className="text-2xl font-bold">{students.length}</p>
-                    <p className="text-xs text-muted-foreground">Total Students</p>
-                  </Card>
-                  <Card className="p-4 bg-gradient-to-br from-purple-500/10 to-purple-600/5 border-purple-200/30">
-                    <TrendingUp className="h-5 w-5 text-purple-500 mb-1" />
-                    <p className="text-2xl font-bold">
-                      {selectedTest && testResults.length > 0
-                        ? Math.round(testResults.reduce((sum, r) => sum + r.marksObtained, 0) / testResults.length)
-                        : '—'}
-                    </p>
-                    <p className="text-xs text-muted-foreground">Avg Score</p>
-                  </Card>
-                </div>
-
-                <Card className="p-6">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
-                    <div>
-                      <h3 className="text-xl font-semibold">Tests & Assessments</h3>
-                      <p className="text-sm text-muted-foreground">Create tests and assign marks to students</p>
-                    </div>
+              <Card className="p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4 border-b pb-6">
+                  <div>
+                    <h3 className="text-2xl font-black text-primary">Tests Management</h3>
+                    <p className="text-sm text-muted-foreground mt-1">Create exams and track student performance</p>
+                  </div>
+                  <div className="flex items-center gap-3">
                     <Dialog open={openDialog === "test"} onOpenChange={(open) => setOpenDialog(open ? "test" : null)}>
                       <DialogTrigger asChild>
-                        <Button className="flex items-center gap-2">
-                          <Plus className="h-4 w-4" />
-                          <span>Add Test</span>
+                        <Button className="flex items-center gap-2 h-12 px-6 rounded-xl shadow-lg shadow-primary hover:scale-[1.02] transition-all">
+                          <Plus className="h-5 w-5" />
+                          <span className="font-bold">Create New Test</span>
                         </Button>
                       </DialogTrigger>
                       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                         <DialogHeader>
-                          <DialogTitle>Create MCQ Test</DialogTitle>
+                          <DialogTitle>Create New Test</DialogTitle>
                         </DialogHeader>
-                        <div className="space-y-4">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
+                        <form onSubmit={handleAddTest} className="space-y-6">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
                               <Label htmlFor="test-name">Test Name</Label>
-                              <Input id="test-name" value={testForm.name} onChange={(e) => setTestForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Midterm Exam" />
+                              <Input id="test-name" name="name" placeholder="e.g. Midterm exam" required />
                             </div>
-                            <div>
+                            <div className="space-y-2">
                               <Label htmlFor="test-date">Date</Label>
-                              <Input id="test-date" type="date" value={testForm.date} onChange={(e) => setTestForm(p => ({ ...p, date: e.target.value }))} />
+                              <Input id="test-date" name="date" type="date" required />
                             </div>
                           </div>
 
-                          <div>
-                            <Label className="mb-2 block">Assign to Batches (select one or more)</Label>
-                            <div className="grid grid-cols-2 gap-2 p-3 border rounded-md bg-accent/20">
+                          <div className="space-y-2">
+                            <Label>Select Batches (Multiple)</Label>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 border rounded-md bg-accent">
                               {batches.map(batch => (
-                                <label key={batch.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                                  <Checkbox
-                                    checked={testForm.batchIds.includes(batch.id)}
-                                    onCheckedChange={(c) => toggleBatchInTestForm(batch.id, !!c)}
+                                <div key={batch.id} className="flex items-center gap-2">
+                                  <Checkbox 
+                                    id={`batch-${batch.id}`} 
+                                    checked={selectedBatches.includes(batch.id)}
+                                    onCheckedChange={(checked) => {
+                                      if (checked) setSelectedBatches([...selectedBatches, batch.id]);
+                                      else setSelectedBatches(selectedBatches.filter(id => id !== batch.id));
+                                    }}
                                   />
-                                  <span>{batch.name}</span>
-                                </label>
+                                  <label htmlFor={`batch-${batch.id}`} className="text-xs font-medium cursor-pointer">{batch.name}</label>
+                                </div>
                               ))}
-                              {batches.length === 0 && <p className="text-xs text-muted-foreground col-span-2">No batches available</p>}
                             </div>
                           </div>
 
-                          <div className="space-y-3">
-                            <div className="flex items-center justify-between">
-                              <Label>Questions ({testForm.questions.length})</Label>
-                              <Button type="button" size="sm" variant="outline" onClick={addQuestionToForm}>
-                                <Plus className="h-3 w-3 mr-1" /> Add Question
-                              </Button>
+                          <div className="space-y-2">
+                            <Label>Test Type</Label>
+                            <div className="flex gap-4">
+                              <div className="flex items-center gap-2">
+                                <input 
+                                  type="radio" 
+                                  id="type-subjective" 
+                                  checked={testType === 'subjective'} 
+                                  onChange={() => setTestType('subjective')} 
+                                />
+                                <Label htmlFor="type-subjective" className="font-normal">Subjective</Label>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <input 
+                                  type="radio" 
+                                  id="type-mcq" 
+                                  checked={testType === 'mcq'} 
+                                  onChange={() => setTestType('mcq')} 
+                                />
+                                <Label htmlFor="type-mcq" className="font-normal">MCQ</Label>
+                              </div>
                             </div>
-                            {testForm.questions.map((q, qIdx) => (
-                              <div key={q.id} className="border rounded-md p-4 bg-card space-y-3">
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="flex-1">
-                                    <Label className="text-xs text-muted-foreground">Question {qIdx + 1}</Label>
-                                    <Textarea
-                                      rows={2}
-                                      placeholder="Enter the question"
-                                      value={q.question}
-                                      onChange={(e) => updateQuestionField(q.id, { question: e.target.value })}
+                          </div>
+
+                          {testType === 'subjective' ? (
+                            <div className="space-y-2">
+                              <Label htmlFor="test-marks">Total Marks</Label>
+                              <Input id="test-marks" name="totalMarks" type="number" required />
+                            </div>
+                          ) : (
+                            <div className="space-y-4">
+                              <div className="flex items-center justify-between">
+                                <Label className="text-lg font-bold">MCQ Questions ({mcqQuestions.length})</Label>
+                                <Button type="button" variant="outline" size="sm" onClick={handleAddMcqQuestion}>
+                                  <Plus className="h-4 w-4 mr-2" /> Add Question
+                                </Button>
+                              </div>
+                              
+                              <div className="space-y-6">
+                                {mcqQuestions.map((q, qIdx) => (
+                                  <Card key={q.id} className="p-4 bg-accent space-y-4 relative">
+                                    <Button 
+                                      type="button" 
+                                      variant="ghost" 
+                                      size="icon" 
+                                      className="absolute top-2 right-2 text-destructive"
+                                      onClick={() => removeMcqQuestion(q.id)}
+                                    >
+                                      <Plus className="h-4 w-4 rotate-45" />
+                                    </Button>
+                                    <div className="space-y-2">
+                                      <Label>Question {qIdx + 1}</Label>
+                                      <Input 
+                                        value={q.question} 
+                                        onChange={(e) => updateMcqQuestion(q.id, 'question', e.target.value)}
+                                        placeholder="Type question here..."
+                                        required
+                                      />
+                                    </div>
+                                    <div className="space-y-3">
+                                      <Label className="text-xs uppercase font-black text-muted-foreground">Options (Select the correct one)</Label>
+                                      {q.options.map((opt, optIdx) => (
+                                        <div key={optIdx} className="flex items-center gap-3">
+                                          <Checkbox 
+                                            checked={q.correctOptionIndex === optIdx}
+                                            onCheckedChange={() => updateMcqQuestion(q.id, 'correctOptionIndex', optIdx)}
+                                          />
+                                          <Input 
+                                            value={opt} 
+                                            onChange={(e) => updateOption(q.id, optIdx, e.target.value)}
+                                            placeholder={`Option ${optIdx + 1}`}
+                                            required
+                                          />
+                                        </div>
+                                      ))}
+                                      <Button type="button" variant="link" size="sm" onClick={() => addOption(q.id)} className="p-0 h-auto">
+                                        + Add Option
+                                      </Button>
+                                    </div>
+                                  </Card>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          <Button type="submit" className="w-full h-12 font-bold text-lg">Create Test</Button>
+                        </form>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                  
+                  <div className="lg:col-span-4 space-y-3 max-h-[65vh] overflow-y-auto pr-2">
+                    {tests.map(test => {
+                      const batch = batches.find(b => b.id === test.batchId);
+                      return (
+                        <div 
+                          key={test.id} 
+                          className={`p-4 rounded-lg border cursor-pointer hover:shadow-md transition-all ${selectedTest?.id === test.id ? 'border-primary ring-1 ring-primary' : 'bg-card'}`}
+                          onClick={() => handleSelectTest(test)}
+                        >
+                          <div className="flex justify-between items-start mb-2">
+                            <h4 className="font-semibold text-sm">{test.name}</h4>
+                            <DeleteDialog
+                              title="Delete Test"
+                              description="Are you sure? This will remove all student marks for this test."
+                              onDelete={() => handleDeleteTest(test.id)}
+                            />
+                          </div>
+                          <div className="text-xs text-muted-foreground space-y-1">
+                            <p>
+                              Batches: {test.batchIds ? 
+                                batches.filter(b => test.batchIds?.includes(b.id)).map(b => b.name).join(', ') : 
+                                batch?.name || 'N/A'}
+                            </p>
+                            <p>Date: {new Date(test.date).toLocaleDateString()}</p>
+                            <p>Total Marks: {test.totalMarks}</p>
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {tests.length === 0 && (
+                      <p className="text-sm text-center py-4 text-muted-foreground border-2 border-dashed rounded-lg bg-accent">No tests created yet.</p>
+                    )}
+                  </div>
+
+                  
+                  <div className="lg:col-span-8">
+                    {selectedTest ? (
+                      <div className="bg-card border rounded-lg p-4">
+                        <div className="border-b pb-4 mb-4 flex justify-between items-center">
+                          <div>
+                            <h4 className="text-lg font-semibold">{selectedTest.name} Grading</h4>
+                            <p className="text-sm text-muted-foreground">
+                              Type: <span className="capitalize font-medium">{selectedTest.type || 'subjective'}</span> • Max marks: {selectedTest.totalMarks}
+                            </p>
+                          </div>
+                          {selectedTest.type === 'mcq' && (
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button variant="outline" size="sm">View Questions</Button>
+                              </DialogTrigger>
+                              <DialogContent className="max-w-xl max-h-[80vh] overflow-y-auto">
+                                <DialogHeader>
+                                  <DialogTitle>{selectedTest.name} - Questions</DialogTitle>
+                                </DialogHeader>
+                                <div className="space-y-4 pt-4">
+                                  {selectedTest.questions?.map((q, idx) => (
+                                    <div key={q.id} className="p-3 border rounded-lg bg-accent">
+                                      <p className="font-bold text-sm mb-2">{idx + 1}. {q.question}</p>
+                                      <div className="grid grid-cols-2 gap-2">
+                                        {q.options.map((opt, oIdx) => (
+                                          <div key={oIdx} className={`text-xs p-2 rounded border ${q.correctOptionIndex === oIdx ? 'bg-green-100 border-green-200 font-bold' : 'bg-background'}`}>
+                                            {opt} {q.correctOptionIndex === oIdx && '✓'}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                          )}
+                        </div>
+                        <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2">
+                          {(() => {
+                            const batchStudents = students.filter(s => 
+                              selectedTest.batchIds?.includes(s.batchId) || s.batchId === selectedTest.batchId
+                            );
+                            if (batchStudents.length === 0) return <p className="text-sm text-muted-foreground">No students in assigned batches.</p>;
+                            
+                            return batchStudents.map(student => {
+                              const existingResult = testResults.find(r => r.studentId === student.id);
+                              
+                              return (
+                                <div key={student.id} className="flex items-center justify-between p-3 border rounded bg-accent">
+                                  <div>
+                                    <p className="font-medium text-sm">{student.name}</p>
+                                    <p className="text-xs text-muted-foreground">{student.phoneNo || student.email}</p>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Input 
+                                      type="number" 
+                                      className="w-24 text-right font-bold" 
+                                      placeholder={selectedTest.type === 'mcq' ? "Auto" : "Marks"}
+                                      defaultValue={existingResult?.marksObtained}
+                                      onBlur={(e) => handleSaveMarks(student.id, e.target.value)}
                                     />
+                                    <span className="text-sm text-muted-foreground font-medium">/ {selectedTest.totalMarks}</span>
+                                    {selectedTest.type === 'mcq' && existingResult && (
+                                      <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-black uppercase ml-2">Completed</span>
+                                    )}
                                   </div>
                                   {testForm.questions.length > 1 && (
                                     <Button type="button" size="icon" variant="ghost" className="text-red-500 mt-5" onClick={() => removeQuestionFromForm(q.id)}>
@@ -955,25 +1035,18 @@ const AdminDashboard = () => {
                                     </Button>
                                   )}
                                 </div>
-                                <div className="space-y-2">
-                                  <p className="text-xs text-muted-foreground">Tick the correct answer</p>
-                                  {q.options.map((opt, optIdx) => (
-                                    <div key={opt.id} className="flex items-center gap-2">
-                                      <Checkbox
-                                        checked={q.correctOptionId === opt.id}
-                                        onCheckedChange={(c) => { if (c) updateQuestionField(q.id, { correctOptionId: opt.id }); }}
-                                      />
-                                      <Input
-                                        placeholder={`Option ${optIdx + 1}`}
-                                        value={opt.text}
-                                        onChange={(e) => updateOptionText(q.id, opt.id, e.target.value)}
-                                      />
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
+                              );
+                            });
+                          })()}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="h-full min-h-[200px] flex items-center justify-center text-muted-foreground border-2 border-dashed rounded-lg bg-accent">
+                        Select a test from the left to enter marks.
+                      </div>
+                    )}
+                  </div>
+                </div>
 
                           <Button onClick={handleCreateMCQTest} className="w-full">Create Test</Button>
                         </div>
@@ -1110,81 +1183,172 @@ const AdminDashboard = () => {
               </div>
             )}
 
-            {/* TEACHERS VIEW */}
-            {activeTab === 'teachers' && (
-              <Card className="p-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
-                  <div>
-                    <h3 className="text-xl font-semibold">Teachers</h3>
-                    <p className="text-sm text-muted-foreground">Manage your {teachers.length} teachers</p>
-                  </div>
-                  <Dialog open={openDialog === "teacher"} onOpenChange={(open) => setOpenDialog(open ? "teacher" : null)}>
-                    <DialogTrigger asChild>
-                      <Button className="flex items-center gap-2">
-                        <UserPlus className="h-4 w-4" />
-                        <span>Add Teacher</span>
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Add New Teacher</DialogTitle>
-                      </DialogHeader>
-                      <form onSubmit={handleAddTeacher} className="space-y-4">
-                        <div>
-                          <Label htmlFor="teacher-name">Full Name</Label>
-                          <Input id="teacher-name" name="name" required />
-                        </div>
-                        <div>
-                          <Label htmlFor="teacher-email">Email</Label>
-                          <Input id="teacher-email" name="email" type="email" required />
-                        </div>
-                        <div>
-                          <Label htmlFor="teacher-subject">Subject</Label>
-                          <Input id="teacher-subject" name="subject" required />
-                        </div>
-                        <div>
-                          <Label htmlFor="teacher-password">Password</Label>
-                          <Input id="teacher-password" name="password" type="password" required />
-                        </div>
-                        <Button type="submit" className="w-full">Add Teacher</Button>
-                      </form>
-                    </DialogContent>
-                  </Dialog>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {teachers.map((teacher) => (
-                    <div key={teacher.id} className="p-4 rounded-lg border bg-card text-sm flex flex-col justify-between hover:shadow-md transition-shadow">
-                      <div>
-                        <div className="flex justify-between items-start mb-2">
-                          <div>
-                            <p className="font-semibold text-base">{teacher.name}</p>
-                            <p className="text-xs text-muted-foreground">{teacher.email}</p>
+            
+            {activeTab === 'staff' && (
+              <div className="space-y-6">
+                <Card className="p-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4 border-b pb-6">
+                    <div>
+                      <h3 className="text-2xl font-black text-primary flex items-center gap-2">
+                        <ClipboardCheck className="h-6 w-6" /> Staff & Attendance
+                      </h3>
+                      <p className="text-sm text-muted-foreground mt-1">Manage staff accounts and take student attendance</p>
+                    </div>
+                    <Dialog open={openDialog === "addStaff"} onOpenChange={(open) => setOpenDialog(open ? "addStaff" : null)}>
+                      <DialogTrigger asChild>
+                        <Button className="font-black gap-2 h-12 px-6 rounded-2xl shadow-lg shadow-primary/20">
+                          <UserPlus className="h-4 w-4" /> Add Staff Member
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="sm:max-w-md rounded-[32px]">
+                        <DialogHeader>
+                          <DialogTitle className="text-2xl font-black">Register New Staff</DialogTitle>
+                        </DialogHeader>
+                        <form onSubmit={handleSaveStaff} className="space-y-4 pt-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="name" className="font-bold">Full Name</Label>
+                            <Input id="name" name="name" placeholder="Enter staff name" required className="h-12 rounded-xl" />
                           </div>
-                          <DeleteDialog
-                            title="Delete Teacher"
-                            description={`Are you sure you want to delete ${teacher.name}? This will also delete all their classes and notes. This action cannot be undone.`}
-                            onDelete={() => handleDeleteTeacher(teacher.id)}
-                          />
-                        </div>
-                        <div className="mt-3">
-                          <p className="text-xs bg-primary/10 text-primary px-2 py-1 rounded inline-block font-medium">
-                            Subject: {teacher.subject}
-                          </p>
-                        </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="email" className="font-bold">Email Address (Login ID)</Label>
+                            <Input id="email" name="email" type="email" placeholder="staff@example.com" required className="h-12 rounded-xl" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="password" className="font-bold">Password</Label>
+                            <Input id="password" name="password" type="password" placeholder="••••••••" required className="h-12 rounded-xl" />
+                          </div>
+                          <Button type="submit" className="w-full h-14 rounded-2xl font-black text-lg shadow-xl shadow-primary/20 mt-4">
+                            Create Account
+                          </Button>
+                        </form>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+
+                  {staff.length > 0 && (
+                    <div className="mb-10">
+                      <h4 className="text-lg font-black mb-4 flex items-center gap-2">
+                        <Users className="h-5 w-5 text-primary" /> Active Staff Accounts
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {staff.map(s => (
+                          <div key={s.id} className="p-4 bg-accent/5 rounded-2xl border border-primary/10 flex items-center justify-between group hover:border-primary/30 transition-all">
+                            <div className="flex items-center gap-3">
+                              <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-black">
+                                {s.name.charAt(0)}
+                              </div>
+                              <div>
+                                <p className="font-bold">{s.name}</p>
+                                <p className="text-[10px] text-muted-foreground font-medium">{s.email}</p>
+                              </div>
+                            </div>
+                            <DeleteDialog 
+                              title="Delete Staff Account?" 
+                              onDelete={() => handleDeleteStaff(s.id)}
+                              trigger={
+                                <Button variant="ghost" size="icon" className="text-destructive/40 hover:text-destructive hover:bg-destructive/10 rounded-xl opacity-0 group-hover:opacity-100 transition-all">
+                                  <Plus className="h-4 w-4 rotate-45" />
+                                </Button>
+                              }
+                            />
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  ))}
-                  {teachers.length === 0 && (
-                    <div className="col-span-full py-8 text-center text-muted-foreground bg-accent/50 rounded-lg border-2 border-dashed">
-                      No teachers found. Add your first teacher to get started.
+                  )}
+
+                  <div className="border-t pt-8 mb-6">
+                    <h4 className="text-lg font-black mb-1 flex items-center gap-2">
+                      <Calendar className="h-5 w-5 text-primary" /> Daily Batch Attendance
+                    </h4>
+                    <p className="text-sm text-muted-foreground mb-6">Take student attendance batch-wise for today: {new Date().toLocaleDateString()}</p>
+                  </div>
+
+                  {!selectedAttendanceBatch ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {batches.map(batch => {
+                        const batchStudents = students.filter(s => s.batchId === batch.id);
+                        return (
+                          <div 
+                            key={batch.id} 
+                            onClick={() => setSelectedAttendanceBatch(batch.id)}
+                            className="group p-6 rounded-[32px] border-2 border-primary bg-card hover:border-primary hover:shadow-xl transition-all cursor-pointer relative overflow-hidden"
+                          >
+                            <div className="absolute top-0 right-0 p-4 bg-primary rounded-bl-[32px] group-hover:bg-primary transition-colors">
+                              <ClipboardCheck className="h-6 w-6 text-primary" />
+                            </div>
+                            <h4 className="text-2xl font-black mb-1">{batch.name}</h4>
+                            <p className="text-sm text-muted-foreground mb-4 font-medium">Academic Year {batch.year}</p>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-bold bg-primary text-primary px-3 py-1 rounded-full">
+                                {batchStudents.length} Students
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+                      <div className="flex items-center justify-between mb-6">
+                        <Button variant="ghost" onClick={() => setSelectedAttendanceBatch(null)} className="gap-2 font-bold">
+                          <Plus className="h-4 w-4 rotate-45" /> Back to Batches
+                        </Button>
+                        <div className="text-right">
+                          <h4 className="text-2xl font-black">
+                            {batches.find(b => b.id === selectedAttendanceBatch)?.name} Attendance
+                          </h4>
+                          <p className="text-sm text-muted-foreground">Today: {new Date().toLocaleDateString()}</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3 mb-8">
+                        {students.filter(s => s.batchId === selectedAttendanceBatch).map(student => (
+                          <div key={student.id} className="flex items-center justify-between p-4 bg-accent rounded-2xl border border-primary">
+                            <div className="flex items-center gap-4">
+                              <div className={`h-12 w-12 rounded-full flex items-center justify-center font-black text-lg ${dailyAttendance[student.id] === 'absent' ? 'bg-destructive text-destructive' : 'bg-primary text-primary'}`}>
+                                {student.name.charAt(0)}
+                              </div>
+                              <div>
+                                <p className="font-bold text-lg">{student.name}</p>
+                                <p className="text-xs text-muted-foreground font-medium">{student.phoneNo || 'No phone'}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 bg-background p-1.5 rounded-xl border">
+                              <Button 
+                                variant={dailyAttendance[student.id] === 'present' ? 'default' : 'ghost'}
+                                size="sm"
+                                onClick={() => setDailyAttendance({...dailyAttendance, [student.id]: 'present'})}
+                                className={`rounded-lg font-bold px-4 ${dailyAttendance[student.id] === 'present' ? 'bg-green-600 hover:bg-green-700 shadow-lg shadow-green-200' : ''}`}
+                              >
+                                Present
+                              </Button>
+                              <Button 
+                                variant={dailyAttendance[student.id] === 'absent' ? 'destructive' : 'ghost'}
+                                size="sm"
+                                onClick={() => setDailyAttendance({...dailyAttendance, [student.id]: 'absent'})}
+                                className="rounded-lg font-bold px-4"
+                              >
+                                Absent
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="flex justify-end gap-4">
+                        <Button variant="outline" onClick={() => setSelectedAttendanceBatch(null)} className="h-14 px-10 rounded-2xl font-bold">Cancel</Button>
+                        <Button onClick={handleSaveDailyAttendance} className="h-14 px-12 rounded-2xl font-black text-lg bg-primary shadow-xl shadow-primary">
+                          Save Batch Attendance
+                        </Button>
+                      </div>
                     </div>
                   )}
-                </div>
-              </Card>
+                </Card>
+              </div>
             )}
 
-            {/* CLASSES VIEW */}
+            
             {activeTab === 'classes' && (
               <Card className="p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
@@ -1203,82 +1367,93 @@ const AdminDashboard = () => {
                       <DialogHeader>
                         <DialogTitle>Create New Class</DialogTitle>
                       </DialogHeader>
-                      <form onSubmit={handleAddClass} className="space-y-4">
-                        <div>
-                          <Label htmlFor="class-name">Class Name</Label>
-                          <Input id="class-name" name="name" placeholder="e.g., Advanced Mathematics" required />
-                        </div>
-                        <div>
-                          <Label htmlFor="class-subject">Subject</Label>
-                          <Input id="class-subject" name="subject" required />
-                        </div>
-                        <div>
-                          <Label htmlFor="class-teacher">Assign Teacher</Label>
-                          <Select name="teacherId" required>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select teacher" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {teachers.map((teacher) => (
-                                <SelectItem key={teacher.id} value={teacher.id}>
-                                  {teacher.name} - {teacher.subject}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div>
-                          <Label htmlFor="class-batch">Assign Batch</Label>
-                          <Select name="batchId" required>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select batch" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {batches.map((batch) => (
-                                <SelectItem key={batch.id} value={batch.id}>
-                                  {batch.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div>
-                          <Label htmlFor="class-schedule">Schedule (optional text)</Label>
-                          <Input id="class-schedule" name="schedule" placeholder="e.g., Mon, Wed, Fri" />
-                        </div>
-                        <div>
-                          <Label htmlFor="class-date">Date</Label>
-                          <Input id="class-date" name="date" type="date" required />
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <Label htmlFor="class-time">Start Time</Label>
-                            <Input id="class-time" name="time" type="time" required />
+                      <form onSubmit={handleAddClass} className="space-y-6 pt-4">
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="class-name" className="text-xs font-black uppercase tracking-widest text-muted-foreground">Class Name</Label>
+                            <Input id="class-name" name="name" placeholder="e.g., Advanced Mathematics" className="h-12 rounded-xl border-accent focus:ring-primary" required />
                           </div>
-                          <div>
-                            <Label htmlFor="class-endTime">End Time</Label>
-                            <Input id="class-endTime" name="endTime" type="time" required />
+                          <div className="space-y-2">
+                            <Label htmlFor="class-subject" className="text-xs font-black uppercase tracking-widest text-muted-foreground">Subject</Label>
+                            <Input id="class-subject" name="subject" placeholder="e.g., Calculus" className="h-12 rounded-xl border-accent focus:ring-primary" required />
                           </div>
                         </div>
-                        <div>
-                          <Label htmlFor="class-endDate">End Date (optional)</Label>
-                          <Input id="class-endDate" name="endDate" type="date" />
-                          <p className="text-xs text-muted-foreground mt-1">Classes past this date will appear as completed.</p>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2 col-span-2">
+                            <Label htmlFor="class-batch" className="text-xs font-black uppercase tracking-widest text-muted-foreground">Assign Batch</Label>
+                            <Select name="batchId" required>
+                              <SelectTrigger className="h-12 rounded-xl border-accent">
+                                <SelectValue placeholder="Select batch" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {batches.map((batch) => (
+                                  <SelectItem key={batch.id} value={batch.id}>
+                                    {batch.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
                         </div>
-                        <Button type="submit" className="w-full">Create Class</Button>
+
+                        <div className="bg-primary p-5 rounded-[24px] border border-primary space-y-4">
+                           <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/60 text-center">Schedule Configuration</p>
+                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-1.5 sm:col-span-2">
+                              <Label htmlFor="class-date" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                                <Calendar className="h-3 w-3" /> Date
+                              </Label>
+                              <Input id="class-date" name="date" type="date" className="h-10 rounded-lg shadow-inner bg-white dark:bg-card" required />
+                            </div>
+                            
+                            <div className="space-y-1.5">
+                              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                                <Plus className="h-3 w-3 rotate-45" /> Start Time
+                              </Label>
+                              <div className="flex gap-2">
+                                <Input name="time" type="time" className="h-10 rounded-lg flex-1" required />
+                                <Select name="timePeriod" defaultValue="AM">
+                                  <SelectTrigger className="w-20 h-10 rounded-lg">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="AM">AM</SelectItem>
+                                    <SelectItem value="PM">PM</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                                <Plus className="h-3 w-3" /> End Time
+                              </Label>
+                              <div className="flex gap-2">
+                                <Input name="endTime" type="time" className="h-10 rounded-lg flex-1" required />
+                                <Select name="endTimePeriod" defaultValue="AM">
+                                  <SelectTrigger className="w-20 h-10 rounded-lg">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="AM">AM</SelectItem>
+                                    <SelectItem value="PM">PM</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <Button type="submit" className="w-full h-14 rounded-2xl font-black text-lg bg-primary hover:scale-[1.01] transition-transform shadow-xl shadow-primary">
+                          CREATE CLASS SESSION
+                        </Button>
                       </form>
                     </DialogContent>
                   </Dialog>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {[...classes].sort((a, b) => {
-                    const aPast = isClassPast(a);
-                    const bPast = isClassPast(b);
-                    if (aPast === bPast) return 0;
-                    return aPast ? 1 : -1;
-                  }).map((classItem) => {
-                    const teacher = teachers.find(t => t.id === classItem.teacherId);
+                  {classes.map((classItem) => {
                     const batch = batches.find(b => b.id === classItem.batchId);
                     const isPast = isClassPast(classItem);
                     return (
@@ -1300,28 +1475,31 @@ const AdminDashboard = () => {
                               onDelete={() => handleDeleteClass(classItem.id)}
                             />
                           </div>
-                          <div className="mt-3 space-y-1">
-                            <p className="text-xs">
-                              <span className="font-medium">Instructor:</span> {teacher?.name || 'Unknown'}
-                            </p>
-                            <p className="text-xs">
-                              <span className="font-medium">Batch:</span> {batch?.name || 'Unknown'}
-                            </p>
-                            <p className="text-xs">
-                              <span className="font-medium">Schedule:</span> {classItem.date} • {format12h(classItem.time)} - {format12h(classItem.endTime)}
-                            </p>
-                            {classItem.endDate && (
-                              <p className="text-xs">
-                                <span className="font-medium">End Date:</span> {new Date(classItem.endDate).toLocaleDateString()}
-                              </p>
-                            )}
+                          <div className="mt-3 space-y-2">
+                             <div className="flex flex-wrap gap-1.5">
+                                <span className="text-[10px] bg-secondary text-secondary-foreground px-2 py-0.5 rounded-full font-bold">Batch: {batch?.name || 'Unknown'}</span>
+                             </div>
+                             <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
+                               <Calendar className="h-3 w-3" />
+                               <span>
+                                 {classItem.date} • {(() => {
+                                   const format12h = (t24: string) => {
+                                     const [h, m] = t24.split(':').map(Number);
+                                     const period = h >= 12 ? 'PM' : 'AM';
+                                     const displayH = h % 12 || 12;
+                                     return `${displayH}:${m.toString().padStart(2, '0')} ${period}`;
+                                   };
+                                   return `${format12h(classItem.time)} - ${format12h(classItem.endTime)}`;
+                                 })()}
+                               </span>
+                             </div>
                           </div>
                         </div>
                       </div>
                     );
                   })}
                   {classes.length === 0 && (
-                    <div className="col-span-full py-8 text-center text-muted-foreground bg-accent/50 rounded-lg border-2 border-dashed">
+                    <div className="col-span-full py-8 text-center text-muted-foreground bg-accent rounded-lg border-2 border-dashed">
                       No classes found. Create your first class to get started.
                     </div>
                   )}
@@ -1329,7 +1507,7 @@ const AdminDashboard = () => {
               </Card>
             )}
 
-            {/* BATCHES VIEW */}
+            
             {activeTab === 'batches' && (
               <Card className="p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
@@ -1379,10 +1557,10 @@ const AdminDashboard = () => {
                           </Button>
                         </div>
                         <div className="flex gap-4">
-                          <div className="bg-primary/5 text-primary px-3 py-1.5 rounded-md text-sm font-medium">
+                          <div className="bg-primary text-primary px-3 py-1.5 rounded-md text-sm font-medium">
                             {batchStudents.length} Students
                           </div>
-                          <div className="bg-primary/5 text-primary px-3 py-1.5 rounded-md text-sm font-medium">
+                          <div className="bg-primary text-primary px-3 py-1.5 rounded-md text-sm font-medium">
                             {batchClasses.length} Classes
                           </div>
                         </div>
@@ -1390,63 +1568,405 @@ const AdminDashboard = () => {
                     );
                   })}
                   {batches.length === 0 && (
-                    <div className="col-span-full py-8 text-center text-muted-foreground bg-accent/50 rounded-lg border-2 border-dashed">
+                    <div className="col-span-full py-8 text-center text-muted-foreground bg-accent rounded-lg border-2 border-dashed">
                       No batches found. Create your first batch to get started.
                     </div>
                   )}
                 </div>
               </Card>
             )}
+            
+            {activeTab === 'attendance' && (
+              <div className="space-y-6">
+                {!selectedReportBatch ? (
+                  <Card className="p-6">
+                    <>
+                      <div className="mb-6 border-b pb-6">
+                        <h3 className="text-2xl font-black text-primary">Attendance Reports</h3>
+                        <p className="text-sm text-muted-foreground mt-1">Select a batch to view detailed attendance reports</p>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {batches.map(batch => {
+                          const batchStudents = students.filter(s => s.batchId === batch.id);
+                          return (
+                            <div 
+                              key={batch.id} 
+                              onClick={() => setSelectedReportBatch(batch.id)}
+                              className="group p-6 rounded-[32px] border-2 border-primary/20 bg-card hover:border-primary hover:shadow-xl transition-all cursor-pointer relative overflow-hidden"
+                            >
+                              <div className="absolute top-0 right-0 p-4 bg-primary/10 rounded-bl-[32px] group-hover:bg-primary transition-colors">
+                                <BarChart3 className="h-6 w-6 text-primary group-hover:text-primary-foreground" />
+                              </div>
+                              <h4 className="text-2xl font-black mb-1">{batch.name}</h4>
+                              <p className="text-sm text-muted-foreground mb-4 font-medium">Academic Year {batch.year}</p>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-bold bg-primary/10 text-primary px-3 py-1 rounded-full">
+                                  {batchStudents.length} Students
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  </Card>
+                ) : (
+                  <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-6">
+                    <Card className="p-6">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+                        <div className="flex items-center gap-4">
+                          <Button variant="ghost" onClick={() => setSelectedReportBatch(null)} className="gap-2 font-bold p-0 hover:bg-transparent">
+                            <Plus className="h-5 w-5 rotate-45" />
+                          </Button>
+                          <div>
+                            <h3 className="text-xl font-black">{batches.find(b => b.id === selectedReportBatch)?.name} Overview</h3>
+                            <p className="text-sm text-muted-foreground">View and manage student attendance records</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <Card className="p-4 bg-primary/10 border-primary/20 shadow-none text-center">
+                            <p className="text-sm text-primary/70 font-bold uppercase tracking-wider mb-1">Today's Present</p>
+                            <p className="text-4xl font-black text-primary">
+                              {(() => {
+                                const today = new Date().toISOString().split('T')[0];
+                                const batchStudents = students.filter(s => s.batchId === selectedReportBatch);
+                                const records = batchStudents.map(s => getStudentAttendance(s.id)).flat();
+                                return records.filter(r => r.date === today && r.status === 'present').length;
+                              })()}
+                            </p>
+                          </Card>
+                          <Card className="p-4 bg-destructive/10 border-destructive/20 shadow-none text-center">
+                            <p className="text-sm text-destructive/70 font-bold uppercase tracking-wider mb-1">Today's Absent</p>
+                            <p className="text-4xl font-black text-destructive">
+                              {(() => {
+                                const today = new Date().toISOString().split('T')[0];
+                                const batchStudents = students.filter(s => s.batchId === selectedReportBatch);
+                                const records = batchStudents.map(s => getStudentAttendance(s.id)).flat();
+                                return records.filter(r => r.date === today && r.status === 'absent').length;
+                              })()}
+                            </p>
+                          </Card>
+                          <Card className="p-4 bg-accent/50 border-accent shadow-none text-center">
+                            <p className="text-sm text-accent-foreground/70 font-bold uppercase tracking-wider mb-1">Avg. Attendance</p>
+                            <p className="text-4xl font-black text-accent-foreground">
+                              {(() => {
+                                const batchStudents = students.filter(s => s.batchId === selectedReportBatch);
+                                const records = batchStudents.map(s => getStudentAttendance(s.id)).flat();
+                                if (records.length === 0) return "0%";
+                                const present = records.filter(r => r.status === 'present').length;
+                                const ratio = present / records.length;
+                                return `${Math.round(ratio * 100)}%`;
+                              })()}
+                            </p>
+                          </Card>
+                        </div>
 
-            {/* SETTINGS VIEW */}
-            {activeTab === 'settings' && (
-              <Card className="p-6 max-w-2xl">
-                <div className="mb-6">
-                  <h3 className="text-xl font-semibold flex items-center gap-2"><Settings className="h-5 w-5" /> Institute Settings</h3>
-                  <p className="text-sm text-muted-foreground mt-1">Configure institute details that appear on fee receipts and invoices.</p>
-                </div>
-                <form onSubmit={handleSaveInstituteSettings} className="space-y-5">
-                  <div>
-                    <Label htmlFor="instName">Institute / Organization Name</Label>
-                    <Input id="instName" name="instName" defaultValue={instituteSettings.name} placeholder="e.g., ABC Coaching Classes" required />
-                  </div>
-                  <div>
-                    <Label htmlFor="instAddress">Address</Label>
-                    <Textarea id="instAddress" name="instAddress" defaultValue={instituteSettings.address} placeholder="e.g., 123 Main Street, City, State - 400001" rows={2} />
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="instPhone">Phone Number</Label>
-                      <Input id="instPhone" name="instPhone" defaultValue={instituteSettings.phone} placeholder="e.g., +91 98765 43210" />
+                        <div className="border rounded-lg overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted">
+                          <tr>
+                            <th className="p-3 text-left font-semibold">Student Name</th>
+                            <th className="p-3 text-left font-semibold">Batch</th>
+                            <th className="p-3 text-center font-semibold">Total Days</th>
+                            <th className="p-3 text-center font-semibold">Present</th>
+                            <th className="p-3 text-center font-semibold">Absent</th>
+                            <th className="p-3 text-right font-semibold">Percentage</th>
+                            <th className="p-3 text-right font-semibold">Last Marked</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {students.filter(s => s.batchId === selectedReportBatch).map(student => {
+                            const records = getStudentAttendance(student.id);
+                            const total = records.length;
+                            const present = records.filter(r => r.status === 'present').length;
+                            const absent = records.filter(r => r.status === 'absent').length;
+                            const ratio = total > 0 ? present / total : 0;
+                            const percent = Math.round(ratio * 100);
+                            const batch = batches.find(b => b.id === student.batchId);
+
+                            return (
+                              <tr key={student.id} className="hover:bg-accent transition-colors text-black dark:text-white">
+                                <td className="p-3 font-medium">{student.name}</td>
+                                <td className="p-3 text-muted-foreground">{batch?.name || 'N/A'}</td>
+                                <td className="p-3 text-center font-bold">{total}</td>
+                                <td className="p-3 text-center text-green-600 font-bold">{present}</td>
+                                <td className="p-3 text-center text-destructive font-bold">{absent}</td>
+                                <td className="p-3 text-right">
+                                  <span className={`px-2 py-1 rounded-full text-xs font-black ${percent >= 75 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                    {percent}%
+                                  </span>
+                                </td>
+                                <td className="p-3 text-right text-[10px] text-muted-foreground font-medium">
+                                  {(() => {
+                                    if (records.length === 0) return 'Never';
+                                    const markedBy = records[records.length-1].markedBy;
+                                    if (!markedBy) return 'Unknown';
+                                    
+                                    // Handle legacy raw timestamp
+                                    if (!isNaN(Number(markedBy))) {
+                                      const date = new Date(Number(markedBy));
+                                      return (
+                                        <span>
+                                          Administrator <br/>
+                                          <span className="opacity-70">{date.toLocaleTimeString()}</span>
+                                        </span>
+                                      );
+                                    }
+                                    
+                                    // Handle new format "Name at Time"
+                                    return (
+                                      <span>
+                                        {markedBy.split(' at ')[0]} <br/>
+                                        <span className="opacity-70">{markedBy.split(' at ')[1] || ''}</span>
+                                      </span>
+                                    );
+                                  })()}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {students.filter(s => s.batchId === selectedReportBatch).length === 0 && (
+                            <tr>
+                              <td colSpan={7} className="p-8 text-center text-muted-foreground">No student records found in this batch</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
                     </div>
-                    <div>
-                      <Label htmlFor="instEmail">Email</Label>
-                      <Input id="instEmail" name="instEmail" type="email" defaultValue={instituteSettings.email} placeholder="e.g., info@institute.com" />
-                    </div>
                   </div>
-                  <Button type="submit" className="w-full sm:w-auto">Save Settings</Button>
-                </form>
+                </Card>
+
                 
-                {/* Preview */}
-                <div className="mt-8 border-t pt-6">
-                  <p className="text-sm font-medium text-muted-foreground mb-3">Receipt Header Preview</p>
-                  <div className="border rounded-lg p-6 bg-white text-black text-center">
-                    <h2 className="text-xl font-bold uppercase tracking-wide">{instituteSettings.name || 'SmartClass'}</h2>
-                    {instituteSettings.address && <p className="text-sm text-gray-600 mt-1">{instituteSettings.address}</p>}
-                    <div className="flex items-center justify-center gap-4 mt-1 text-xs text-gray-500">
-                      {instituteSettings.phone && <span>📞 {instituteSettings.phone}</span>}
-                      {instituteSettings.email && <span>✉ {instituteSettings.email}</span>}
+                <Card className="p-6 border-destructive/20 bg-destructive/5">
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h3 className="text-xl font-bold text-destructive flex items-center gap-2">
+                        <Users className="h-5 w-5" /> Absent Students Today
+                      </h3>
+                      <p className="text-sm text-muted-foreground mt-1">Send immediate updates to parents via WhatsApp</p>
                     </div>
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="sm">Edit Message Template</Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>WhatsApp Message Template</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4 pt-4">
+                          <p className="text-xs text-muted-foreground">Use <code className="bg-muted px-1 rounded">{'{name}'}</code> and <code className="bg-muted px-1 rounded">{'{date}'}</code> as placeholders.</p>
+                          <textarea 
+                            className="w-full min-h-[100px] p-3 rounded-md border bg-background text-sm focus:ring-2 focus:ring-primary outline-none"
+                            value={absentMessage}
+                            onChange={(e) => setAbsentMessage(e.target.value)}
+                            placeholder="Type your message here..."
+                          />
+                          <div className="bg-accent p-3 rounded-md text-xs">
+                            <strong>Preview:</strong><br />
+                            {absentMessage.replace('{name}', 'John Doe').replace('{date}', new Date().toLocaleDateString())}
+                          </div>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
                   </div>
+
+                  <div className="grid gap-4">
+                    {(() => {
+                      const today = new Date().toISOString().split('T')[0];
+                      const absentToday = students.filter(student => {
+                        if (student.batchId !== selectedReportBatch) return false;
+                        const records = getStudentAttendance(student.id);
+                        return records.some(r => r.date === today && r.status === 'absent');
+                      });
+
+                      if (absentToday.length === 0) {
+                        return <p className="text-sm text-center py-8 text-muted-foreground">All students were present or unmarked today.</p>;
+                      }
+
+                      return absentToday.map(student => (
+                        <div key={student.id} className="flex items-center justify-between p-4 bg-background rounded-xl border border-destructive shadow-sm hover:shadow-md transition-shadow">
+                          <div className="flex items-center gap-4">
+                            <div className="h-10 w-10 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center font-bold">
+                              {student.name.charAt(0)}
+                            </div>
+                            <div>
+                              <p className="font-bold">{student.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {batches.find(b => b.id === student.batchId)?.name} • Parent: {student.parentWhatsApp || 'Not set'}
+                              </p>
+                            </div>
+                          </div>
+                          <Button 
+                            disabled={!student.parentWhatsApp}
+                            onClick={() => {
+                              const cleanedPhone = (student.parentWhatsApp || '').split('+').join('').split(' ').join('');
+                              const msg = absentMessage
+                                .replace('{name}', student.name)
+                                .replace('{date}', new Date().toLocaleDateString());
+                              const waUrl = "https://wa.me/" + cleanedPhone + "?text=" + encodeURIComponent(msg);
+                              window.open(waUrl, '_blank');
+                            }}
+                            className="bg-[#25D366] hover:bg-[#128C7E] text-white font-bold gap-2"
+                          >
+                            WhatsApp Parent
+                          </Button>
+                      </div>
+                    ));
+                  })()}
                 </div>
               </Card>
-            )}
+            </div>
+          )}
+        </div>
+      )}
 
+            
+            {activeTab === 'birthdays' && (
+              <div className="space-y-6">
+                <Card className="p-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4 border-b pb-6">
+                    <div>
+                      <h3 className="text-2xl font-black text-primary flex items-center gap-2">
+                        <Cake className="h-6 w-6" /> Student Birthdays
+                      </h3>
+                      <p className="text-sm text-muted-foreground mt-1">Celebrate and wish your students on their special day</p>
+                    </div>
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="sm" className="font-bold">Edit Wish Template</Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Birthday Wish Template</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4 pt-4">
+                          <p className="text-xs text-muted-foreground">Use <code className="bg-muted px-1 rounded">{'{name}'}</code> as a placeholder.</p>
+                          <textarea 
+                            className="w-full min-h-[100px] p-3 rounded-md border bg-background text-sm focus:ring-2 focus:ring-primary outline-none"
+                            value={birthdayMessage}
+                            onChange={(e) => setBirthdayMessage(e.target.value)}
+                            placeholder="Type your birthday wish here..."
+                          />
+                          <div className="bg-accent p-3 rounded-md text-xs">
+                            <strong>Preview:</strong><br />
+                            {birthdayMessage.replace('{name}', 'John Doe')}
+                          </div>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {(() => {
+                      const today = new Date();
+                      const tMonth = today.getMonth();
+                      const tDay = today.getDate();
+
+                      const sortedStudents = [...students].filter(s => s.dob).sort((a, b) => {
+                        const dateA = new Date(a.dob!);
+                        const dateB = new Date(b.dob!);
+                        // Compare by month then day
+                        if (dateA.getMonth() !== dateB.getMonth()) return dateA.getMonth() - dateB.getMonth();
+                        return dateA.getDate() - dateB.getDate();
+                      });
+
+                      // Find today's birthdays and upcoming ones
+                      const todaysBirthdays = sortedStudents.filter(s => {
+                        const d = new Date(s.dob!);
+                        return d.getMonth() === tMonth && d.getDate() === tDay;
+                      });
+
+                      const upcomingBirthdays = sortedStudents.filter(s => {
+                        const d = new Date(s.dob!);
+                        if (d.getMonth() > tMonth) return true;
+                        if (d.getMonth() === tMonth && d.getDate() > tDay) return true;
+                        return false;
+                      }).slice(0, 10);
+
+                      if (todaysBirthdays.length === 0 && upcomingBirthdays.length === 0) {
+                        return <div className="col-span-full py-12 text-center text-muted-foreground italic">No birthdays found. Add Date of Birth to student profiles.</div>;
+                      }
+
+                      return (
+                        <>
+                          {todaysBirthdays.map(student => (
+                            <div key={student.id} className="relative group p-6 rounded-[32px] border-4 border-primary bg-primary shadow-xl animate-bounce-subtle overflow-hidden">
+                              <div className="absolute -top-4 -right-4 w-24 h-24 bg-primary rounded-full blur-2xl group-hover:bg-primary transition-all" />
+                              <div className="relative z-10">
+                                <div className="flex items-center gap-3 mb-4">
+                                  <div className="h-12 w-12 rounded-full bg-primary text-white flex items-center justify-center font-black text-xl">
+                                    {student.name.charAt(0)}
+                                  </div>
+                                  <div>
+                                    <h4 className="font-black text-xl leading-none">{student.name}</h4>
+                                    <span className="text-[10px] font-black text-primary uppercase tracking-tighter">It's Birthday Today! 🎉</span>
+                                  </div>
+                                </div>
+                                <p className="text-sm text-muted-foreground mb-6 font-medium">
+                                  Batch: {batches.find(b => b.id === student.batchId)?.name || 'N/A'}<br/>
+                                  Born: {new Date(student.dob!).toLocaleDateString(undefined, { day: 'numeric', month: 'long' })}
+                                </p>
+                                <Button 
+                                  onClick={() => {
+                                    const cleanedPhone = (student.phoneNo || student.parentWhatsApp || '').split('+').join('').split(' ').join('');
+                                    const msg = birthdayMessage.replace('{name}', student.name);
+                                    const waUrl = "https://wa.me/" + cleanedPhone + "?text=" + encodeURIComponent(msg);
+                                    window.open(waUrl, '_blank');
+                                  }}
+                                  className="w-full bg-[#25D366] hover:bg-[#128C7E] text-white font-black h-12 rounded-2xl gap-2 shadow-lg shadow-green-200"
+                                >
+                                  Wish on WhatsApp
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                          {upcomingBirthdays.map(student => (
+                            <div key={student.id} className="p-6 rounded-[32px] border-2 border-accent bg-card hover:border-primary transition-all group">
+                              <div className="flex items-center justify-between mb-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="h-10 w-10 rounded-full bg-accent text-accent flex items-center justify-center font-bold">
+                                    {student.name.charAt(0)}
+                                  </div>
+                                  <div>
+                                    <h4 className="font-bold">{student.name}</h4>
+                                    <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-widest">
+                                      {new Date(student.dob!).toLocaleDateString(undefined, { day: 'numeric', month: 'long' })}
+                                    </p>
+                                  </div>
+                                </div>
+                                <Cake className="h-5 w-5 text-accent/40 group-hover:text-primary transition-colors" />
+                              </div>
+                              <p className="text-xs text-muted-foreground mb-4">
+                                {batches.find(b => b.id === student.batchId)?.name}
+                              </p>
+                              <Button 
+                                variant="outline"
+                                onClick={() => {
+                                  const cleanedPhone = (student.phoneNo || student.parentWhatsApp || '').split('+').join('').split(' ').join('');
+                                  const msg = birthdayMessage.replace('{name}', student.name);
+                                  const waUrl = "https://wa.me/" + cleanedPhone + "?text=" + encodeURIComponent(msg);
+                                  window.open(waUrl, '_blank');
+                                }}
+                                className="w-full text-xs font-bold border-2 hover:bg-primary h-10 rounded-xl"
+                              >
+                                Pre-send Wish
+                              </Button>
+                            </div>
+                          ))}
+                        </>
+                      );
+                    })()}
+                  </div>
+                </Card>
+              </div>
+            )}
           </div>
         </DashboardLayout>
       </div>
 
-      {/* PROFESSIONAL INVOICE RECEIPT - Visible only when printing */}
+      
       {receiptData && (
         <div className="hidden print:block absolute top-0 left-0 w-full bg-white text-black min-h-screen" style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
           <div className="max-w-[210mm] mx-auto px-10 py-8">

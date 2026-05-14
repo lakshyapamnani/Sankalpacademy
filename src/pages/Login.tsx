@@ -8,7 +8,7 @@ import { GraduationCap, User, BookOpen, Shield } from "lucide-react";
 import { toast } from "sonner";
 import { clearCurrentUser, authenticateUser, getCurrentUser, setCurrentUser } from "@/lib/localStorage";
 
-type UserRole = "admin" | "teacher" | "student";
+type UserRole = "admin" | "student" | "staff";
 
 interface LoginProps {
   defaultRole?: UserRole;
@@ -42,16 +42,16 @@ const Login = ({ defaultRole }: LoginProps) => {
     {
       id: "admin" as UserRole,
       title: "Administrator",
-      description: "Manage teachers, students, and classes",
+      description: "Manage students, and classes",
       icon: Shield,
       color: "from-purple-500 to-purple-600",
     },
     {
-      id: "teacher" as UserRole,
-      title: "Teacher",
-      description: "Manage classes, attendance, and assessments",
-      icon: BookOpen,
-      color: "from-blue-500 to-blue-600",
+      id: "staff" as UserRole,
+      title: "Staff",
+      description: "Manage classes and take attendance",
+      icon: User,
+      color: "from-orange-500 to-orange-600",
     },
     {
       id: "student" as UserRole,
@@ -175,8 +175,7 @@ const Login = ({ defaultRole }: LoginProps) => {
 
         <p className="text-center text-sm text-muted-foreground mt-6">
           {selectedRole === 'admin' && 'Admin: admin@smartclass.com / admin123'}
-          {selectedRole === 'teacher' && 'Create teacher accounts in Admin panel'}
-          {selectedRole === 'student' && 'Create student accounts in Admin panel'}
+          {(selectedRole === 'staff' || selectedRole === 'student') && 'Accounts are created in the Admin panel'}
         </p>
       </Card>
     </div>
