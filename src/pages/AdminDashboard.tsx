@@ -65,6 +65,16 @@ const formatFirebaseError = (message: string): string => {
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
+
+  // Returns YYYY-MM-DD in the local timezone (not UTC)
+  const getLocalDateString = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   const [activeTab, setActiveTab] = useState<'batches' | 'students' | 'staff' | 'classes' | 'fees' | 'tests' | 'attendance' | 'birthdays'>('students');
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
@@ -102,7 +112,7 @@ const AdminDashboard = () => {
   const [instituteSettings, setInstituteSettingsState] = useState<InstituteSettings>(getInstituteSettings());
 
   // Absent Today State
-  const [absentDate, setAbsentDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [absentDate, setAbsentDate] = useState<string>(getLocalDateString());
   const [waMessageTemplate, setWaMessageTemplate] = useState<string>(
     () => localStorage.getItem('smartclass_wa_template') ||
       'Hello Parent, your child {name} was absent today {date}. Kindly look into this. - {institute}'
@@ -111,7 +121,7 @@ const AdminDashboard = () => {
   // MCQ Test Builder State (unused legacy – kept for potential future use)
   const [testForm, setTestForm] = useState<{ name: string; date: string; batchIds: string[]; questions: MCQQuestion[] }>({
     name: '',
-    date: new Date().toISOString().split('T')[0],
+    date: getLocalDateString(),
     batchIds: [],
     questions: [{ id: 'q1', question: '', options: ['', '', '', ''], correctOptionIndex: 0 }],
   });
@@ -226,7 +236,7 @@ const AdminDashboard = () => {
 
   const handleSaveDailyAttendance = () => {
     if (!selectedAttendanceBatch) return;
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
     
     Object.entries(dailyAttendance).forEach(([studentId, status]) => {
       markAttendance({
@@ -1612,7 +1622,7 @@ const AdminDashboard = () => {
                             <p className="text-sm text-primary/70 font-bold uppercase tracking-wider mb-1">Today's Present</p>
                             <p className="text-4xl font-black text-primary">
                               {(() => {
-                                const today = new Date().toISOString().split('T')[0];
+                                const today = getLocalDateString();
                                 const batchStudents = students.filter(s => s.batchId === selectedReportBatch);
                                 const records = batchStudents.map(s => getStudentAttendance(s.id)).flat();
                                 return records.filter(r => r.date === today && r.status === 'present').length;
@@ -1623,7 +1633,7 @@ const AdminDashboard = () => {
                             <p className="text-sm text-destructive/70 font-bold uppercase tracking-wider mb-1">Today's Absent</p>
                             <p className="text-4xl font-black text-destructive">
                               {(() => {
-                                const today = new Date().toISOString().split('T')[0];
+                                const today = getLocalDateString();
                                 const batchStudents = students.filter(s => s.batchId === selectedReportBatch);
                                 const records = batchStudents.map(s => getStudentAttendance(s.id)).flat();
                                 return records.filter(r => r.date === today && r.status === 'absent').length;
@@ -1756,7 +1766,7 @@ const AdminDashboard = () => {
 
                   <div className="grid gap-4">
                     {(() => {
-                      const today = new Date().toISOString().split('T')[0];
+                      const today = getLocalDateString();
                       const absentToday = students.filter(student => {
                         if (student.batchId !== selectedReportBatch) return false;
                         const records = getStudentAttendance(student.id);
