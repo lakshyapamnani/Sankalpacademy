@@ -43,6 +43,8 @@ import {
   TestResult,
   Staff,
   MCQQuestion,
+  InstituteSettings,
+  getInstituteSettings,
 } from "@/lib/localStorage";
 
 const formatFirebaseError = (message: string): string => {
@@ -329,6 +331,44 @@ const AdminDashboard = () => {
     addBatch(batch);
     toast.success("Batch created successfully");
     setOpenDialog(null);
+    loadData();
+  };
+
+  const handleAddTest = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const test: Test = {
+      id: Date.now().toString(),
+      name: formData.get("name") as string,
+      batchId: selectedBatches[0] || "", // Keep for legacy if needed
+      batchIds: selectedBatches,
+      date: formData.get("date") as string,
+      totalMarks: testType === 'mcq' ? mcqQuestions.length : Number(formData.get("totalMarks")),
+      type: testType,
+      questions: testType === 'mcq' ? mcqQuestions : undefined,
+    };
+
+    if (testType === 'mcq') {
+       if (!test.name.trim()) { toast.error("Test name is required"); return; }
+       if (selectedBatches.length === 0) { toast.error("Select at least one batch"); return; }
+       if (mcqQuestions.length === 0) { toast.error("Add at least one question"); return; }
+       for (const q of mcqQuestions) {
+         if (!q.question.trim()) { toast.error("Every question needs text"); return; }
+         if (q.options.some(o => !o.trim())) { toast.error("All options need text"); return; }
+       }
+    }
+
+    if (selectedBatches.length === 0) {
+      toast.error("Please select at least one batch");
+      return;
+    }
+
+    addTest(test);
+    toast.success(`${testType.toUpperCase()} Test added successfully`);
+    setOpenDialog(null);
+    setMcqQuestions([]);
+    setSelectedBatches([]);
+    setTestType('subjective');
     loadData();
   };
 
@@ -926,133 +966,8 @@ const AdminDashboard = () => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                  
-                  <div className="lg:col-span-4 space-y-3 max-h-[65vh] overflow-y-auto pr-2">
-                    {tests.map(test => {
-                      const batch = batches.find(b => b.id === test.batchId);
-                      return (
-                        <div 
-                          key={test.id} 
-                          className={`p-4 rounded-lg border cursor-pointer hover:shadow-md transition-all ${selectedTest?.id === test.id ? 'border-primary ring-1 ring-primary' : 'bg-card'}`}
-                          onClick={() => handleSelectTest(test)}
-                        >
-                          <div className="flex justify-between items-start mb-2">
-                            <h4 className="font-semibold text-sm">{test.name}</h4>
-                            <DeleteDialog
-                              title="Delete Test"
-                              description="Are you sure? This will remove all student marks for this test."
-                              onDelete={() => handleDeleteTest(test.id)}
-                            />
-                          </div>
-                          <div className="text-xs text-muted-foreground space-y-1">
-                            <p>
-                              Batches: {test.batchIds ? 
-                                batches.filter(b => test.batchIds?.includes(b.id)).map(b => b.name).join(', ') : 
-                                batch?.name || 'N/A'}
-                            </p>
-                            <p>Date: {new Date(test.date).toLocaleDateString()}</p>
-                            <p>Total Marks: {test.totalMarks}</p>
-                          </div>
-                        </div>
-                      )
-                    })}
-                    {tests.length === 0 && (
-                      <p className="text-sm text-center py-4 text-muted-foreground border-2 border-dashed rounded-lg bg-accent">No tests created yet.</p>
-                    )}
-                  </div>
 
-                  
-                  <div className="lg:col-span-8">
-                    {selectedTest ? (
-                      <div className="bg-card border rounded-lg p-4">
-                        <div className="border-b pb-4 mb-4 flex justify-between items-center">
-                          <div>
-                            <h4 className="text-lg font-semibold">{selectedTest.name} Grading</h4>
-                            <p className="text-sm text-muted-foreground">
-                              Type: <span className="capitalize font-medium">{selectedTest.type || 'subjective'}</span> • Max marks: {selectedTest.totalMarks}
-                            </p>
-                          </div>
-                          {selectedTest.type === 'mcq' && (
-                            <Dialog>
-                              <DialogTrigger asChild>
-                                <Button variant="outline" size="sm">View Questions</Button>
-                              </DialogTrigger>
-                              <DialogContent className="max-w-xl max-h-[80vh] overflow-y-auto">
-                                <DialogHeader>
-                                  <DialogTitle>{selectedTest.name} - Questions</DialogTitle>
-                                </DialogHeader>
-                                <div className="space-y-4 pt-4">
-                                  {selectedTest.questions?.map((q, idx) => (
-                                    <div key={q.id} className="p-3 border rounded-lg bg-accent">
-                                      <p className="font-bold text-sm mb-2">{idx + 1}. {q.question}</p>
-                                      <div className="grid grid-cols-2 gap-2">
-                                        {q.options.map((opt, oIdx) => (
-                                          <div key={oIdx} className={`text-xs p-2 rounded border ${q.correctOptionIndex === oIdx ? 'bg-green-100 border-green-200 font-bold' : 'bg-background'}`}>
-                                            {opt} {q.correctOptionIndex === oIdx && '✓'}
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </DialogContent>
-                            </Dialog>
-                          )}
-                        </div>
-                        <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2">
-                          {(() => {
-                            const batchStudents = students.filter(s => 
-                              selectedTest.batchIds?.includes(s.batchId) || s.batchId === selectedTest.batchId
-                            );
-                            if (batchStudents.length === 0) return <p className="text-sm text-muted-foreground">No students in assigned batches.</p>;
-                            
-                            return batchStudents.map(student => {
-                              const existingResult = testResults.find(r => r.studentId === student.id);
-                              
-                              return (
-                                <div key={student.id} className="flex items-center justify-between p-3 border rounded bg-accent">
-                                  <div>
-                                    <p className="font-medium text-sm">{student.name}</p>
-                                    <p className="text-xs text-muted-foreground">{student.phoneNo || student.email}</p>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <Input 
-                                      type="number" 
-                                      className="w-24 text-right font-bold" 
-                                      placeholder={selectedTest.type === 'mcq' ? "Auto" : "Marks"}
-                                      defaultValue={existingResult?.marksObtained}
-                                      onBlur={(e) => handleSaveMarks(student.id, e.target.value)}
-                                    />
-                                    <span className="text-sm text-muted-foreground font-medium">/ {selectedTest.totalMarks}</span>
-                                    {selectedTest.type === 'mcq' && existingResult && (
-                                      <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-black uppercase ml-2">Completed</span>
-                                    )}
-                                  </div>
-                                  {testForm.questions.length > 1 && (
-                                    <Button type="button" size="icon" variant="ghost" className="text-red-500 mt-5" onClick={() => removeQuestionFromForm(q.id)}>
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  )}
-                                </div>
-                              );
-                            });
-                          })()}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="h-full min-h-[200px] flex items-center justify-center text-muted-foreground border-2 border-dashed rounded-lg bg-accent">
-                        Select a test from the left to enter marks.
-                      </div>
-                    )}
-                  </div>
-                </div>
 
-                          <Button onClick={handleCreateMCQTest} className="w-full">Create Test</Button>
-                        </div>
-                      </DialogContent>
-                    </Dialog>
-                  </div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* Test List */}
@@ -1180,7 +1095,6 @@ const AdminDashboard = () => {
                   </div>
 
                 </Card>
-              </div>
             )}
 
             
@@ -1338,7 +1252,7 @@ const AdminDashboard = () => {
 
                       <div className="flex justify-end gap-4">
                         <Button variant="outline" onClick={() => setSelectedAttendanceBatch(null)} className="h-14 px-10 rounded-2xl font-bold">Cancel</Button>
-                        <Button onClick={handleSaveDailyAttendance} className="h-14 px-12 rounded-2xl font-black text-lg bg-primary shadow-xl shadow-primary">
+                                      <Button onClick={handleSaveDailyAttendance} className="h-14 px-12 rounded-2xl font-black text-lg bg-primary shadow-xl shadow-primary">
                           Save Batch Attendance
                         </Button>
                       </div>
@@ -1557,10 +1471,10 @@ const AdminDashboard = () => {
                           </Button>
                         </div>
                         <div className="flex gap-4">
-                          <div className="bg-primary text-primary px-3 py-1.5 rounded-md text-sm font-medium">
+                          <div className="bg-primary/10 text-primary px-3 py-1.5 rounded-md text-sm font-medium">
                             {batchStudents.length} Students
                           </div>
-                          <div className="bg-primary text-primary px-3 py-1.5 rounded-md text-sm font-medium">
+                          <div className="bg-primary/10 text-primary px-3 py-1.5 rounded-md text-sm font-medium">
                             {batchClasses.length} Classes
                           </div>
                         </div>
@@ -1812,9 +1726,9 @@ const AdminDashboard = () => {
                           >
                             WhatsApp Parent
                           </Button>
-                      </div>
-                    ));
-                  })()}
+                        </div>
+                      ));
+                    })()}
                 </div>
               </Card>
             </div>
@@ -1974,7 +1888,7 @@ const AdminDashboard = () => {
             {/* Invoice Header */}
             <div className="border-b-2 border-gray-800 pb-5 mb-6">
               <div className="text-center">
-                <h1 className="text-2xl font-bold uppercase tracking-widest text-gray-900">{instituteSettings.name || 'SmartClass'}</h1>
+                <h1 className="text-2xl font-bold uppercase tracking-widest text-gray-900">{instituteSettings.name || 'RC Tutorials ERP'}</h1>
                 {instituteSettings.address && (
                   <p className="text-sm text-gray-600 mt-1">{instituteSettings.address}</p>
                 )}
@@ -2086,7 +2000,7 @@ const AdminDashboard = () => {
 
             {/* Footer */}
             <div className="mt-8 text-center text-[10px] text-gray-300 border-t pt-3">
-              Generated by {instituteSettings.name || 'SmartClass'} Management System • {new Date().toLocaleDateString()}
+              Generated by {instituteSettings.name || 'RC Tutorials ERP'} Management System • {new Date().toLocaleDateString()}
             </div>
 
           </div>

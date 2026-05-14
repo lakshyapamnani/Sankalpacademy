@@ -1,7 +1,6 @@
-{
-  "name": "edusmart-ai",
-  "short_name": "edusmart",
-  "description": "Student and teacher dashboard for Edusmart AI",
+  "name": "RC Tutorials ERP",
+  "short_name": "RC ERP",
+  "description": "Student and staff dashboard for RC Tutorials ERP",
   "start_url": ".",
   "scope": "/",
   "display": "standalone",
@@ -9,12 +8,12 @@
   "theme_color": "#0ea5a4",
   "icons": [
     {
-      "src": "/icons/Screenshot 2026-04-09 135955.ico",
+      "src": "/icons/rct.ico",
       "sizes": "64x64 32x32 24x24 16x16",
       "type": "image/x-icon"
     },
     {
-      "src": "/icons/Screenshot 2026-04-09 135955.ico",
+      "src": "/icons/rct.ico",
       "sizes": "192x192 512x512",
       "type": "image/x-icon",
       "purpose": "any maskable"

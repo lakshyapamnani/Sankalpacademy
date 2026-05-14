@@ -316,14 +316,6 @@ const StudentDashboard = () => {
               </div>
             </div>
           );
-          })}
-          {tests.length === 0 && (
-            <div className="text-center py-12">
-              <CheckSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-20" />
-              <p className="text-muted-foreground">No tests recorded yet</p>
-              <p className="text-sm text-muted-foreground mt-1">Tests will appear here once your teacher creates them</p>
-            </div>
-          )
         })}
         {tests.length === 0 && (
           <div className="text-center py-12 bg-accent/10 rounded-2xl border-2 border-dashed border-accent/20">
@@ -332,6 +324,131 @@ const StudentDashboard = () => {
           </div>
         )}
       </div>
+    </Card>
+  );
+
+  const renderProfile = () => {
+    const batch = batches.find(b => b.id === currentStudent?.batchId);
+    const batchDisplayName = batch ? batch.name : (currentStudent?.batchId || 'N/A');
+    
+    return (
+      <div className="space-y-6">
+        <Card className="p-6 bg-primary/5 border-primary/10">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="h-16 w-16 rounded-full bg-primary/20 flex items-center justify-center">
+              <UserCircle className="h-8 w-8 text-primary" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold">{currentStudent?.name}</h2>
+              <p className="text-sm text-muted-foreground">{currentStudent?.email}</p>
+              <p className="text-sm font-medium mt-1">Batch: {currentStudent?.batchId || 'N/A'}</p>
+            </div>
+          </div>
+        </Card>
+ 
+        {/* Attendance Summary */}
+        <Card className="p-6">
+          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2"><Calendar className="h-5 w-5"/> Attendance Overview</h3>
+          <div className="flex items-center justify-between mb-3 border-b pb-4">
+            <span className="text-sm font-medium">Overall Attendance</span>
+            <span className={`text-2xl font-bold ${attendancePercentage > 75 ? 'text-green-500' : 'text-primary'}`}>{attendancePercentage}%</span>
+          </div>
+          <p className="text-xs text-muted-foreground">{attendance.length} Total days recorded.</p>
+        </Card>
+      </div>
+    );
+  };
+
+  const renderTabContent = () => {
+    switch(activeTab) {
+      case "home": return renderClassesCard();
+      case "notes": return renderNotesCard();
+      case "ai": return (
+        <Card className="p-6">
+          <div className="p-4 rounded-lg bg-gradient-to-br from-primary/10 to-accent/10 border border-primary/20">
+            <div className="flex items-start gap-3">
+              <Brain className="h-5 w-5 text-primary mt-1" />
+              <div className="flex-1">
+                <p className="font-semibold mb-1">AI Learning Assistant</p>
+                <p className="text-sm text-muted-foreground mb-4">Get instant help with your doubts, 24/7 with AI-powered assistance</p>
+                <Button className="w-full" onClick={() => setShowAiModal(true)}>
+                  <MessageSquare className="h-4 w-4 mr-2" /> Start Chat
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Card>
+      );
+      case "tests": return renderTestsCard();
+      case "profile": return renderProfile();
+      default: return null;
+    }
+  };
+
+  return (
+    <DashboardLayout role="student" title="Student Dashboard">
+      <div className="hidden lg:flex items-center justify-between mb-8">
+        <div className="flex gap-3">
+          {tabOptions.map(tab => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 rounded-full border px-5 py-2 text-sm font-medium transition ${
+                  isActive ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="pb-24 lg:pb-0">{renderTabContent()}</div>
+
+      {/* AI Chat Modal */}
+      {showAiModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowAiModal(false)} />
+          <div className="relative w-full sm:max-w-2xl bg-card rounded-t-xl sm:rounded-lg p-5 max-h-[85vh] flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between mb-4 border-b pb-3">
+              <h3 className="text-lg font-semibold flex items-center gap-2"><Bot className="h-5 w-5 text-primary"/> AI Assistant</h3>
+              <Button variant="ghost" size="icon" onClick={() => setShowAiModal(false)}>✕</Button>
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-2">
+              {chatMessages.length === 0 && (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Brain className="h-12 w-12 mx-auto mb-3 opacity-20" />
+                  <p>How can I help you learn today?</p>
+                </div>
+              )}
+              {chatMessages.map((m, i) => (
+                <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`p-3 rounded-2xl max-w-[85%] text-sm ${m.role === 'user' ? 'bg-primary text-primary-foreground rounded-tr-sm' : 'bg-muted rounded-tl-sm'}`}>
+                    {m.text}
+                  </div>
+                </div>
+              ))}
+              {aiLoading && (
+                <div className="flex justify-start">
+                  <div className="p-3 bg-muted rounded-2xl rounded-tl-sm text-sm flex gap-1">
+                    <span className="animate-bounce">.</span><span className="animate-bounce delay-100">.</span><span className="animate-bounce delay-200">.</span>
+                  </div>
+                </div>
+              )}
+            </div>
+            <form onSubmit={handleSendMessage} className="flex gap-2 pt-2 border-t mt-auto">
+              <Input value={inputText} onChange={e => setInputText(e.target.value)} placeholder="Ask a question..." disabled={aiLoading} className="rounded-full" />
+              <Button type="submit" disabled={aiLoading || !inputText.trim()} className="rounded-full px-6">Send</Button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* MCQ TEST TAKING MODAL */}
       {activeTakingTest && (
@@ -458,131 +575,6 @@ const StudentDashboard = () => {
               </div>
             )}
           </Card>
-        </div>
-      )}
-    </Card>
-  );
-
-  const renderProfile = () => {
-    const batch = batches.find(b => b.id === currentStudent?.batchId);
-    const batchDisplayName = batch ? batch.name : (currentStudent?.batchId || 'N/A');
-    
-    return (
-      <div className="space-y-6">
-        <Card className="p-6 bg-primary/5 border-primary/10">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="h-16 w-16 rounded-full bg-primary/20 flex items-center justify-center">
-              <UserCircle className="h-8 w-8 text-primary" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-bold">{currentStudent?.name}</h2>
-              <p className="text-sm text-muted-foreground">{currentStudent?.email}</p>
-              <p className="text-sm font-medium mt-1">Batch: {currentStudent?.batchId || 'N/A'}</p>
-            </div>
-          </div>
-        </Card>
- 
-        {/* Attendance Summary */}
-        <Card className="p-6">
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2"><Calendar className="h-5 w-5"/> Attendance Overview</h3>
-          <div className="flex items-center justify-between mb-3 border-b pb-4">
-            <span className="text-sm font-medium">Overall Attendance</span>
-            <span className={`text-2xl font-bold ${attendancePercentage > 75 ? 'text-green-500' : 'text-primary'}`}>{attendancePercentage}%</span>
-          </div>
-          <p className="text-xs text-muted-foreground">{attendance.length} Total days recorded.</p>
-        </Card>
-      </div>
-    );
-  };
-
-  const renderTabContent = () => {
-    switch(activeTab) {
-      case "home": return renderClassesCard();
-      case "notes": return renderNotesCard();
-      case "ai": return (
-        <Card className="p-6">
-          <div className="p-4 rounded-lg bg-gradient-to-br from-primary/10 to-accent/10 border border-primary/20">
-            <div className="flex items-start gap-3">
-              <Brain className="h-5 w-5 text-primary mt-1" />
-              <div className="flex-1">
-                <p className="font-semibold mb-1">AI Learning Assistant</p>
-                <p className="text-sm text-muted-foreground mb-4">Get instant help with your doubts, 24/7 with AI-powered assistance</p>
-                <Button className="w-full" onClick={() => setShowAiModal(true)}>
-                  <MessageSquare className="h-4 w-4 mr-2" /> Start Chat
-                </Button>
-              </div>
-            </div>
-          </div>
-        </Card>
-      );
-      case "tests": return renderTestsCard();
-      case "profile": return renderProfile();
-      default: return null;
-    }
-  };
-
-  return (
-    <DashboardLayout role="student" title="Student Dashboard">
-      <div className="hidden lg:flex items-center justify-between mb-8">
-        <div className="flex gap-3">
-          {tabOptions.map(tab => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 rounded-full border px-5 py-2 text-sm font-medium transition ${
-                  isActive ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Main Content Area */}
-      <div className="pb-24 lg:pb-0">{renderTabContent()}</div>
-
-      {/* AI Chat Modal */}
-      {showAiModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowAiModal(false)} />
-          <div className="relative w-full sm:max-w-2xl bg-card rounded-t-xl sm:rounded-lg p-5 max-h-[85vh] flex flex-col shadow-2xl">
-            <div className="flex items-center justify-between mb-4 border-b pb-3">
-              <h3 className="text-lg font-semibold flex items-center gap-2"><Bot className="h-5 w-5 text-primary"/> AI Assistant</h3>
-              <Button variant="ghost" size="icon" onClick={() => setShowAiModal(false)}>✕</Button>
-            </div>
-            <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-2">
-              {chatMessages.length === 0 && (
-                <div className="text-center py-12 text-muted-foreground">
-                  <Brain className="h-12 w-12 mx-auto mb-3 opacity-20" />
-                  <p>How can I help you learn today?</p>
-                </div>
-              )}
-              {chatMessages.map((m, i) => (
-                <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`p-3 rounded-2xl max-w-[85%] text-sm ${m.role === 'user' ? 'bg-primary text-primary-foreground rounded-tr-sm' : 'bg-muted rounded-tl-sm'}`}>
-                    {m.text}
-                  </div>
-                </div>
-              ))}
-              {aiLoading && (
-                <div className="flex justify-start">
-                  <div className="p-3 bg-muted rounded-2xl rounded-tl-sm text-sm flex gap-1">
-                    <span className="animate-bounce">.</span><span className="animate-bounce delay-100">.</span><span className="animate-bounce delay-200">.</span>
-                  </div>
-                </div>
-              )}
-            </div>
-            <form onSubmit={handleSendMessage} className="flex gap-2 pt-2 border-t mt-auto">
-              <Input value={inputText} onChange={e => setInputText(e.target.value)} placeholder="Ask a question..." disabled={aiLoading} className="rounded-full" />
-              <Button type="submit" disabled={aiLoading || !inputText.trim()} className="rounded-full px-6">Send</Button>
-            </form>
-          </div>
         </div>
       )}
 

@@ -90,7 +90,7 @@ const Login = ({ defaultRole }: LoginProps) => {
             <div className="flex items-center justify-center gap-3 mb-4">
               <GraduationCap className="h-12 w-12 text-primary" />
               <h1 className="text-5xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-                SmartClass
+                RC Tutorials ERP
               </h1>
             </div>
             <p className="text-xl text-muted-foreground">
@@ -174,7 +174,7 @@ const Login = ({ defaultRole }: LoginProps) => {
         </form>
 
         <p className="text-center text-sm text-muted-foreground mt-6">
-          {selectedRole === 'admin' && 'Admin: admin@smartclass.com / admin123'}
+          {selectedRole === 'admin' && 'Admin: admin@rctutorials.com / admin123'}
           {(selectedRole === 'staff' || selectedRole === 'student') && 'Accounts are created in the Admin panel'}
         </p>
       </Card>

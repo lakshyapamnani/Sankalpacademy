@@ -6,6 +6,7 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
+    "electron:dev": "vite",
     "build": "vite build",
     "build:electron": "vite build && electron-builder",
     "build:dev": "vite build --mode development",
@@ -90,7 +91,7 @@
   },
   "build": {
     "appId": "com.smartclass.ai",
-    "productName": "EduSmart AI",
+    "productName": "RC Tutorials ERP",
     "directories": {
       "output": "release/${version}"
     },
@@ -102,7 +103,7 @@
       "target": [
         "nsis"
       ],
-      "icon": "public/favicon.ico"
+      "icon": "public/icons/rct.ico"
     },
     "nsis": {
       "oneClick": false,

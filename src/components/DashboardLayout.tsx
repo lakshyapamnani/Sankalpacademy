@@ -48,8 +48,8 @@ const DashboardLayout = ({ children, role, title, sidebarItems = [], activeSideb
               </Button>
             )}
             <GraduationCap className="h-8 w-8 text-primary hidden sm:block" />
-            <span className="font-semibold sm:hidden text-lg">SmartClass</span>
-            <span className="sr-only">SmartClass</span>
+            <span className="font-semibold sm:hidden text-lg">RC Tutorials ERP</span>
+            <span className="sr-only">RC Tutorials ERP</span>
           </div>
 
           <div className="flex items-center gap-2">
