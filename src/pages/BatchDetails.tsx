@@ -16,6 +16,7 @@ import {
   getStudentAttendance,
   deleteStudent,
   changeStudentPassword,
+  subscribeToRealtimeUpdates,
   Batch,
   Student,
   Class,
@@ -33,6 +34,11 @@ const BatchDetails = () => {
   useEffect(() => {
     if (!batchId) return;
     loadBatchData(batchId);
+    // Subscribe to realtime updates so admin-added data is reflected
+    const unsubscribe = subscribeToRealtimeUpdates(() => {
+      loadBatchData(batchId);
+    });
+    return () => unsubscribe();
   }, [batchId]);
 
   const loadBatchData = (id: string) => {

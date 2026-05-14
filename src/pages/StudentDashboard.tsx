@@ -13,6 +13,7 @@ import {
   getStudentAttendance,
   getStudents,
   subscribeToClassNotifications,
+  subscribeToRealtimeUpdates,
   acknowledgeClassNotification,
   getTestsByBatch,
   getTestResultsByStudent,
@@ -148,6 +149,11 @@ const StudentDashboard = () => {
 
   useEffect(() => {
     loadData();
+    // Subscribe to realtime updates so admin-added data is reflected immediately
+    const unsubscribe = subscribeToRealtimeUpdates(() => {
+      loadData();
+    });
+    return () => unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id]);
 
