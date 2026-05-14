@@ -94,6 +94,26 @@ const AdminDashboard = () => {
     record: FeeRecord;
   } | null>(null);
 
+  // Institute Settings State
+  const [instituteSettings, setInstituteSettingsState] = useState<InstituteSettings>(getInstituteSettings());
+
+  // Absent Today State
+  const [absentDate, setAbsentDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [waMessageTemplate, setWaMessageTemplate] = useState<string>(
+    () => localStorage.getItem('smartclass_wa_template') ||
+      'Hello Parent, your child {name} was absent today {date}. Kindly look into this. - {institute}'
+  );
+
+  // MCQ Test Builder State
+  const [testForm, setTestForm] = useState<{ name: string; date: string; batchIds: string[]; questions: MCQQuestion[] }>({
+    name: '',
+    date: new Date().toISOString().split('T')[0],
+    batchIds: [],
+    questions: [{ id: 'q1', question: '', options: [
+      { id: 'o1', text: '' }, { id: 'o2', text: '' }, { id: 'o3', text: '' }, { id: 'o4', text: '' }
+    ], correctOptionId: 'o1' }],
+  });
+
   useEffect(() => {
     loadData();
     // Subscribe to realtime updates
@@ -255,6 +275,7 @@ const AdminDashboard = () => {
       password: formData.get("password") as string,
       collegeName: formData.get("collegeName") as string,
       phoneNo: formData.get("phoneNo") as string,
+      whatsappNo: formData.get("whatsappNo") as string,
       studentClass: formData.get("studentClass") as string,
       parentWhatsApp: formData.get("parentWhatsApp") as string,
       dob: formData.get("dob") as string,
@@ -275,33 +296,20 @@ const AdminDashboard = () => {
   const handleAddClass = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    
-    const startTime = formData.get("time") as string;
-    const startPeriod = formData.get("timePeriod") as string;
-    const endTime = formData.get("endTime") as string;
-    const endPeriod = formData.get("endTimePeriod") as string;
-
-    const convertTo24h = (time: string, period: string) => {
-      let [hours, minutes] = time.split(':');
-      let h = parseInt(hours);
-      if (period === 'PM' && h < 12) h += 12;
-      if (period === 'AM' && h === 12) h = 0;
-      return `${h.toString().padStart(2, '0')}:${minutes}`;
-    };
-
     const classData: Class = {
       id: Date.now().toString(),
       name: formData.get("name") as string,
       subject: formData.get("subject") as string,
       batchId: formData.get("batchId") as string,
+      schedule: formData.get("schedule") as string || undefined,
       date: formData.get("date") as string,
-      time: convertTo24h(startTime, startPeriod),
-      endTime: convertTo24h(endTime, endPeriod),
+      time: formData.get("time") as string,
+      endTime: formData.get("endTime") as string,
+      endDate: (formData.get("endDate") as string) || undefined,
     };
-    
     try {
       await addClass(classData);
-      toast.success("Class created successfully");
+      toast.success("Class created and notifications enqueued");
       setOpenDialog(null);
       loadData();
     } catch (error) {
@@ -324,9 +332,16 @@ const AdminDashboard = () => {
     loadData();
   };
 
-  const handleAddTest = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
+  const handleCreateMCQTest = () => {
+    const { name, date, batchIds, questions } = testForm;
+    if (!name.trim()) { toast.error("Test name is required"); return; }
+    if (batchIds.length === 0) { toast.error("Select at least one batch"); return; }
+    if (questions.length === 0) { toast.error("Add at least one question"); return; }
+    for (const q of questions) {
+      if (!q.question.trim()) { toast.error("Every question needs text"); return; }
+      if (q.options.some(o => !o.text.trim())) { toast.error("All options need text"); return; }
+      if (!q.options.find(o => o.id === q.correctOptionId)) { toast.error("Pick a correct answer for every question"); return; }
+    }
     const test: Test = {
       id: Date.now().toString(),
       name: formData.get("name") as string,
@@ -565,7 +580,8 @@ const AdminDashboard = () => {
                             <div>
                               <p className="font-semibold text-base">{student.name}</p>
                               <p className="text-xs text-muted-foreground">{student.email}</p>
-                              {student.phoneNo && <p className="text-xs text-muted-foreground">{student.phoneNo}</p>}
+                             {student.phoneNo && <p className="text-xs text-muted-foreground">📞 {student.phoneNo}</p>}
+                             {student.whatsappNo && <p className="text-xs text-emerald-600">💬 {student.whatsappNo}</p>}
                             </div>
                             <DeleteDialog
                               title="Delete Student"
@@ -1013,6 +1029,11 @@ const AdminDashboard = () => {
                                       <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-black uppercase ml-2">Completed</span>
                                     )}
                                   </div>
+                                  {testForm.questions.length > 1 && (
+                                    <Button type="button" size="icon" variant="ghost" className="text-red-500 mt-5" onClick={() => removeQuestionFromForm(q.id)}>
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  )}
                                 </div>
                               );
                             });
@@ -1027,7 +1048,139 @@ const AdminDashboard = () => {
                   </div>
                 </div>
 
-              </Card>
+                          <Button onClick={handleCreateMCQTest} className="w-full">Create Test</Button>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Test List */}
+                    <div className="lg:col-span-1 space-y-3 max-h-[60vh] overflow-y-auto pr-2">
+                      {tests.map(test => {
+                        const batchNames = (test.batchIds && test.batchIds.length > 0)
+                          ? test.batchIds.map(bid => batches.find(b => b.id === bid)?.name).filter(Boolean).join(', ')
+                          : (batches.find(b => b.id === test.batchId)?.name || 'Unknown');
+                        const isSelected = selectedTest?.id === test.id;
+                        const results = getTestResultsByTest(test.id);
+                        const avgScore = results.length > 0 ? Math.round((results.reduce((s, r) => s + r.marksObtained, 0) / results.length / test.totalMarks) * 100) : null;
+                        
+                        return (
+                          <div 
+                            key={test.id} 
+                            className={`p-4 rounded-lg border cursor-pointer hover:shadow-md transition-all ${isSelected ? 'border-primary ring-1 ring-primary bg-primary/5' : 'bg-card'}`}
+                            onClick={() => handleSelectTest(test)}
+                          >
+                            <div className="flex justify-between items-start mb-2">
+                              <h4 className="font-semibold">{test.name}</h4>
+                              <DeleteDialog
+                                title="Delete Test"
+                                description="Are you sure? This will remove all student marks for this test."
+                                onDelete={() => handleDeleteTest(test.id)}
+                              />
+                            </div>
+                            <div className="text-xs text-muted-foreground space-y-1">
+                              <p>Batches: <span className="font-medium text-foreground">{batchNames}</span></p>
+                              <p>{new Date(test.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                              <div className="flex items-center justify-between mt-2">
+                                <span>{test.questions ? `${test.questions.length} MCQ` : `Total: ${test.totalMarks} marks`}</span>
+                                {avgScore !== null && (
+                                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${avgScore >= 75 ? 'bg-emerald-100 text-emerald-700' : avgScore >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                                    Avg: {avgScore}%
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                      {tests.length === 0 && (
+                        <p className="text-sm text-center py-4 text-muted-foreground border-2 border-dashed rounded-lg bg-accent/50">No tests created yet.</p>
+                      )}
+                    </div>
+
+                    {/* Student Marks Entry */}
+                    <div className="lg:col-span-2">
+                      {selectedTest ? (
+                        <div className="bg-card border rounded-lg overflow-hidden">
+                          <div className="bg-gradient-to-r from-primary/10 to-accent/10 border-b p-4">
+                            <h4 className="text-lg font-semibold">{selectedTest.name}</h4>
+                            <p className="text-sm text-muted-foreground">
+                              {new Date(selectedTest.date).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })} • Max: {selectedTest.totalMarks} marks
+                            </p>
+                          </div>
+                          <div className="p-4 space-y-2 max-h-[50vh] overflow-y-auto">
+                            {(() => {
+                              const allowedBatchIds = (selectedTest.batchIds && selectedTest.batchIds.length > 0) ? selectedTest.batchIds : (selectedTest.batchId ? [selectedTest.batchId] : []);
+                              const batchStudents = students.filter(s => allowedBatchIds.includes(s.batchId));
+                              if (batchStudents.length === 0) return <p className="text-sm text-muted-foreground py-4 text-center">No students in this batch.</p>;
+                              
+                              return batchStudents.map(student => {
+                                const existingResult = testResults.find(r => r.studentId === student.id);
+                                const percent = existingResult ? Math.round((existingResult.marksObtained / selectedTest.totalMarks) * 100) : null;
+                                
+                                return (
+                                  <div key={student.id} className="flex items-center justify-between p-3 border rounded-lg bg-background hover:bg-accent/30 transition-colors">
+                                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                                      <div className={`h-9 w-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                                        percent === null ? 'bg-muted text-muted-foreground'
+                                        : percent >= 75 ? 'bg-emerald-100 text-emerald-700'
+                                        : percent >= 40 ? 'bg-amber-100 text-amber-700'
+                                        : 'bg-red-100 text-red-700'
+                                      }`}>
+                                        {percent !== null ? `${percent}%` : '—'}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <p className="font-medium text-sm truncate">{student.name}</p>
+                                        <p className="text-xs text-muted-foreground truncate">{student.phoneNo || student.email}</p>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0 ml-3">
+                                      <Input 
+                                        type="number" 
+                                        className="w-20 text-right text-sm" 
+                                        placeholder="—"
+                                        defaultValue={existingResult?.marksObtained}
+                                        onBlur={(e) => handleSaveMarks(student.id, e.target.value)}
+                                      />
+                                      <span className="text-xs text-muted-foreground whitespace-nowrap">/ {selectedTest.totalMarks}</span>
+                                    </div>
+                                  </div>
+                                );
+                              });
+                            })()}
+                          </div>
+                          {/* Score Distribution */}
+                          {testResults.length > 0 && (
+                            <div className="border-t p-4 bg-muted/30">
+                              <p className="text-xs font-medium text-muted-foreground mb-2">Score Distribution</p>
+                              <div className="flex gap-3">
+                                {[
+                                  { label: '≥75%', count: testResults.filter(r => (r.marksObtained / selectedTest.totalMarks) * 100 >= 75).length, color: 'bg-emerald-500' },
+                                  { label: '40-74%', count: testResults.filter(r => { const p = (r.marksObtained / selectedTest.totalMarks) * 100; return p >= 40 && p < 75; }).length, color: 'bg-amber-500' },
+                                  { label: '<40%', count: testResults.filter(r => (r.marksObtained / selectedTest.totalMarks) * 100 < 40).length, color: 'bg-red-500' },
+                                ].map(seg => (
+                                  <div key={seg.label} className="flex items-center gap-1.5 text-xs">
+                                    <div className={`h-2.5 w-2.5 rounded-full ${seg.color}`} />
+                                    <span className="text-muted-foreground">{seg.label}: <strong className="text-foreground">{seg.count}</strong></span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="h-full min-h-[200px] flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed rounded-lg bg-accent/50 py-12">
+                          <CheckSquare className="h-12 w-12 mb-3 opacity-20" />
+                          <p className="font-medium">Select a test</p>
+                          <p className="text-sm">Choose a test from the list to enter marks</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                </Card>
+              </div>
             )}
 
             
@@ -1201,7 +1354,7 @@ const AdminDashboard = () => {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
                   <div>
                     <h3 className="text-xl font-semibold">Classes</h3>
-                    <p className="text-sm text-muted-foreground">Manage your {classes.length} active classes</p>
+                    <p className="text-sm text-muted-foreground">Manage your {classes.length} classes</p>
                   </div>
                   <Dialog open={openDialog === "class"} onOpenChange={(open) => setOpenDialog(open ? "class" : null)}>
                     <DialogTrigger asChild>
@@ -1212,7 +1365,7 @@ const AdminDashboard = () => {
                     </DialogTrigger>
                     <DialogContent>
                       <DialogHeader>
-                        <DialogTitle className="text-2xl font-black uppercase text-primary">Add Teaching Session</DialogTitle>
+                        <DialogTitle>Create New Class</DialogTitle>
                       </DialogHeader>
                       <form onSubmit={handleAddClass} className="space-y-6 pt-4">
                         <div className="space-y-4">
@@ -1302,15 +1455,17 @@ const AdminDashboard = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {classes.map((classItem) => {
                     const batch = batches.find(b => b.id === classItem.batchId);
-                    const passed = isClassPassed(classItem);
+                    const isPast = isClassPast(classItem);
                     return (
-                      <div key={classItem.id} className={`p-4 rounded-lg border bg-card text-sm flex flex-col justify-between hover:shadow-md transition-shadow ${passed ? 'opacity-50 grayscale-[0.2]' : ''}`}>
+                      <div key={classItem.id} className={`p-4 rounded-lg border text-sm flex flex-col justify-between transition-shadow ${isPast ? 'bg-muted/50 opacity-60' : 'bg-card hover:shadow-md'}`}>
                         <div>
                           <div className="flex justify-between items-start mb-2">
                             <div>
                               <div className="flex items-center gap-2">
                                 <p className="font-semibold text-base">{classItem.name}</p>
-                                {passed && <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground font-medium uppercase">Ended</span>}
+                                {isPast && (
+                                  <span className="text-[10px] font-semibold uppercase tracking-wider bg-muted-foreground/20 text-muted-foreground px-1.5 py-0.5 rounded">Completed</span>
+                                )}
                               </div>
                               <p className="text-xs text-muted-foreground">{classItem.subject}</p>
                             </div>
@@ -1813,71 +1968,125 @@ const AdminDashboard = () => {
 
       
       {receiptData && (
-        <div className="hidden print:block absolute top-0 left-0 w-full p-8 bg-white text-black min-h-screen font-sans">
-          <div className="max-w-2xl mx-auto border-2 border-black p-8 rounded-lg">
+        <div className="hidden print:block absolute top-0 left-0 w-full bg-white text-black min-h-screen" style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
+          <div className="max-w-[210mm] mx-auto px-10 py-8">
             
-            <div className="text-center mb-8 border-b-2 border-black pb-4">
-              <h1 className="text-3xl font-bold uppercase tracking-widest text-black">SmartClass</h1>
-              <p className="text-gray-600 mt-1">Official Fee Receipt</p>
+            {/* Invoice Header */}
+            <div className="border-b-2 border-gray-800 pb-5 mb-6">
+              <div className="text-center">
+                <h1 className="text-2xl font-bold uppercase tracking-widest text-gray-900">{instituteSettings.name || 'SmartClass'}</h1>
+                {instituteSettings.address && (
+                  <p className="text-sm text-gray-600 mt-1">{instituteSettings.address}</p>
+                )}
+                <div className="flex items-center justify-center gap-6 mt-1 text-xs text-gray-500">
+                  {instituteSettings.phone && <span>Phone: {instituteSettings.phone}</span>}
+                  {instituteSettings.email && <span>Email: {instituteSettings.email}</span>}
+                </div>
+              </div>
+              <div className="mt-4 text-center">
+                <span className="inline-block bg-gray-900 text-white text-xs font-bold uppercase tracking-widest px-4 py-1 rounded-sm">
+                  Fee Receipt
+                </span>
+              </div>
             </div>
 
-            <div className="flex justify-between items-start mb-8 text-black">
+            {/* Receipt Meta & Student Details */}
+            <div className="grid grid-cols-2 gap-8 mb-6 text-sm">
               <div>
-                <p className="font-bold text-lg mb-2">Student Details:</p>
-                <p><strong>Name:</strong> {receiptData.student.name}</p>
-                <p><strong>Phone:</strong> {receiptData.student.phoneNo || 'N/A'}</p>
-                <p><strong>College:</strong> {receiptData.student.collegeName || 'N/A'}</p>
-                <p><strong>Class:</strong> {receiptData.student.studentClass || 'N/A'}</p>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Student Details</h3>
+                <table className="text-sm">
+                  <tbody>
+                    <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Name:</td><td className="font-semibold">{receiptData.student.name}</td></tr>
+                    <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Phone:</td><td>{receiptData.student.phoneNo || 'N/A'}</td></tr>
+                    <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">College:</td><td>{receiptData.student.collegeName || 'N/A'}</td></tr>
+                    <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Class:</td><td>{receiptData.student.studentClass || 'N/A'}</td></tr>
+                  </tbody>
+                </table>
               </div>
               <div className="text-right">
-                <p><strong>Receipt Date:</strong> {new Date(receiptData.payment.date).toLocaleDateString()}</p>
-                <p><strong>Receipt ID:</strong> RCPT-{receiptData.payment.id.slice(-6)}</p>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Receipt Info</h3>
+                <table className="text-sm ml-auto">
+                  <tbody>
+                    <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Receipt No:</td><td className="font-mono font-semibold">RCPT-{receiptData.payment.id.slice(-6).toUpperCase()}</td></tr>
+                    <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Date:</td><td>{new Date(receiptData.payment.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td></tr>
+                    <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Time:</td><td>{new Date(receiptData.payment.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</td></tr>
+                  </tbody>
+                </table>
               </div>
             </div>
 
-            <div className="mb-8 border border-black rounded">
-              <table className="w-full text-left">
-                <thead className="bg-gray-100 border-b border-black text-black">
-                  <tr>
-                    <th className="p-3">Description</th>
-                    <th className="p-3 text-right">Amount (INR)</th>
+            {/* Itemized Table */}
+            <div className="mb-6">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="bg-gray-100">
+                    <th className="border border-gray-300 px-4 py-2.5 text-left font-semibold text-gray-700">#</th>
+                    <th className="border border-gray-300 px-4 py-2.5 text-left font-semibold text-gray-700">Description</th>
+                    <th className="border border-gray-300 px-4 py-2.5 text-right font-semibold text-gray-700">Amount (₹)</th>
                   </tr>
                 </thead>
-                <tbody className="text-black">
+                <tbody>
                   <tr>
-                    <td className="p-3 font-medium">Fee Payment Installment</td>
-                    <td className="p-3 text-right text-lg font-bold">₹{receiptData.payment.amount.toLocaleString()}</td>
+                    <td className="border border-gray-300 px-4 py-3 text-gray-600">1</td>
+                    <td className="border border-gray-300 px-4 py-3">
+                      <p className="font-medium">Fee Payment — Installment #{receiptData.record.payments?.findIndex(p => p.id === receiptData.payment.id)! + 1}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">Course Fee Installment</p>
+                    </td>
+                    <td className="border border-gray-300 px-4 py-3 text-right text-lg font-bold">₹{receiptData.payment.amount.toLocaleString('en-IN')}</td>
                   </tr>
                 </tbody>
+                <tfoot>
+                  <tr className="bg-gray-50">
+                    <td colSpan={2} className="border border-gray-300 px-4 py-2.5 text-right font-bold text-gray-700 uppercase text-xs tracking-wider">Total Paid (This Receipt)</td>
+                    <td className="border border-gray-300 px-4 py-2.5 text-right font-bold text-lg text-gray-900">₹{receiptData.payment.amount.toLocaleString('en-IN')}</td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
 
-            <div className="flex justify-end mb-12 text-black">
-              <div className="w-1/2 bg-gray-50 border border-gray-300 p-4 rounded text-sm space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Total Course Fees:</span>
-                  <span className="font-semibold text-black">₹{receiptData.record.totalFees.toLocaleString()}</span>
+            {/* Fee Summary Box */}
+            <div className="flex justify-end mb-10">
+              <div className="w-72 border border-gray-300 rounded text-sm">
+                <div className="flex justify-between px-4 py-2 border-b border-gray-200">
+                  <span className="text-gray-500">Total Course Fees</span>
+                  <span className="font-semibold">₹{receiptData.record.totalFees.toLocaleString('en-IN')}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Total Paid (including this):</span>
-                  <span className="font-semibold text-black">₹{receiptData.record.payments.reduce((a, b) => a + b.amount, 0).toLocaleString()}</span>
+                <div className="flex justify-between px-4 py-2 border-b border-gray-200">
+                  <span className="text-gray-500">Total Paid (All)</span>
+                  <span className="font-semibold text-green-700">₹{receiptData.record.payments.reduce((a, b) => a + b.amount, 0).toLocaleString('en-IN')}</span>
                 </div>
-                <div className="flex justify-between border-t border-gray-300 pt-2 pb-1 text-black">
-                  <span className="font-bold">Remaining Balance:</span>
-                  <span className="font-bold text-red-600">₹{(receiptData.record.totalFees - receiptData.record.payments.reduce((a, b) => a + b.amount, 0)).toLocaleString()}</span>
+                <div className="flex justify-between px-4 py-2.5 bg-gray-50">
+                  <span className="font-bold text-gray-800">Outstanding Balance</span>
+                  <span className="font-bold text-red-600">₹{(receiptData.record.totalFees - receiptData.record.payments.reduce((a, b) => a + b.amount, 0)).toLocaleString('en-IN')}</span>
                 </div>
               </div>
             </div>
 
-            <div className="mt-16 flex justify-between text-black">
+            {/* Terms */}
+            <div className="mb-12 text-xs text-gray-400 border-t border-gray-200 pt-4">
+              <p className="font-semibold text-gray-500 mb-1">Terms & Conditions:</p>
+              <ol className="list-decimal list-inside space-y-0.5">
+                <li>Fees once paid are non-refundable.</li>
+                <li>This is a computer-generated receipt and does not require a physical signature.</li>
+                <li>Please retain this receipt for your records.</li>
+              </ol>
+            </div>
+
+            {/* Signatures */}
+            <div className="flex justify-between items-end">
               <div className="text-center">
-                <div className="w-32 border-b-2 border-black mb-2"></div>
-                <p className="text-sm text-gray-600">Student Signature</p>
+                <div className="w-40 border-b-2 border-gray-400 mb-1"></div>
+                <p className="text-xs text-gray-500">Student / Guardian Signature</p>
               </div>
               <div className="text-center">
-                <div className="w-32 border-b-2 border-black mb-2"></div>
-                <p className="text-sm text-gray-600">Authorized Signatory</p>
+                <div className="w-40 border-b-2 border-gray-400 mb-1"></div>
+                <p className="text-xs text-gray-500">Authorized Signatory</p>
               </div>
+            </div>
+
+            {/* Footer */}
+            <div className="mt-8 text-center text-[10px] text-gray-300 border-t pt-3">
+              Generated by {instituteSettings.name || 'SmartClass'} Management System • {new Date().toLocaleDateString()}
             </div>
 
           </div>

@@ -57,6 +57,8 @@ const StudentDashboard = () => {
   const [testCompleted, setTestCompleted] = useState(false);
 
   const [activeTab, setActiveTab] = useState<"home" | "notes" | "ai" | "tests" | "profile">("home");
+  const [activeTest, setActiveTest] = useState<Test | null>(null);
+  const [testAnswers, setTestAnswers] = useState<Record<string, string>>({});
   const seenNotificationIds = useRef<Set<string>>(new Set());
   const hasRegisteredForPush = useRef(false);
   const currentUser = getCurrentUser();
@@ -149,12 +151,6 @@ const StudentDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id]);
 
-  const isClassPassed = (classItem: Class) => {
-    if (!classItem.date || !classItem.endTime) return false;
-    const classEndTime = new Date(`${classItem.date}T${classItem.endTime}`);
-    return classEndTime < new Date();
-  };
-
   useEffect(() => {
     if (!currentStudent) return;
     const seen = seenNotificationIds.current;
@@ -194,37 +190,23 @@ const StudentDashboard = () => {
     <Card className="p-6">
       <h3 className="text-xl font-semibold mb-6">Lectures & Schedule</h3>
       <div className="space-y-3">
-        {myClasses.map(classItem => {
-          const passed = isClassPassed(classItem);
+        {[...myClasses].sort((a, b) => {
+          const aPast = isClassPast(a);
+          const bPast = isClassPast(b);
+          if (aPast === bPast) return 0;
+          return aPast ? 1 : -1;
+        }).map(classItem => {
+          const isPast = isClassPast(classItem);
           return (
-            <div 
-              key={classItem.id} 
-              className={`p-4 rounded-lg border transition-all ${
-                passed ? 'opacity-40 bg-muted/20' : 'bg-card hover:bg-accent/5'
-              }`}
-            >
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="font-semibold">{classItem.name}</p>
-                  <p className="text-sm text-muted-foreground">{classItem.subject}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {classItem.date ? (() => {
-                      const format12h = (t24: string) => {
-                        const [h, m] = t24.split(':').map(Number);
-                        const period = h >= 12 ? 'PM' : 'AM';
-                        const displayH = h % 12 || 12;
-                        return `${displayH}:${m.toString().padStart(2, '0')} ${period}`;
-                      };
-                      return `${classItem.date} • ${format12h(classItem.time)} - ${format12h(classItem.endTime)}`;
-                    })() : classItem.schedule}
-                  </p>
-                </div>
-                {passed && (
-                  <span className="text-[10px] bg-muted px-2 py-0.5 rounded-full text-muted-foreground font-medium uppercase tracking-wider">
-                    Finished
-                  </span>
+            <div key={classItem.id} className={`p-4 rounded-lg border transition-colors ${isPast ? 'bg-muted/50 opacity-60 border-muted' : 'bg-card hover:bg-accent/5'}`}>
+              <div className="flex items-center gap-2">
+                <p className="font-semibold">{classItem.name}</p>
+                {isPast && (
+                  <span className="text-[10px] font-semibold uppercase tracking-wider bg-muted-foreground/20 text-muted-foreground px-1.5 py-0.5 rounded">Completed</span>
                 )}
               </div>
+              <p className="text-sm text-muted-foreground">{classItem.subject}</p>
+              <p className="text-xs text-muted-foreground mt-1">{classItem.date} • {format12h(classItem.time)} - {format12h(classItem.endTime)}</p>
             </div>
           );
         })}
@@ -332,6 +314,13 @@ const StudentDashboard = () => {
                   )
                 )}
               </div>
+            );
+          })}
+          {tests.length === 0 && (
+            <div className="text-center py-12">
+              <CheckSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-20" />
+              <p className="text-muted-foreground">No tests recorded yet</p>
+              <p className="text-sm text-muted-foreground mt-1">Tests will appear here once your teacher creates them</p>
             </div>
           )
         })}
@@ -487,7 +476,7 @@ const StudentDashboard = () => {
             <div>
               <h2 className="text-2xl font-bold">{currentStudent?.name}</h2>
               <p className="text-sm text-muted-foreground">{currentStudent?.email}</p>
-              <p className="text-sm font-medium mt-1">Batch: {batchDisplayName}</p>
+              <p className="text-sm font-medium mt-1">Batch: {currentStudent?.batchId || 'N/A'}</p>
             </div>
           </div>
         </Card>

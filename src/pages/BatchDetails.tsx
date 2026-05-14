@@ -20,6 +20,7 @@ import {
   Student,
   Class,
 } from "@/lib/localStorage";
+import { format12h } from "@/lib/localStorage";
 
 const BatchDetails = () => {
   const { batchId } = useParams<{ batchId: string }>();
@@ -216,7 +217,7 @@ const BatchDetails = () => {
                 <Card key={cls.id} className="p-3">
                   <p className="font-semibold">{cls.name}</p>
                   <p className="text-sm text-muted-foreground">{cls.subject}</p>
-                  <p className="text-xs text-muted-foreground">{cls.schedule}</p>
+                  <p className="text-xs text-muted-foreground">{cls.date} • {format12h(cls.time)} - {format12h(cls.endTime)}</p>
                 </Card>
               ))}
             </div>

@@ -6,24 +6,37 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { GraduationCap, User, BookOpen, Shield } from "lucide-react";
 import { toast } from "sonner";
-import { authenticateUser, getCurrentUser, setCurrentUser } from "@/lib/localStorage";
+import { clearCurrentUser, authenticateUser, getCurrentUser, setCurrentUser } from "@/lib/localStorage";
 
 type UserRole = "admin" | "student" | "staff";
 
-const Login = () => {
+interface LoginProps {
+  defaultRole?: UserRole;
+}
+
+const Login = ({ defaultRole }: LoginProps) => {
   const navigate = useNavigate();
+  const [selectedRole, setSelectedRole] = useState<UserRole | null>(defaultRole || null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
   useEffect(() => {
     const existing = getCurrentUser();
-    if (existing) {
+    
+    if (defaultRole) {
+      setSelectedRole(defaultRole);
+      if (existing && existing.role !== defaultRole) {
+        clearCurrentUser();
+      } else if (existing && existing.role === defaultRole) {
+        navigate(`/${existing.role}-dashboard`);
+      }
+    } else if (existing) {
       // if a user is already stored, skip role selection and go straight to their dashboard
       navigate(`/${existing.role}-dashboard`);
     }
     // run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  }, [defaultRole]);
 
   const roles = [
     {
