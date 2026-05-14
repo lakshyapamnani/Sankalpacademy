@@ -323,17 +323,19 @@ const AdminDashboard = () => {
   const handleAddClass = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    const scheduleVal = (formData.get("schedule") as string) || '';
+    const endDateVal = (formData.get("endDate") as string) || '';
     const classData: Class = {
       id: Date.now().toString(),
       name: formData.get("name") as string,
       subject: formData.get("subject") as string,
       batchId: formData.get("batchId") as string,
-      schedule: formData.get("schedule") as string || undefined,
       date: formData.get("date") as string,
       time: formData.get("time") as string,
       endTime: formData.get("endTime") as string,
-      endDate: (formData.get("endDate") as string) || undefined,
     };
+    if (scheduleVal) classData.schedule = scheduleVal;
+    if (endDateVal) classData.endDate = endDateVal;
     try {
       await addClass(classData);
       toast.success("Class created and notifications enqueued");
@@ -1461,7 +1463,7 @@ const AdminDashboard = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {classes.map((classItem) => {
                     const batch = batches.find(b => b.id === classItem.batchId);
-                    const isPast = isClassPast(classItem);
+                    const isPast = isClassPassed(classItem);
                     return (
                       <div key={classItem.id} className={`p-4 rounded-lg border text-sm flex flex-col justify-between transition-shadow ${isPast ? 'bg-muted/50 opacity-60' : 'bg-card hover:shadow-md'}`}>
                         <div>
