@@ -336,7 +336,40 @@ const AdminDashboard = () => {
 
   const handleAddTest = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    handleCreateMCQTest();
+    const formData = new FormData(e.currentTarget);
+    const test: Test = {
+      id: Date.now().toString(),
+      name: formData.get("name") as string,
+      batchId: selectedBatches[0] || "", // Keep for legacy if needed
+      batchIds: selectedBatches,
+      date: formData.get("date") as string,
+      totalMarks: testType === 'mcq' ? mcqQuestions.length : Number(formData.get("totalMarks")),
+      type: testType,
+      questions: testType === 'mcq' ? mcqQuestions : undefined,
+    };
+
+    if (testType === 'mcq') {
+       if (!test.name.trim()) { toast.error("Test name is required"); return; }
+       if (selectedBatches.length === 0) { toast.error("Select at least one batch"); return; }
+       if (mcqQuestions.length === 0) { toast.error("Add at least one question"); return; }
+       for (const q of mcqQuestions) {
+         if (!q.question.trim()) { toast.error("Every question needs text"); return; }
+         if (q.options.some(o => !o.trim())) { toast.error("All options need text"); return; }
+       }
+    }
+
+    if (selectedBatches.length === 0) {
+      toast.error("Please select at least one batch");
+      return;
+    }
+
+    addTest(test);
+    toast.success(`${testType.toUpperCase()} Test added successfully`);
+    setOpenDialog(null);
+    setMcqQuestions([]);
+    setSelectedBatches([]);
+    setTestType('subjective');
+    loadData();
   };
 
   const handleCreateMCQTest = () => {
