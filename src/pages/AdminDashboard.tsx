@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake } from "lucide-react";
+import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -16,6 +16,7 @@ import {
   getClasses,
   getBatches,
   addStudent,
+  updateStudent,
   addClass,
   addBatch,
   deleteStudent,
@@ -115,6 +116,9 @@ const AdminDashboard = () => {
       { id: 'o1', text: '' }, { id: 'o2', text: '' }, { id: 'o3', text: '' }, { id: 'o4', text: '' }
     ], correctOptionId: 'o1' }],
   });
+
+  const [studentSearch, setStudentSearch] = useState('');
+  const [editingStudent, setEditingStudent] = useState<Student | null>(null);
 
   useEffect(() => {
     loadData();
@@ -293,6 +297,27 @@ const AdminDashboard = () => {
       const message = error instanceof Error ? error.message : "Failed to add student";
       toast.error(formatFirebaseError(message));
     }
+  };
+
+  const handleEditStudent = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingStudent) return;
+    const formData = new FormData(e.currentTarget);
+    const updates = {
+      name: formData.get("name") as string,
+      email: formData.get("email") as string,
+      batchId: formData.get("batchId") as string,
+      collegeName: formData.get("collegeName") as string,
+      phoneNo: formData.get("phoneNo") as string,
+      whatsappNo: formData.get("whatsappNo") as string,
+      studentClass: formData.get("studentClass") as string,
+      parentWhatsApp: formData.get("parentWhatsApp") as string,
+    };
+    
+    updateStudent(editingStudent.id, updates);
+    toast.success("Student updated successfully");
+    setEditingStudent(null);
+    loadData();
   };
 
   const handleAddClass = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -540,13 +565,20 @@ const AdminDashboard = () => {
                     <h3 className="text-xl font-semibold">Students</h3>
                     <p className="text-sm text-muted-foreground mr-4">Manage your {students.length} students</p>
                   </div>
-                  <Dialog open={openDialog === "student"} onOpenChange={(open) => setOpenDialog(open ? "student" : null)}>
-                    <DialogTrigger asChild>
-                      <Button className="flex items-center gap-2">
-                        <UserPlus className="h-4 w-4" />
-                        <span>Add Student</span>
-                      </Button>
-                    </DialogTrigger>
+                  <div className="flex flex-col sm:flex-row items-center gap-4">
+                    <Input 
+                      placeholder="Search students..." 
+                      className="max-w-xs" 
+                      value={studentSearch}
+                      onChange={(e) => setStudentSearch(e.target.value)}
+                    />
+                    <Dialog open={openDialog === "student"} onOpenChange={(open) => setOpenDialog(open ? "student" : null)}>
+                      <DialogTrigger asChild>
+                        <Button className="flex items-center gap-2">
+                          <UserPlus className="h-4 w-4" />
+                          <span>Add Student</span>
+                        </Button>
+                      </DialogTrigger>
                     <DialogContent className="max-h-[90vh] overflow-y-auto">
                       <DialogHeader>
                         <DialogTitle>Add New Student</DialogTitle>
@@ -603,10 +635,65 @@ const AdminDashboard = () => {
                       </form>
                     </DialogContent>
                   </Dialog>
+
+                  {/* Edit Student Dialog */}
+                  <Dialog open={!!editingStudent} onOpenChange={(open) => !open && setEditingStudent(null)}>
+                    <DialogContent className="max-h-[90vh] overflow-y-auto">
+                      <DialogHeader>
+                        <DialogTitle>Edit Student</DialogTitle>
+                      </DialogHeader>
+                      {editingStudent && (
+                        <form onSubmit={handleEditStudent} className="space-y-4">
+                          <div>
+                            <Label htmlFor="edit-student-name">Full Name</Label>
+                            <Input id="edit-student-name" name="name" defaultValue={editingStudent.name} required />
+                          </div>
+                          <div>
+                            <Label htmlFor="edit-student-email">Email</Label>
+                            <Input id="edit-student-email" name="email" type="email" defaultValue={editingStudent.email} required disabled title="Email cannot be changed" />
+                          </div>
+                          <div>
+                            <Label htmlFor="edit-student-phoneNo">Phone Number</Label>
+                            <Input id="edit-student-phoneNo" name="phoneNo" defaultValue={editingStudent.phoneNo} />
+                          </div>
+                          <div>
+                            <Label htmlFor="edit-student-parentWhatsApp">Parent WhatsApp Number</Label>
+                            <Input id="edit-student-parentWhatsApp" name="parentWhatsApp" defaultValue={editingStudent.parentWhatsApp} />
+                          </div>
+                          <div>
+                            <Label htmlFor="edit-student-collegeName">College Name</Label>
+                            <Input id="edit-student-collegeName" name="collegeName" defaultValue={editingStudent.collegeName} />
+                          </div>
+                          <div>
+                            <Label htmlFor="edit-student-class">Class/Grade</Label>
+                            <Input id="edit-student-class" name="studentClass" defaultValue={editingStudent.studentClass} />
+                          </div>
+                          <div>
+                            <Label htmlFor="edit-student-batch">Batch</Label>
+                            <Select name="batchId" defaultValue={editingStudent.batchId} required>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select batch" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {batches.map((batch) => (
+                                  <SelectItem key={batch.id} value={batch.id}>
+                                    {batch.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <Button type="submit" className="w-full">Save Changes</Button>
+                        </form>
+                      )}
+                    </DialogContent>
+                  </Dialog>
+
                 </div>
+              </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {students.map((student) => {
+                  {students.filter(student => student.name.toLowerCase().includes(studentSearch.toLowerCase()) || student.email.toLowerCase().includes(studentSearch.toLowerCase())).map((student) => {
                     const batch = batches.find(b => b.id === student.batchId);
                     const attendance = getStudentAttendance(student.id);
                     const total = attendance.length;
@@ -623,11 +710,16 @@ const AdminDashboard = () => {
                              {student.phoneNo && <p className="text-xs text-muted-foreground">📞 {student.phoneNo}</p>}
                              {student.whatsappNo && <p className="text-xs text-emerald-600">💬 {student.whatsappNo}</p>}
                             </div>
-                            <DeleteDialog
-                              title="Delete Student"
-                              description={`Are you sure you want to delete ${student.name}? This will also delete all their attendance records. This action cannot be undone.`}
-                              onDelete={() => handleDeleteStudent(student.id)}
-                            />
+                            <div className="flex gap-1 items-center">
+                              <button onClick={() => setEditingStudent(student)} className="p-2 text-primary hover:bg-primary/10 rounded-md transition-colors" title="Edit Student">
+                                <Edit className="h-4 w-4" />
+                              </button>
+                              <DeleteDialog
+                                title="Delete Student"
+                                description={`Are you sure you want to delete ${student.name}? This will also delete all their attendance records. This action cannot be undone.`}
+                                onDelete={() => handleDeleteStudent(student.id)}
+                              />
+                            </div>
                           </div>
                           <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                             {student.collegeName && (

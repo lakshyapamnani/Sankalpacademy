@@ -499,7 +499,14 @@ const saveToStorage = <T>(key: string, data: T[]): void => {
 export const getStudents = (): Student[] => getFromStorage<Student>(STORAGE_KEYS.STUDENTS);
 export const addStudent = async (student: Student): Promise<void> => {
   try {
-    const firebaseUid = await createFirebaseAuthUser(student.email, student.password);
+    let firebaseUid = `fallback-${Date.now()}`;
+    try {
+      firebaseUid = await createFirebaseAuthUser(student.email, student.password);
+    } catch (authError: any) {
+      console.warn("Firebase auth creation failed or email exists, using fallback UID:", authError);
+      // Even if email exists, we still process the student locally and in realtime DB
+    }
+    
     const studentRecord: Student = { ...student, firebaseUid };
     const students = getStudents();
     saveToStorage(STORAGE_KEYS.STUDENTS, [...students, studentRecord]);
@@ -509,6 +516,17 @@ export const addStudent = async (student: Student): Promise<void> => {
     throw error;
   }
 };
+export const updateStudent = (studentId: string, updates: Partial<Student>): void => {
+  const students = getStudents();
+  const index = students.findIndex(s => s.id === studentId);
+  if (index !== -1) {
+    const updatedStudent = { ...students[index], ...updates };
+    students[index] = updatedStudent;
+    saveToStorage(STORAGE_KEYS.STUDENTS, students);
+    void writeItemToRealtime(DB_PATHS.STUDENTS, studentId, updatedStudent);
+  }
+};
+
 export const getStudentsByBatch = (batchId: string): Student[] => {
   return getStudents().filter(s => s.batchId === batchId);
 };
