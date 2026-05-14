@@ -314,7 +314,8 @@ const StudentDashboard = () => {
                   )
                 )}
               </div>
-            );
+            </div>
+          );
           })}
           {tests.length === 0 && (
             <div className="text-center py-12">
