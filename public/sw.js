@@ -1,10 +1,8 @@
-const CACHE_NAME = 'edusmart-v1';
+const CACHE_NAME = 'rct-erp-v1';
 const OFFLINE_URL = '/index.html';
 
 const FILES_TO_CACHE = [
   '/',
-  OFFLINE_URL,
-  '/index.html',
   '/manifest.json',
   '/icons/Screenshot 2026-04-09 135955.ico'
 ];

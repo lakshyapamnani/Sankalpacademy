@@ -1,7 +1,6 @@
-{
-  "name": "edusmart-ai",
-  "short_name": "edusmart",
-  "description": "Student and teacher dashboard for Edusmart AI",
+  "name": "RC Tutorials ERP",
+  "short_name": "RC ERP",
+  "description": "Student and staff dashboard for RC Tutorials ERP",
   "start_url": ".",
   "scope": "/",
   "display": "standalone",

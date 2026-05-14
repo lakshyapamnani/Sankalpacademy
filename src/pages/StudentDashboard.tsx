@@ -313,17 +313,8 @@ const StudentDashboard = () => {
                     </div>
                   )
                 )}
-              </div>
             </div>
           );
-          })}
-          {tests.length === 0 && (
-            <div className="text-center py-12">
-              <CheckSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-20" />
-              <p className="text-muted-foreground">No tests recorded yet</p>
-              <p className="text-sm text-muted-foreground mt-1">Tests will appear here once your teacher creates them</p>
-            </div>
-          )
         })}
         {tests.length === 0 && (
           <div className="text-center py-12 bg-accent/10 rounded-2xl border-2 border-dashed border-accent/20">

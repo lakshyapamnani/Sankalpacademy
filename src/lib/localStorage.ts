@@ -60,14 +60,6 @@ export interface Test {
   totalMarks: number;
   type?: 'subjective' | 'mcq';
   questions?: MCQQuestion[];
-  batchIds?: string[]; // Multiple batches support
-}
-
-export interface MCQQuestion {
-  id: string;
-  question: string;
-  options: string[];
-  correctOptionIndex: number;
 }
 
 export interface TestResult {
@@ -754,7 +746,7 @@ export const saveTestResult = (result: TestResult): void => {
 // Authentication helper
 export const authenticateUser = (email: string, password: string, role: string): { id: string; name: string } | null => {
   if (role === 'admin') {
-    if (email === 'admin@smartclass.com' && password === 'admin123') {
+    if (email === 'admin@rctutorials.com' && password === 'admin123') {
       return { id: 'admin', name: 'Administrator' };
     }
     return null;
@@ -770,7 +762,7 @@ export const authenticateUser = (email: string, password: string, role: string):
     if (staffMember) return { id: staffMember.id, name: staffMember.name };
     
     // Fallback for default staff
-    if (email === 'staff@smartclass.com' && password === 'staff123') {
+    if (email === 'staff@rctutorials.com' && password === 'staff123') {
       return { id: 'staff', name: 'Staff Member' };
     }
     return null;
@@ -789,7 +781,7 @@ export const getInstituteSettings = (): InstituteSettings => {
       // fallback
     }
   }
-  return { name: 'SmartClass', address: '', phone: '', email: '' };
+  return { name: 'RC Tutorials ERP', address: '', phone: '', email: '' };
 };
 
 export const saveInstituteSettings = async (settings: InstituteSettings): Promise<void> => {
