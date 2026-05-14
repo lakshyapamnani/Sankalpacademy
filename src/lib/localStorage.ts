@@ -2,15 +2,6 @@
 import { child, get, onValue, ref, remove, set, type Unsubscribe } from "firebase/database";
 import { createFirebaseAuthUser, database } from "./firebase";
 
-export interface Teacher {
-  id: string;
-  name: string;
-  email: string;
-  subject: string;
-  password: string;
-  firebaseUid?: string;
-}
-
 export interface Student {
   id: string;
   name: string;
@@ -21,6 +12,17 @@ export interface Student {
   collegeName?: string;
   phoneNo?: string;
   studentClass?: string;
+  parentWhatsApp?: string;
+  dob?: string;
+}
+
+export interface Staff {
+  id: string;
+  name: string;
+  email: string;
+  password: string;
+  role: string;
+  firebaseUid?: string;
 }
 
 export interface FeePayment {
@@ -42,6 +44,16 @@ export interface Test {
   batchId: string;
   date: string;
   totalMarks: number;
+  type?: 'subjective' | 'mcq';
+  questions?: MCQQuestion[];
+  batchIds?: string[]; // Multiple batches support
+}
+
+export interface MCQQuestion {
+  id: string;
+  question: string;
+  options: string[];
+  correctOptionIndex: number;
 }
 
 export interface TestResult {
@@ -55,7 +67,6 @@ export interface Class {
   id: string;
   name: string;
   subject: string;
-  teacherId: string;
   batchId: string;
   schedule?: string;
   date: string;
@@ -67,7 +78,6 @@ export interface ClassNotification {
   id: string;
   classId: string;
   batchId: string;
-  teacherId: string;
   title: string;
   message: string;
   createdAt: string;
@@ -75,7 +85,7 @@ export interface ClassNotification {
 
 interface PushNotificationQueueItem {
   id: string;
-  role: 'teacher' | 'students_batch';
+  role: 'students_batch';
   referenceId: string;
   notification: ClassNotification;
   createdAt: string;
@@ -86,7 +96,6 @@ export interface Note {
   title: string;
   subject: string;
   batchId: string;
-  teacherId: string;
   content: string;
   fileUrl?: string;
   createdAt: string;
@@ -130,45 +139,6 @@ export const deleteStudent = (studentId: string): boolean => {
   }
 };
 
-export const deleteTeacher = (teacherId: string): boolean => {
-  try {
-    // Delete teacher
-    const teachers = getFromStorage<Teacher>(STORAGE_KEYS.TEACHERS);
-    const filteredTeachers = teachers.filter(t => t.id !== teacherId);
-    saveToStorage(STORAGE_KEYS.TEACHERS, filteredTeachers);
-    void removeItemFromRealtime(DB_PATHS.TEACHERS, teacherId);
-    
-    // Delete teacher's classes
-    const classes = getFromStorage<Class>(STORAGE_KEYS.CLASSES);
-    const classesToRemove = classes.filter(c => c.teacherId === teacherId);
-    const filteredClasses = classes.filter(c => c.teacherId !== teacherId);
-    saveToStorage(STORAGE_KEYS.CLASSES, filteredClasses);
-    classesToRemove.forEach(cls => void removeItemFromRealtime(DB_PATHS.CLASSES, cls.id));
-    
-    // Delete teacher's notes
-    const notes = getFromStorage<Note>(STORAGE_KEYS.NOTES);
-    const notesToRemove = notes.filter(n => n.teacherId === teacherId);
-    const filteredNotes = notes.filter(n => n.teacherId !== teacherId);
-    saveToStorage(STORAGE_KEYS.NOTES, filteredNotes);
-    notesToRemove.forEach(note => void removeItemFromRealtime(DB_PATHS.NOTES, note.id));
-    
-    // Delete attendance records for teacher's classes
-    const attendance = getFromStorage<AttendanceRecord>(STORAGE_KEYS.ATTENDANCE);
-    const deletedClassIds = classes.filter(c => c.teacherId === teacherId).map(c => c.id);
-    const filteredAttendance = attendance.filter(a => !deletedClassIds.includes(a.classId));
-    saveToStorage(STORAGE_KEYS.ATTENDANCE, filteredAttendance);
-    deletedClassIds.forEach(classId => {
-      attendance
-        .filter(a => a.classId === classId)
-        .forEach(record => void removeItemFromRealtime(DB_PATHS.ATTENDANCE, record.id));
-    });
-    
-    return true;
-  } catch (error) {
-    console.error('Error deleting teacher:', error);
-    return false;
-  }
-};
 
 export const deleteClass = (classId: string): boolean => {
   try {
@@ -193,7 +163,6 @@ export const deleteClass = (classId: string): boolean => {
 };
 
 const STORAGE_KEYS = {
-  TEACHERS: 'smartclass_teachers',
   STUDENTS: 'smartclass_students',
   CLASSES: 'smartclass_classes',
   NOTES: 'smartclass_notes',
@@ -203,24 +172,23 @@ const STORAGE_KEYS = {
   FEES: 'smartclass_fees',
   TESTS: 'smartclass_tests',
   TEST_RESULTS: 'smartclass_test_results',
+  STAFF: 'smartclass_staff',
 };
 
 const DB_PATHS = {
-  TEACHERS: 'teachers',
   STUDENTS: 'students',
   CLASSES: 'classes',
   NOTES: 'notes',
   ATTENDANCE: 'attendance',
   BATCHES: 'batches',
-  NOTIFICATIONS_TEACHERS: 'notifications/teachers',
   NOTIFICATIONS_STUDENTS: 'notifications/students',
-  NOTIFICATION_TOKENS_TEACHERS: 'notificationTokens/teachers',
   NOTIFICATION_TOKENS_STUDENTS: 'notificationTokens/students',
   NOTIFICATION_TOKENS_STUDENTS_BATCH: 'notificationTokens/studentsByBatch',
   NOTIFICATION_QUEUE: 'notificationQueue',
   FEES: 'fees',
   TESTS: 'tests',
   TEST_RESULTS: 'testResults',
+  STAFF: 'staff',
 };
 
 // Initialize default data
@@ -232,10 +200,6 @@ const initializeDefaultData = () => {
       { id: '3', name: 'Batch C', year: '2024' },
     ];
     localStorage.setItem(STORAGE_KEYS.BATCHES, JSON.stringify(defaultBatches));
-  }
-
-  if (!localStorage.getItem(STORAGE_KEYS.TEACHERS)) {
-    localStorage.setItem(STORAGE_KEYS.TEACHERS, JSON.stringify([]));
   }
 
   if (!localStorage.getItem(STORAGE_KEYS.STUDENTS)) {
@@ -264,6 +228,10 @@ const initializeDefaultData = () => {
 
   if (!localStorage.getItem(STORAGE_KEYS.TEST_RESULTS)) {
     localStorage.setItem(STORAGE_KEYS.TEST_RESULTS, JSON.stringify([]));
+  }
+
+  if (!localStorage.getItem(STORAGE_KEYS.STAFF)) {
+    localStorage.setItem(STORAGE_KEYS.STAFF, JSON.stringify([]));
   }
 };
 
@@ -300,8 +268,7 @@ const fetchCollectionFromRealtime = async <T>(collection: string): Promise<T[] |
 };
 
 const syncRealtimeData = async () => {
-  const [teachers, students, classes, notes, attendance, batches, fees, tests, testResults] = await Promise.all([
-    fetchCollectionFromRealtime<Teacher>(DB_PATHS.TEACHERS),
+  const [students, classes, notes, attendance, batches, fees, tests, testResults] = await Promise.all([
     fetchCollectionFromRealtime<Student>(DB_PATHS.STUDENTS),
     fetchCollectionFromRealtime<Class>(DB_PATHS.CLASSES),
     fetchCollectionFromRealtime<Note>(DB_PATHS.NOTES),
@@ -310,11 +277,9 @@ const syncRealtimeData = async () => {
     fetchCollectionFromRealtime<FeeRecord>(DB_PATHS.FEES),
     fetchCollectionFromRealtime<Test>(DB_PATHS.TESTS),
     fetchCollectionFromRealtime<TestResult>(DB_PATHS.TEST_RESULTS),
+    fetchCollectionFromRealtime<Staff>(DB_PATHS.STAFF),
   ]);
 
-  if (teachers) {
-    saveToStorage(STORAGE_KEYS.TEACHERS, teachers);
-  }
   if (students) {
     saveToStorage(STORAGE_KEYS.STUDENTS, students);
   }
@@ -339,6 +304,9 @@ const syncRealtimeData = async () => {
   if (testResults) {
     saveToStorage(STORAGE_KEYS.TEST_RESULTS, testResults);
   }
+  if (staff) {
+    saveToStorage(STORAGE_KEYS.STAFF, staff);
+  }
 };
 
 void syncRealtimeData();
@@ -352,7 +320,7 @@ interface SaveNotificationTokenOptions {
 const sanitizeTokenKey = (token: string): string => encodeURIComponent(token);
 
 export const saveNotificationToken = async (
-  role: 'teacher' | 'student',
+  role: 'student',
   referenceId: string,
   token: string,
   options: SaveNotificationTokenOptions = {},
@@ -364,7 +332,7 @@ export const saveNotificationToken = async (
   const now = new Date().toISOString();
   const tokenKey = sanitizeTokenKey(token);
   const payload = { token, updatedAt: now };
-  const basePath = role === 'teacher' ? DB_PATHS.NOTIFICATION_TOKENS_TEACHERS : DB_PATHS.NOTIFICATION_TOKENS_STUDENTS;
+  const basePath = DB_PATHS.NOTIFICATION_TOKENS_STUDENTS;
 
   try {
     await set(ref(database, `${basePath}/${referenceId}/${tokenKey}`), payload);
@@ -405,7 +373,6 @@ const buildClassNotificationPayload = (classData: Class): ClassNotification => {
     id: `${classData.id}_${Date.now()}`,
     classId: classData.id,
     batchId: classData.batchId,
-    teacherId: classData.teacherId,
     title: `${classData.name} scheduled`,
     message: `${classData.subject} • ${classData.date || ''} ${classData.time || ''} - ${classData.endTime || ''} ${classData.schedule || ''}`.trim(),
     createdAt: new Date().toISOString(),
@@ -414,14 +381,11 @@ const buildClassNotificationPayload = (classData: Class): ClassNotification => {
 
 const notifyClassCreation = async (classData: Class): Promise<void> => {
   const notification = buildClassNotificationPayload(classData);
-  const teacherPath = `${DB_PATHS.NOTIFICATIONS_TEACHERS}/${classData.teacherId}/${notification.id}`;
   const studentPath = `${DB_PATHS.NOTIFICATIONS_STUDENTS}/${classData.batchId}/${notification.id}`;
 
   try {
     await Promise.all([
-      set(ref(database, teacherPath), notification),
       set(ref(database, studentPath), notification),
-      enqueuePushNotification('teacher', classData.teacherId, notification),
       enqueuePushNotification('students_batch', classData.batchId, notification),
     ]);
   } catch (error) {
@@ -429,14 +393,15 @@ const notifyClassCreation = async (classData: Class): Promise<void> => {
   }
 };
 
-const attachListener = <T>(collection: string, storageKey: string): Unsubscribe => {
-  const databaseRef = ref(database, collection);
+const attachListener = <T>(collection: string, storageKey: string, onUpdate?: () => void): Unsubscribe => {
+  const collectionRef = ref(database, collection);
   const unsubscribe = onValue(
-    databaseRef,
+    collectionRef,
     snapshot => {
       const data = snapshot.val();
       const items = data ? (Object.values(data) as T[]) : [];
       saveToStorage(storageKey, items);
+      if (onUpdate) onUpdate();
     },
     error => {
       console.error(`Failed to listen for updates on ${collection}`, error);
@@ -445,32 +410,24 @@ const attachListener = <T>(collection: string, storageKey: string): Unsubscribe 
   return unsubscribe;
 };
 
-export const subscribeToRealtimeUpdates = (): Unsubscribe => {
+export const subscribeToRealtimeUpdates = (onUpdate?: () => void): Unsubscribe => {
   const unsubscribes: Unsubscribe[] = [
-    attachListener<Teacher>(DB_PATHS.TEACHERS, STORAGE_KEYS.TEACHERS),
-    attachListener<Student>(DB_PATHS.STUDENTS, STORAGE_KEYS.STUDENTS),
-    attachListener<Class>(DB_PATHS.CLASSES, STORAGE_KEYS.CLASSES),
-    attachListener<Note>(DB_PATHS.NOTES, STORAGE_KEYS.NOTES),
-    attachListener<AttendanceRecord>(DB_PATHS.ATTENDANCE, STORAGE_KEYS.ATTENDANCE),
-    attachListener<Batch>(DB_PATHS.BATCHES, STORAGE_KEYS.BATCHES),
-    attachListener<FeeRecord>(DB_PATHS.FEES, STORAGE_KEYS.FEES),
-    attachListener<Test>(DB_PATHS.TESTS, STORAGE_KEYS.TESTS),
-    attachListener<TestResult>(DB_PATHS.TEST_RESULTS, STORAGE_KEYS.TEST_RESULTS),
+    attachListener<Student>(DB_PATHS.STUDENTS, STORAGE_KEYS.STUDENTS, onUpdate),
+    attachListener<Class>(DB_PATHS.CLASSES, STORAGE_KEYS.CLASSES, onUpdate),
+    attachListener<Note>(DB_PATHS.NOTES, STORAGE_KEYS.NOTES, onUpdate),
+    attachListener<AttendanceRecord>(DB_PATHS.ATTENDANCE, STORAGE_KEYS.ATTENDANCE, onUpdate),
+    attachListener<Batch>(DB_PATHS.BATCHES, STORAGE_KEYS.BATCHES, onUpdate),
+    attachListener<FeeRecord>(DB_PATHS.FEES, STORAGE_KEYS.FEES, onUpdate),
+    attachListener<Test>(DB_PATHS.TESTS, STORAGE_KEYS.TESTS, onUpdate),
+    attachListener<TestResult>(DB_PATHS.TEST_RESULTS, STORAGE_KEYS.TEST_RESULTS, onUpdate),
+    attachListener<Staff>(DB_PATHS.STAFF, STORAGE_KEYS.STAFF, onUpdate),
   ];
 
-  return () => {
-    unsubscribes.forEach(unsubscribe => {
-      try {
-        unsubscribe();
-      } catch (error) {
-        console.error("Failed to unsubscribe from Firebase listener", error);
-      }
-    });
-  };
+  return () => unsubscribes.forEach(u => u());
 };
 
 export const subscribeToClassNotifications = (
-  role: 'student' | 'teacher',
+  role: 'student',
   referenceId: string,
   callback: (notifications: ClassNotification[]) => void,
 ): Unsubscribe => {
@@ -478,7 +435,7 @@ export const subscribeToClassNotifications = (
     return () => undefined;
   }
 
-  const basePath = role === 'teacher' ? DB_PATHS.NOTIFICATIONS_TEACHERS : DB_PATHS.NOTIFICATIONS_STUDENTS;
+  const basePath = DB_PATHS.NOTIFICATIONS_STUDENTS;
   const notificationsRef = ref(database, `${basePath}/${referenceId}`);
 
   const unsubscribe = onValue(
@@ -498,11 +455,11 @@ export const subscribeToClassNotifications = (
 };
 
 export const acknowledgeClassNotification = async (
-  role: 'student' | 'teacher',
+  role: 'student',
   referenceId: string,
   notificationId: string,
 ): Promise<void> => {
-  const basePath = role === 'teacher' ? DB_PATHS.NOTIFICATIONS_TEACHERS : DB_PATHS.NOTIFICATIONS_STUDENTS;
+  const basePath = DB_PATHS.NOTIFICATIONS_STUDENTS;
   const notificationRef = ref(database, `${basePath}/${referenceId}/${notificationId}`);
   try {
     await remove(notificationRef);
@@ -519,24 +476,6 @@ const getFromStorage = <T>(key: string): T[] => {
 
 const saveToStorage = <T>(key: string, data: T[]): void => {
   localStorage.setItem(key, JSON.stringify(data));
-};
-
-// Teachers
-export const getTeachers = (): Teacher[] => getFromStorage<Teacher>(STORAGE_KEYS.TEACHERS);
-export const addTeacher = async (teacher: Teacher): Promise<void> => {
-  try {
-    const firebaseUid = await createFirebaseAuthUser(teacher.email, teacher.password);
-    const teacherRecord: Teacher = { ...teacher, firebaseUid };
-    const teachers = getTeachers();
-    saveToStorage(STORAGE_KEYS.TEACHERS, [...teachers, teacherRecord]);
-    await writeItemToRealtime(DB_PATHS.TEACHERS, teacherRecord.id, teacherRecord);
-  } catch (error) {
-    console.error("Error adding teacher:", error);
-    throw error;
-  }
-};
-export const getTeacherById = (id: string): Teacher | undefined => {
-  return getTeachers().find(t => t.id === id);
 };
 
 // Students
@@ -577,6 +516,32 @@ export const changeStudentPassword = (studentId: string, newPassword: string): b
   }
 };
 
+// Staff
+export const getStaff = (): Staff[] => getFromStorage<Staff>(STORAGE_KEYS.STAFF);
+export const addStaff = async (staff: Staff): Promise<void> => {
+  try {
+    const firebaseUid = await createFirebaseAuthUser(staff.email, staff.password);
+    const staffRecord: Staff = { ...staff, firebaseUid };
+    const allStaff = getStaff();
+    saveToStorage(STORAGE_KEYS.STAFF, [...allStaff, staffRecord]);
+    await writeItemToRealtime(DB_PATHS.STAFF, staffRecord.id, staffRecord);
+  } catch (error) {
+    console.error("Error adding staff:", error);
+    throw error;
+  }
+};
+export const deleteStaff = (staffId: string): boolean => {
+  try {
+    const allStaff = getStaff();
+    saveToStorage(STORAGE_KEYS.STAFF, allStaff.filter(s => s.id !== staffId));
+    void removeItemFromRealtime(DB_PATHS.STAFF, staffId);
+    return true;
+  } catch (error) {
+    console.error('Error deleting staff:', error);
+    return false;
+  }
+};
+
 // Classes
 export const getClasses = (): Class[] => getFromStorage<Class>(STORAGE_KEYS.CLASSES);
 export const addClass = async (classData: Class): Promise<void> => {
@@ -589,9 +554,6 @@ export const addClass = async (classData: Class): Promise<void> => {
     console.error('Error adding class to realtime or notifying:', error);
     // still resolve so caller can continue, but error logged
   }
-};
-export const getClassesByTeacher = (teacherId: string): Class[] => {
-  return getClasses().filter(c => c.teacherId === teacherId);
 };
 export const getClassesByBatch = (batchId: string): Class[] => {
   return getClasses().filter(c => c.batchId === batchId);
@@ -647,14 +609,40 @@ export const clearCurrentUser = (): void => {
 };
 
 // Fees
-export const getFeeRecords = (): FeeRecord[] => getFromStorage<FeeRecord>(STORAGE_KEYS.FEES);
+const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
 
-export const getFeeRecordByStudent = (studentId: string): FeeRecord | undefined => {
-  return getFeeRecords().find(f => f.studentId === studentId);
+export const getFeeRecords = async (): Promise<FeeRecord[]> => {
+  if (isElectron) {
+    try {
+      return await window.electronAPI.getFeeRecords();
+    } catch (error) {
+      console.error('SQLite getFeeRecords failed', error);
+    }
+  }
+  return getFromStorage<FeeRecord>(STORAGE_KEYS.FEES);
 };
 
-export const updateFeeRecord = (feeRecord: FeeRecord): void => {
-  const records = getFeeRecords();
+export const getFeeRecordByStudent = async (studentId: string): Promise<FeeRecord | undefined> => {
+  if (isElectron) {
+    try {
+      return await window.electronAPI.getFeeRecord(studentId) || undefined;
+    } catch (error) {
+      console.error('SQLite getFeeRecord failed', error);
+    }
+  }
+  return (await getFeeRecords()).find(f => f.studentId === studentId);
+};
+
+export const updateFeeRecord = async (feeRecord: FeeRecord): Promise<void> => {
+  if (isElectron) {
+    try {
+      await window.electronAPI.updateFeeRecord(feeRecord);
+      return;
+    } catch (error) {
+      console.error('SQLite updateFeeRecord failed', error);
+    }
+  }
+  const records = await getFeeRecords();
   const index = records.findIndex(f => f.studentId === feeRecord.studentId);
   
   let newRecords;
@@ -669,8 +657,8 @@ export const updateFeeRecord = (feeRecord: FeeRecord): void => {
   void writeItemToRealtime(DB_PATHS.FEES, feeRecord.studentId, feeRecord);
 };
 
-export const addFeePayment = (studentId: string, amount: number): FeeRecord | null => {
-  const record = getFeeRecordByStudent(studentId);
+export const addFeePayment = async (studentId: string, amount: number): Promise<FeeRecord | null> => {
+  const record = await getFeeRecordByStudent(studentId);
   if (!record) return null;
   
   const payment: FeePayment = {
@@ -684,13 +672,14 @@ export const addFeePayment = (studentId: string, amount: number): FeeRecord | nu
     payments: [...(record.payments || []), payment]
   };
   
-  updateFeeRecord(updatedRecord);
+  await updateFeeRecord(updatedRecord);
   return updatedRecord;
 };
 
 // Tests
 export const getTests = (): Test[] => getFromStorage<Test>(STORAGE_KEYS.TESTS);
-export const getTestsByBatch = (batchId: string): Test[] => getTests().filter(t => t.batchId === batchId);
+export const getTestsByBatch = (batchId: string): Test[] => 
+  getTests().filter(t => t.batchId === batchId || (t.batchIds && t.batchIds.includes(batchId)));
 export const addTest = (test: Test): void => {
   const tests = getTests();
   saveToStorage(STORAGE_KEYS.TESTS, [...tests, test]);
@@ -746,14 +735,20 @@ export const authenticateUser = (email: string, password: string, role: string):
     return null;
   }
 
-  if (role === 'teacher') {
-    const teacher = getTeachers().find(t => t.email === email && t.password === password);
-    return teacher ? { id: teacher.id, name: teacher.name } : null;
-  }
-
   if (role === 'student') {
     const student = getStudents().find(s => s.email === email && s.password === password);
     return student ? { id: student.id, name: student.name } : null;
+  }
+
+  if (role === 'staff') {
+    const staffMember = getStaff().find(s => s.email === email && s.password === password);
+    if (staffMember) return { id: staffMember.id, name: staffMember.name };
+    
+    // Fallback for default staff
+    if (email === 'staff@smartclass.com' && password === 'staff123') {
+      return { id: 'staff', name: 'Staff Member' };
+    }
+    return null;
   }
 
   return null;

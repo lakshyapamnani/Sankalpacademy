@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar, BookOpen, Brain, FileText, Home, Bot, UserCircle, MessageSquare, CheckSquare, IndianRupee } from "lucide-react";
+import { Calendar, BookOpen, Brain, FileText, Home, Bot, UserCircle, MessageSquare, CheckSquare } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { toast } from "sonner";
@@ -16,7 +16,6 @@ import {
   acknowledgeClassNotification,
   getTestsByBatch,
   getTestResultsByStudent,
-  getFeeRecordByStudent,
   getBatches,
   ClassNotification,
   AttendanceRecord,
@@ -25,7 +24,6 @@ import {
   Student,
   Test,
   TestResult,
-  FeeRecord,
   Batch
 } from "@/lib/localStorage";
 import { registerForPushNotifications } from "@/lib/messaging";
@@ -50,8 +48,13 @@ const StudentDashboard = () => {
   // New States
   const [tests, setTests] = useState<Test[]>([]);
   const [testResults, setTestResults] = useState<TestResult[]>([]);
-  const [feeRecord, setFeeRecord] = useState<FeeRecord | null>(null);
   const [batches, setBatches] = useState<Batch[]>([]);
+
+  // Test Taking State
+  const [activeTakingTest, setActiveTakingTest] = useState<Test | null>(null);
+  const [currentQuestionIdx, setCurrentQuestionIdx] = useState(0);
+  const [selectedAnswers, setSelectedAnswers] = useState<Record<string, number>>({});
+  const [testCompleted, setTestCompleted] = useState(false);
 
   const [activeTab, setActiveTab] = useState<"home" | "notes" | "ai" | "tests" | "profile">("home");
   const seenNotificationIds = useRef<Set<string>>(new Set());
@@ -102,7 +105,6 @@ const StudentDashboard = () => {
     setAttendancePercentage(0);
     setTests([]);
     setTestResults([]);
-    setFeeRecord(null);
     setBatches([]);
   };
 
@@ -135,10 +137,11 @@ const StudentDashboard = () => {
     setAttendance(studentAttendance);
     setAttendancePercentage(calculateAttendancePercentage(studentAttendance));
 
-    setTests(getTestsByBatch(student.batchId));
-    setTestResults(getTestResultsByStudent(student.id));
-    setFeeRecord(getFeeRecordByStudent(student.id) || null);
     setBatches(getBatches());
+    
+    // Also fetch tests that have this student's batch in their batchIds array
+    const allTests = getTestsByBatch(student.batchId);
+    setTests(allTests);
   };
 
   useEffect(() => {
@@ -292,34 +295,185 @@ const StudentDashboard = () => {
         {tests.map(test => {
           const result = testResults.find(r => r.testId === test.id);
           const hasResult = !!result;
+          const isMcq = test.type === 'mcq' && test.questions && test.questions.length > 0;
           
           return (
-            <div key={test.id} className="p-4 rounded-lg border bg-card flex items-center justify-between">
+            <div key={test.id} className="p-4 rounded-lg border bg-card flex items-center justify-between hover:shadow-md transition-shadow">
               <div>
                 <p className="font-semibold text-lg">{test.name}</p>
-                <p className="text-xs text-muted-foreground">{new Date(test.date).toLocaleDateString()}</p>
+                <div className="flex items-center gap-2 mt-0.5">
+                   <span className="text-xs text-muted-foreground">{new Date(test.date).toLocaleDateString()}</span>
+                   {isMcq && <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">MCQ</span>}
+                </div>
               </div>
-              <div className={`text-right px-4 py-2 rounded-md ${hasResult ? 'bg-primary/10' : 'bg-muted'}`}>
+              <div className="flex items-center gap-3">
                 {hasResult ? (
-                  <p className="font-bold text-xl text-primary">{result.marksObtained} <span className="text-sm text-muted-foreground font-normal">/ {test.totalMarks}</span></p>
+                  <div className="text-right px-4 py-2 rounded-xl bg-primary/10">
+                    <p className="font-black text-xl text-primary">{result.marksObtained} <span className="text-sm text-muted-foreground font-normal">/ {test.totalMarks}</span></p>
+                  </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground font-medium">Not Graded</p>
+                  isMcq ? (
+                    <Button 
+                      size="sm" 
+                      onClick={() => {
+                        setActiveTakingTest(test);
+                        setCurrentQuestionIdx(0);
+                        setSelectedAnswers({});
+                        setTestCompleted(false);
+                      }}
+                      className="font-bold rounded-full"
+                    >
+                      Start Test
+                    </Button>
+                  ) : (
+                    <div className="px-4 py-2 rounded-xl bg-muted">
+                      <p className="text-sm text-muted-foreground font-medium">Pending Grade</p>
+                    </div>
+                  )
                 )}
               </div>
             </div>
           )
         })}
         {tests.length === 0 && (
-          <p className="text-sm text-muted-foreground text-center py-8">No tests recorded yet.</p>
+          <div className="text-center py-12 bg-accent/10 rounded-2xl border-2 border-dashed border-accent/20">
+             <CheckSquare className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-20" />
+             <p className="text-sm text-muted-foreground font-medium">No tests assigned to your batch yet.</p>
+          </div>
         )}
       </div>
+
+      {/* MCQ TEST TAKING MODAL */}
+      {activeTakingTest && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <Card className="w-full max-w-2xl bg-card shadow-2xl overflow-hidden rounded-[32px] flex flex-col max-h-[90vh]">
+            {!testCompleted ? (
+              <>
+                <div className="p-6 border-b flex justify-between items-center bg-primary/5">
+                  <div>
+                    <h4 className="text-xl font-black">{activeTakingTest.name}</h4>
+                    <p className="text-xs text-muted-foreground uppercase tracking-widest font-bold">
+                      Question {currentQuestionIdx + 1} of {activeTakingTest.questions?.length}
+                    </p>
+                  </div>
+                  <div className="h-2 w-32 bg-muted rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-primary transition-all duration-300" 
+                      style={{ width: `${((currentQuestionIdx + 1) / (activeTakingTest.questions?.length || 1)) * 100}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-8">
+                  {(() => {
+                    const q = activeTakingTest.questions?.[currentQuestionIdx];
+                    if (!q) return null;
+                    return (
+                      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                        <h5 className="text-2xl font-bold leading-tight">{q.question}</h5>
+                        <div className="grid gap-3">
+                          {q.options.map((opt, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => setSelectedAnswers({ ...selectedAnswers, [q.id]: idx })}
+                              className={`p-5 rounded-2xl border-2 text-left transition-all font-medium ${
+                                selectedAnswers[q.id] === idx 
+                                  ? 'border-primary bg-primary/5 shadow-md scale-[1.01]' 
+                                  : 'border-accent/10 hover:border-primary/20 hover:bg-accent/5'
+                              }`}
+                            >
+                              <div className="flex items-center gap-4">
+                                <div className={`h-6 w-6 rounded-full border-2 flex items-center justify-center transition-colors ${selectedAnswers[q.id] === idx ? 'border-primary bg-primary' : 'border-muted-foreground/30'}`}>
+                                  {selectedAnswers[q.id] === idx && <div className="h-2 w-2 rounded-full bg-white" />}
+                                </div>
+                                <span className="text-lg">{opt}</span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                <div className="p-6 border-t bg-muted/20 flex justify-between gap-4">
+                  <Button 
+                    variant="ghost" 
+                    disabled={currentQuestionIdx === 0}
+                    onClick={() => setCurrentQuestionIdx(currentQuestionIdx - 1)}
+                    className="font-bold rounded-xl"
+                  >
+                    Previous
+                  </Button>
+                  
+                  {currentQuestionIdx < (activeTakingTest.questions?.length || 0) - 1 ? (
+                    <Button 
+                      onClick={() => setCurrentQuestionIdx(currentQuestionIdx + 1)}
+                      className="px-10 font-black rounded-xl"
+                    >
+                      Next
+                    </Button>
+                  ) : (
+                    <Button 
+                      onClick={() => {
+                        // AUTO GRADING LOGIC
+                        let score = 0;
+                        activeTakingTest.questions?.forEach(q => {
+                          if (selectedAnswers[q.id] === q.correctOptionIndex) {
+                            score++;
+                          }
+                        });
+
+                        const result: TestResult = {
+                          id: `${currentStudent?.id}_${activeTakingTest.id}`,
+                          testId: activeTakingTest.id,
+                          studentId: currentStudent?.id || "",
+                          marksObtained: score
+                        };
+                        
+                        saveTestResult(result);
+                        setTestResults([...testResults, result]);
+                        setTestCompleted(true);
+                        toast.success("Test submitted successfully!");
+                      }}
+                      className="px-10 font-black rounded-xl bg-green-600 hover:bg-green-700"
+                    >
+                      Finish Test
+                    </Button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="p-12 text-center space-y-6">
+                <div className="h-24 w-24 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
+                  <CheckSquare className="h-12 w-12" />
+                </div>
+                <h4 className="text-3xl font-black">Well Done!</h4>
+                <p className="text-muted-foreground">You've successfully completed <strong>{activeTakingTest.name}</strong>.</p>
+                <div className="bg-primary/5 rounded-[24px] p-8 inline-block min-w-[200px] border border-primary/10">
+                   <p className="text-sm font-bold uppercase tracking-widest text-primary/60 mb-1">Your Score</p>
+                   <p className="text-5xl font-black text-primary">
+                    {testResults.find(r => r.testId === activeTakingTest.id)?.marksObtained}
+                    <span className="text-xl text-muted-foreground font-normal"> / {activeTakingTest.totalMarks}</span>
+                   </p>
+                </div>
+                <div>
+                  <Button 
+                    className="mt-4 rounded-2xl px-12 h-14 font-black text-lg" 
+                    onClick={() => setActiveTakingTest(null)}
+                  >
+                    Back to Dashboard
+                  </Button>
+                </div>
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
     </Card>
   );
 
-  const renderProfileAndFees = () => {
-    const totalPaid = feeRecord?.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
-    const remainingBalance = feeRecord ? feeRecord.totalFees - totalPaid : 0;
-    
+  const renderProfile = () => {
     const batch = batches.find(b => b.id === currentStudent?.batchId);
     const batchDisplayName = batch ? batch.name : (currentStudent?.batchId || 'N/A');
     
@@ -337,7 +491,7 @@ const StudentDashboard = () => {
             </div>
           </div>
         </Card>
-
+ 
         {/* Attendance Summary */}
         <Card className="p-6">
           <h3 className="text-lg font-semibold mb-4 flex items-center gap-2"><Calendar className="h-5 w-5"/> Attendance Overview</h3>
@@ -346,29 +500,6 @@ const StudentDashboard = () => {
             <span className={`text-2xl font-bold ${attendancePercentage > 75 ? 'text-green-500' : 'text-primary'}`}>{attendancePercentage}%</span>
           </div>
           <p className="text-xs text-muted-foreground">{attendance.length} Total days recorded.</p>
-        </Card>
-
-        {/* Fees Summary */}
-        <Card className="p-6">
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2"><IndianRupee className="h-5 w-5"/> Fees Structure</h3>
-          {feeRecord ? (
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-card border p-3 rounded-lg text-center">
-                <p className="text-xs text-muted-foreground">Total Fees</p>
-                <p className="font-semibold text-lg">₹{feeRecord.totalFees}</p>
-              </div>
-              <div className="bg-card border p-3 rounded-lg text-center">
-                <p className="text-xs text-muted-foreground">Total Paid</p>
-                <p className="font-semibold text-lg text-green-600">₹{totalPaid}</p>
-              </div>
-              <div className="col-span-2 bg-card border p-3 rounded-lg text-center border-red-200">
-                <p className="text-xs text-muted-foreground">Remaining Balance</p>
-                <p className="font-bold text-xl text-red-500">₹{remainingBalance}</p>
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground text-center py-4">No fee structure established yet.</p>
-          )}
         </Card>
       </div>
     );
@@ -395,7 +526,7 @@ const StudentDashboard = () => {
         </Card>
       );
       case "tests": return renderTestsCard();
-      case "profile": return renderProfileAndFees();
+      case "profile": return renderProfile();
       default: return null;
     }
   };

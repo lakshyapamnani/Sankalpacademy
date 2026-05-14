@@ -14,7 +14,7 @@ export interface SidebarItem {
 
 interface DashboardLayoutProps {
   children: ReactNode;
-  role: "admin" | "teacher" | "student";
+  role: "admin" | "student" | "staff";
   title: string;
   sidebarItems?: SidebarItem[];
   activeSidebarItem?: string;
