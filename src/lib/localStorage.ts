@@ -284,13 +284,13 @@ const fetchCollectionFromRealtime = async <T>(collection: string): Promise<T[] |
 };
 
 const syncRealtimeData = async () => {
-  const [students, classes, notes, attendance, batches, fees, tests, testResults, staff] = await Promise.all([
+  const [students, classes, notes, attendance, batches, fees, tests, testResults, staffList] = await Promise.all([
     fetchCollectionFromRealtime<Student>(DB_PATHS.STUDENTS),
     fetchCollectionFromRealtime<Class>(DB_PATHS.CLASSES),
     fetchCollectionFromRealtime<Note>(DB_PATHS.NOTES),
     fetchCollectionFromRealtime<AttendanceRecord>(DB_PATHS.ATTENDANCE),
     fetchCollectionFromRealtime<Batch>(DB_PATHS.BATCHES),
-    fetchCollectionFromRealtime<FeeRecord>(DB_PATHS.FEES),
+    !isElectron ? fetchCollectionFromRealtime<FeeRecord>(DB_PATHS.FEES) : Promise.resolve(null),
     fetchCollectionFromRealtime<Test>(DB_PATHS.TESTS),
     fetchCollectionFromRealtime<TestResult>(DB_PATHS.TEST_RESULTS),
     fetchCollectionFromRealtime<Staff>(DB_PATHS.STAFF),
@@ -320,8 +320,8 @@ const syncRealtimeData = async () => {
   if (testResults) {
     saveToStorage(STORAGE_KEYS.TEST_RESULTS, testResults);
   }
-  if (staff) {
-    saveToStorage(STORAGE_KEYS.STAFF, staff);
+  if (staffList) {
+    saveToStorage(STORAGE_KEYS.STAFF, staffList);
   }
 };
 
@@ -433,11 +433,14 @@ export const subscribeToRealtimeUpdates = (onUpdate?: () => void): Unsubscribe =
     attachListener<Note>(DB_PATHS.NOTES, STORAGE_KEYS.NOTES, onUpdate),
     attachListener<AttendanceRecord>(DB_PATHS.ATTENDANCE, STORAGE_KEYS.ATTENDANCE, onUpdate),
     attachListener<Batch>(DB_PATHS.BATCHES, STORAGE_KEYS.BATCHES, onUpdate),
-    attachListener<FeeRecord>(DB_PATHS.FEES, STORAGE_KEYS.FEES, onUpdate),
     attachListener<Test>(DB_PATHS.TESTS, STORAGE_KEYS.TESTS, onUpdate),
     attachListener<TestResult>(DB_PATHS.TEST_RESULTS, STORAGE_KEYS.TEST_RESULTS, onUpdate),
     attachListener<Staff>(DB_PATHS.STAFF, STORAGE_KEYS.STAFF, onUpdate),
   ];
+
+  if (!isElectron) {
+    unsubscribes.push(attachListener<FeeRecord>(DB_PATHS.FEES, STORAGE_KEYS.FEES, onUpdate));
+  }
 
   return () => unsubscribes.forEach(u => u());
 };

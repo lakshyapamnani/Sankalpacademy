@@ -9,6 +9,7 @@ export interface ElectronAPI {
   getFeeRecords: () => Promise<FeeRecord[]>;
   getFeeRecord: (studentId: string) => Promise<FeeRecord | null>;
   updateFeeRecord: (feeRecord: FeeRecord) => Promise<boolean>;
+  downloadReceiptPDF: (filename: string) => Promise<boolean>;
 }
 
 declare global {
@@ -16,3 +17,4 @@ declare global {
     electronAPI: ElectronAPI;
   }
 }
+

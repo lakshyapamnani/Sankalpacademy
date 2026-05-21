@@ -30,6 +30,7 @@ const StaffDashboard = () => {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [selectedAttendanceBatch, setSelectedAttendanceBatch] = useState<string | null>(null);
   const [dailyAttendance, setDailyAttendance] = useState<Record<string, boolean>>({}); // studentId -> isAbsent
+  const [currentDateStr, setCurrentDateStr] = useState<string>('');
 
   const currentUser = getCurrentUser();
 
@@ -41,6 +42,14 @@ const StaffDashboard = () => {
     const day = String(now.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   };
+
+  useEffect(() => {
+    setCurrentDateStr(getLocalDateString());
+    const interval = setInterval(() => {
+      setCurrentDateStr(getLocalDateString());
+    }, 60000); // Check every minute
+    return () => clearInterval(interval);
+  }, []);
 
   const loadData = () => {
     setStudents(getStudents());
@@ -57,8 +66,8 @@ const StaffDashboard = () => {
   }, []);
 
   useEffect(() => {
-    if (selectedAttendanceBatch) {
-      const today = getLocalDateString();
+    if (selectedAttendanceBatch && currentDateStr) {
+      const today = currentDateStr;
       const batchStudents = students.filter(s => s.batchId === selectedAttendanceBatch);
       const attendance = getAttendance();
       
@@ -77,7 +86,7 @@ const StaffDashboard = () => {
 
   const handleSaveDailyAttendance = () => {
     if (!selectedAttendanceBatch) return;
-    const today = getLocalDateString();
+    const today = currentDateStr || getLocalDateString();
     const timestamp = new Date().toLocaleTimeString();
     
     // For every student in the batch, if not in dailyAttendance (isAbsent), mark as present
@@ -102,7 +111,7 @@ const StaffDashboard = () => {
   };
 
   const isBatchMarkedToday = (batchId: string) => {
-    const today = getLocalDateString();
+    const today = currentDateStr || getLocalDateString();
     const batchStudents = students.filter(s => s.batchId === batchId);
     if (batchStudents.length === 0) return false;
     
