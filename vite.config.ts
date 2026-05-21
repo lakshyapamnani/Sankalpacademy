@@ -20,7 +20,7 @@ export default defineConfig(({ mode }) => ({
         vite: {
           build: {
             rollupOptions: {
-              external: ['better-sqlite3'],
+              external: ['sql.js'],
             },
           },
         },
@@ -39,6 +39,6 @@ export default defineConfig(({ mode }) => ({
     },
   },
   optimizeDeps: {
-    exclude: ['better-sqlite3'],
+    exclude: ['sql.js'],
   },
 }));
