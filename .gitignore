@@ -26,3 +26,4 @@ dist-ssr
 # Electron Build Output
 release/
 dist-electron/
+*.exe
