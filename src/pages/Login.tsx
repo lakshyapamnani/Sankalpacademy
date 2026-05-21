@@ -191,10 +191,11 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
           </Button>
         </form>
 
-        <p className="text-center text-sm text-muted-foreground mt-6">
-          {selectedRole === 'admin' && 'Admin: admin@rctutorials.com / admin123'}
-          {(selectedRole === 'staff' || selectedRole === 'student') && 'Accounts are created in the Admin panel'}
-        </p>
+        {(selectedRole === 'staff' || selectedRole === 'student') && (
+          <p className="text-center text-sm text-muted-foreground mt-6">
+            Accounts are created in the Admin panel
+          </p>
+        )}
         </Card>
       </div>
       <footer className="mt-8 py-6 w-full max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground border-t border-primary/10">
