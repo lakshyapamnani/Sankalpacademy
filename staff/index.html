@@ -231,6 +231,64 @@
       50% { opacity: 1; }
       100% { opacity: 0.4; }
     }
+
+    /* App Download Section */
+    .app-download-container {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      margin-top: 12px;
+    }
+
+    .btn-download {
+      flex: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 16px 24px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: hsl(var(--foreground));
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.95rem;
+      border-radius: 16px;
+      cursor: pointer;
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .btn-download:active {
+      transform: translateY(0);
+    }
+
+    .btn-download .icon {
+      width: 20px;
+      height: 20px;
+      opacity: 0.8;
+      transition: transform 0.3s ease;
+    }
+
+    .btn-download:hover .icon {
+      opacity: 1;
+      transform: scale(1.1);
+    }
+
+    .btn-android:hover {
+      background: linear-gradient(135deg, rgba(61, 220, 132, 0.15) 0%, rgba(61, 220, 132, 0.05) 100%);
+      border-color: rgba(61, 220, 132, 0.4);
+      color: #3ddc84; /* Android green */
+      box-shadow: 0 10px 25px rgba(61, 220, 132, 0.15);
+      transform: translateY(-2px);
+    }
+
+    .btn-ios:hover {
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.15) 0%, rgba(56, 189, 248, 0.05) 100%);
+      border-color: rgba(56, 189, 248, 0.4);
+      color: #38bdf8; /* Cyan contrast for iOS */
+      box-shadow: 0 10px 25px rgba(56, 189, 248, 0.15);
+      transform: translateY(-2px);
+    }
   </style>
 </head>
 <body>
@@ -251,9 +309,20 @@
       <h1>RC Tutorials</h1>
       <p>Secure administrative access to manage classes, register attendance, and evaluate performance analytics.</p>
       
-      <a href="https://rctutorials.vercel.app/rctstaff" class="btn-portal">
-        Go to Staff Login &rarr;
-      </a>
+      <div class="app-download-container">
+        <a href="RCT Staff.apk" download="RCT Staff.apk" class="btn-download btn-android" title="Download Android App (APK)">
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M17.5 13c-.8 0-1.5-.7-1.5-1.5S16.7 10 17.5 10s1.5.7 1.5 1.5-.7 1.5-1.5 1.5m-11 0c-.8 0-1.5-.7-1.5-1.5S5.7 10 6.5 10s1.5.7 1.5 1.5-.7 1.5-1.5 1.5m11.2-5.8l1.6-2.7c.1-.2 0-.5-.2-.6-.2-.1-.5 0-.6.2l-1.6 2.8C15.4 6.3 13.8 6 12 6s-3.4.3-4.9.9L5.5 4.1c-.1-.2-.4-.3-.6-.2-.2.1-.3.4-.2.6l1.6 2.7C3.6 8.9 1.7 11.7 1.5 15h21c-.2-3.3-2.1-6.1-4.8-7.8"/>
+          </svg>
+          <span>Android App</span>
+        </a>
+        <a href="https://rctutorials.vercel.app/rctstaff" class="btn-download btn-ios" title="Go to iOS / Web Portal">
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.82M15.97 4.17c.66-.81 1.11-1.93.99-3.06-1 .04-2.21.67-2.93 1.49-.62.69-1.16 1.84-1.01 2.96 1.12.09 2.27-.57 2.95-1.39z"/>
+          </svg>
+          <span>iOS / Web</span>
+        </a>
+      </div>
     </div>
   </div>
 
