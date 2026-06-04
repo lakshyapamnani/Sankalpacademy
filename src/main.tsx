@@ -6,7 +6,11 @@ import { listenForForegroundMessages } from "./lib/messaging";
 
 const unsubscribeRealtime = subscribeToRealtimeUpdates();
 
-if ("serviceWorker" in navigator) {
+// Service workers are NOT supported on file:// URLs (Electron desktop mode).
+// Only register them when running in a real browser / web context.
+const isElectron = navigator.userAgent.includes('Electron');
+
+if (!isElectron && "serviceWorker" in navigator) {
 	navigator.serviceWorker
 		.register("/firebase-messaging-sw.js")
 		.catch(error => {
@@ -14,9 +18,12 @@ if ("serviceWorker" in navigator) {
 		});
 }
 
-listenForForegroundMessages();
+// Firebase foreground messaging also relies on service workers — skip in Electron
+if (!isElectron) {
+	listenForForegroundMessages();
+}
 
-if ("serviceWorker" in navigator) {
+if (!isElectron && "serviceWorker" in navigator) {
 	navigator.serviceWorker.register('/sw.js').catch(err => {
 		console.error('Failed to register service worker', err);
 	});
