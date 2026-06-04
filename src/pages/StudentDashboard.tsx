@@ -353,7 +353,7 @@ const StudentDashboard = () => {
             <div>
               <h2 className="text-2xl font-bold">{currentStudent?.name}</h2>
               <p className="text-sm text-muted-foreground">{currentStudent?.email}</p>
-              <p className="text-sm font-medium mt-1">Batch: {currentStudent?.batchId || 'N/A'}</p>
+              <p className="text-sm font-medium mt-1">Batch: {batchDisplayName}</p>
             </div>
           </div>
         </Card>

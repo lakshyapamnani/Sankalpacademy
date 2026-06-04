@@ -30,6 +30,8 @@ const App = () => (
             <Route path="/student" element={<Login defaultRole="student" />} />
             <Route path="/admin" element={<Login defaultRole="admin" />} />
             <Route path="/teacher" element={<Login defaultRole="teacher" />} />
+            <Route path="/rctstaff" element={<Login defaultRole="staff" forceRole={true} />} />
+            <Route path="/rctstudent" element={<Login defaultRole="student" forceRole={true} />} />
             <Route path="/login" element={<Login />} />
             <Route path="/admin-dashboard" element={<AdminDashboard />} />
             <Route path="/admin-dashboard/batches/:batchId" element={<BatchDetails />} />
@@ -45,6 +47,8 @@ const App = () => (
             <Route path="/student" element={<Login defaultRole="student" />} />
             <Route path="/admin" element={<Login defaultRole="admin" />} />
             <Route path="/teacher" element={<Login defaultRole="teacher" />} />
+            <Route path="/rctstaff" element={<Login defaultRole="staff" forceRole={true} />} />
+            <Route path="/rctstudent" element={<Login defaultRole="student" forceRole={true} />} />
             <Route path="/login" element={<Login />} />
             <Route path="/admin-dashboard" element={<AdminDashboard />} />
             <Route path="/admin-dashboard/batches/:batchId" element={<BatchDetails />} />

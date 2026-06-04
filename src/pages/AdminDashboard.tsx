@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit } from "lucide-react";
+import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit, ArrowLeft, Search, Download } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -23,6 +23,7 @@ import {
   deleteClass,
   getStudentAttendance,
   getFeeRecordByStudent,
+  getFeeRecords,
   updateFeeRecord,
   addFeePayment,
   getTests,
@@ -76,6 +77,16 @@ const AdminDashboard = () => {
   };
 
   const [activeTab, setActiveTab] = useState<'batches' | 'students' | 'staff' | 'classes' | 'fees' | 'tests' | 'attendance' | 'birthdays'>('students');
+  const [currentDateStr, setCurrentDateStr] = useState<string>('');
+
+  useEffect(() => {
+    setCurrentDateStr(getLocalDateString());
+    const interval = setInterval(() => {
+      setCurrentDateStr(getLocalDateString());
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
@@ -88,6 +99,9 @@ const AdminDashboard = () => {
   const [selectedStudentForFees, setSelectedStudentForFees] = useState<Student | null>(null);
   const [feeRecord, setFeeRecord] = useState<FeeRecord | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<string>("");
+  const [selectedBatchForFees, setSelectedBatchForFees] = useState<string | null>(null);
+  const [feesStudentSearch, setFeesStudentSearch] = useState<string>("");
+  const [feesBatchSearch, setFeesBatchSearch] = useState<string>("");
 
   // Tests State
   const [selectedTest, setSelectedTest] = useState<Test | null>(null);
@@ -107,6 +121,10 @@ const AdminDashboard = () => {
     payment: FeePayment;
     record: FeeRecord;
   } | null>(null);
+
+  // WhatsApp Fees State
+  const [waRecipientPhone, setWaRecipientPhone] = useState<string>("");
+  const [waCustomMessage, setWaCustomMessage] = useState<string>("");
 
   // Institute Settings State
   const [instituteSettings, setInstituteSettingsState] = useState<InstituteSettings>(getInstituteSettings());
@@ -171,6 +189,21 @@ const AdminDashboard = () => {
     const record = await getFeeRecordByStudent(student.id);
     setFeeRecord(record || null);
     setPaymentAmount("");
+    
+    const phone = student.parentWhatsApp || student.whatsappNo || student.phoneNo || "";
+    setWaRecipientPhone(phone);
+
+    if (record) {
+      const totalPaid = record.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+      const remaining = record.totalFees - totalPaid;
+      const msg = `Dear Parent, fee payment received for ${student.name}.
+Total Paid: ₹${totalPaid}
+Remaining Balance: ₹${remaining}
+Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
+      setWaCustomMessage(msg);
+    } else {
+      setWaCustomMessage("");
+    }
   };
 
   const handleSelectTest = (test: Test) => {
@@ -220,6 +253,15 @@ const AdminDashboard = () => {
           payment: lastPayment,
           record: updatedRecord
         });
+
+        // Update customizable WhatsApp message for this new payment
+        const totalPaid = updatedRecord.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+        const remaining = updatedRecord.totalFees - totalPaid;
+        const msg = `Dear Parent, we have received a fee payment of ₹${amount} for ${selectedStudentForFees.name}.
+Total Paid: ₹${totalPaid}
+Remaining Balance: ₹${remaining}
+Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
+        setWaCustomMessage(msg);
       }
     }
   };
@@ -230,13 +272,149 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleDownloadLatestPDF = async () => {
+    if (!receiptData) return;
+    const filename = `Receipt_${receiptData.student.name.replace(/\s+/g, '_')}_RCPT-${receiptData.payment.id.slice(-6).toUpperCase()}.pdf`;
+    try {
+      if (window.electronAPI && typeof window.electronAPI.downloadReceiptPDF === 'function') {
+        const success = await window.electronAPI.downloadReceiptPDF(filename);
+        if (success) {
+          toast.success("Receipt PDF downloaded successfully!");
+        }
+      } else {
+        window.print();
+      }
+    } catch (err) {
+      console.error("Failed to download PDF:", err);
+      toast.error("Failed to download PDF");
+    }
+  };
+
+  const handleExportFeesCSV = async (batchStudents: Student[], batchName: string) => {
+    try {
+      const allFeeRecords = await getFeeRecords();
+      
+      // Filter fee records for students in this batch
+      const batchRecords = allFeeRecords.filter(r => 
+        batchStudents.some(s => s.id === r.studentId)
+      );
+
+      // Find max payments count to build dynamic columns
+      let maxPayments = 0;
+      batchRecords.forEach(r => {
+        if (r.payments && r.payments.length > maxPayments) {
+          maxPayments = r.payments.length;
+        }
+      });
+
+      // Build CSV headers
+      const headers = [
+        "Student Name",
+        "Email",
+        "Phone Number",
+        "Total Fees (₹)",
+        "EMI Months",
+        "Total Paid (₹)",
+        "Remaining Balance (₹)"
+      ];
+
+      // Add dynamic installment headers
+      for (let i = 1; i <= maxPayments; i++) {
+        headers.push(`Instalment ${i} Date`, `Instalment ${i} Amount (₹)`);
+      }
+
+      // Build CSV rows
+      const rows = batchStudents.map(student => {
+        const record = batchRecords.find(r => r.studentId === student.id);
+        const totalPaid = record?.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+        const remaining = record ? record.totalFees - totalPaid : 0;
+        
+        const row = [
+          `"${student.name.replace(/"/g, '""')}"`,
+          `"${student.email.replace(/"/g, '""')}"`,
+          `"${(student.phoneNo || "").replace(/"/g, '""')}"`,
+          record ? record.totalFees : 0,
+          record ? record.emiMonths : 0,
+          totalPaid,
+          remaining
+        ];
+
+        // Add payment data
+        for (let i = 0; i < maxPayments; i++) {
+          if (record?.payments && record.payments[i]) {
+            const p = record.payments[i];
+            const pDate = new Date(p.date).toLocaleDateString();
+            row.push(`"${pDate}"`, p.amount);
+          } else {
+            row.push('""', '""');
+          }
+        }
+
+        return row.join(",");
+      });
+
+      const csvContent = [headers.join(","), ...rows].join("\n");
+      
+      // Download trigger
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `Fees_Report_${batchName.replace(/\s+/g, '_')}_${new Date().toLocaleDateString().replace(/\//g, '-')}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success("CSV report downloaded successfully");
+    } catch (error) {
+      console.error("Export CSV failed", error);
+      toast.error("Failed to export CSV report");
+    }
+  };
+
+  const handlePrintReceipt = (payment: FeePayment) => {
+    if (!selectedStudentForFees || !feeRecord) return;
+    setReceiptData({
+      student: selectedStudentForFees,
+      payment: payment,
+      record: feeRecord
+    });
+    setTimeout(() => {
+      window.print();
+    }, 100);
+  };
+
+  const handleDownloadReceiptPDF = (payment: FeePayment) => {
+    if (!selectedStudentForFees || !feeRecord) return;
+    setReceiptData({
+      student: selectedStudentForFees,
+      payment: payment,
+      record: feeRecord
+    });
+    setTimeout(async () => {
+      const filename = `Receipt_${selectedStudentForFees.name.replace(/\s+/g, '_')}_RCPT-${payment.id.slice(-6).toUpperCase()}.pdf`;
+      try {
+        if (window.electronAPI && typeof window.electronAPI.downloadReceiptPDF === 'function') {
+          const success = await window.electronAPI.downloadReceiptPDF(filename);
+          if (success) {
+            toast.success("Receipt PDF downloaded successfully!");
+          }
+        } else {
+          window.print();
+        }
+      } catch (err) {
+        console.error("Failed to download PDF:", err);
+        toast.error("Failed to download PDF");
+      }
+    }, 100);
+  };
+
   // Staff Attendance State
   const [selectedAttendanceBatch, setSelectedAttendanceBatch] = useState<string | null>(null);
   const [dailyAttendance, setDailyAttendance] = useState<Record<string, 'present' | 'absent'>>({});
 
   const handleSaveDailyAttendance = () => {
     if (!selectedAttendanceBatch) return;
-    const today = getLocalDateString();
+    const today = currentDateStr || getLocalDateString();
     
     Object.entries(dailyAttendance).forEach(([studentId, status]) => {
       markAttendance({
@@ -762,162 +940,449 @@ const AdminDashboard = () => {
             {activeTab === 'fees' && (
               <div className="space-y-6">
                 <Card className="p-6">
-                  <h3 className="text-xl font-semibold mb-4">Fees Management</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    
-                    <div className="col-span-1 border-r pr-6 border-border hidden md:block max-h-[60vh] overflow-y-auto">
-                      <h4 className="font-medium text-sm text-muted-foreground mb-3 uppercase tracking-wider">Select Student</h4>
-                      <div className="space-y-2">
-                        {students.map(s => (
-                          <div 
-                            key={s.id} 
-                            onClick={() => handleSelectStudentForFees(s)}
-                            className={`p-3 rounded-md cursor-pointer transition-colors ${selectedStudentForFees?.id === s.id ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}
-                          >
-                            <p className="font-medium text-sm">{s.name}</p>
-                            <p className={`text-xs ${selectedStudentForFees?.id === s.id ? 'text-primary-foreground' : 'text-muted-foreground'}`}>{s.phoneNo || s.email}</p>
-                          </div>
-                        ))}
-                        {students.length === 0 && (
-                          <p className="text-sm text-muted-foreground">No students found.</p>
-                        )}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                    <div>
+                      <h3 className="text-2xl font-black text-primary">Fees Management</h3>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {selectedBatchForFees 
+                          ? "Select a student to view and record payments"
+                          : "Select a batch to manage student fee structures and payments"
+                        }
+                      </p>
+                    </div>
+                  </div>
+
+                  {selectedBatchForFees === null ? (
+                    // Batch Grid Selection View (State A)
+                    <div className="space-y-6">
+                      <div className="relative max-w-md">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          type="text"
+                          placeholder="Search batches by name or year..."
+                          className="pl-9 h-11 bg-accent/30 border-accent focus:bg-background transition-all rounded-xl"
+                          value={feesBatchSearch}
+                          onChange={(e) => setFeesBatchSearch(e.target.value)}
+                        />
                       </div>
-                    </div>
 
-                    
-                    <div className="md:hidden block mb-4">
-                       <h4 className="font-medium text-sm text-muted-foreground mb-2">Select Student</h4>
-                       <Select onValueChange={(val) => {
-                         const student = students.find(st => st.id === val);
-                         if(student) handleSelectStudentForFees(student);
-                       }}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Choose a student" />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-60">
-                          {students.map((s) => (
-                            <SelectItem key={s.id} value={s.id}>
-                              {s.name} ({s.phoneNo || s.email})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                      {(() => {
+                        const filteredBatches = batches.filter(batch => 
+                          batch.name.toLowerCase().includes(feesBatchSearch.toLowerCase()) ||
+                          batch.year.toLowerCase().includes(feesBatchSearch.toLowerCase())
+                        );
 
-                    
-                    <div className="col-span-1 md:col-span-2">
-                      {!selectedStudentForFees ? (
-                        <div className="h-full flex items-center justify-center text-muted-foreground py-12 text-sm border-2 border-dashed rounded-lg">
-                          Select a student to manage fees
-                        </div>
-                      ) : (
-                        <div className="space-y-6">
-                          <div className="flex justify-between items-start border-b pb-4">
-                            <div>
-                              <h3 className="text-2xl font-bold">{selectedStudentForFees.name}</h3>
-                              <p className="text-sm text-muted-foreground">{selectedStudentForFees.collegeName || "No College specified"} • {selectedStudentForFees.studentClass || "No Class specified"}</p>
-                            </div>
-                            
-                            {receiptData && receiptData.student.id === selectedStudentForFees.id && (
-                              <Button onClick={handlePrint} variant="outline" className="gap-2 shrink-0">
-                                <Printer className="h-4 w-4" /> Print Latest Receipt
-                              </Button>
-                            )}
-                          </div>
+                        const unassignedStudents = students.filter(s => !s.batchId || !batches.some(b => b.id === s.batchId));
+                        const matchesUnassigned = "unassigned students".includes(feesBatchSearch.toLowerCase()) || "no batch".includes(feesBatchSearch.toLowerCase());
 
-                          {!feeRecord ? (
-                            <div className="bg-accent p-6 rounded-lg border">
-                              <h4 className="font-semibold mb-2">Create Fee Structure</h4>
-                              <form onSubmit={handleSaveFeeStructure} className="space-y-4 max-w-sm">
-                                <div>
-                                  <Label htmlFor="totalFees">Total Fees</Label>
-                                  <Input id="totalFees" name="totalFees" type="number" placeholder="e.g. 24000" required />
-                                </div>
-                                <div>
-                                  <Label htmlFor="emiMonths">EMI Months</Label>
-                                  <Input id="emiMonths" name="emiMonths" type="number" placeholder="e.g. 3" required />
-                                </div>
-                                <Button type="submit">Save Structure</Button>
-                              </form>
-                            </div>
-                          ) : (
-                            <div className="space-y-6">
+                        return (
+                          <>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                              {filteredBatches.map((batch) => {
+                                const batchStudents = students.filter(s => s.batchId === batch.id);
+                                return (
+                                  <div
+                                    key={batch.id}
+                                    onClick={() => setSelectedBatchForFees(batch.id)}
+                                    className="group relative overflow-hidden p-6 rounded-2xl border bg-card hover:border-primary/50 hover:shadow-lg transition-all duration-300 cursor-pointer flex flex-col justify-between h-44"
+                                  >
+                                    <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-primary/5 rounded-full blur-xl group-hover:bg-primary/15 transition-all duration-300" />
+                                    
+                                    <div>
+                                      <div className="flex justify-between items-start">
+                                        <div className="p-3 bg-primary/10 text-primary rounded-xl w-fit group-hover:scale-110 transition-transform">
+                                          <Users className="h-5 w-5" />
+                                        </div>
+                                        <span className="text-xs font-semibold px-2.5 py-1 bg-accent text-accent-foreground rounded-full">
+                                          {batch.year}
+                                        </span>
+                                      </div>
+                                      
+                                      <h4 className="font-bold text-lg mt-3 group-hover:text-primary transition-colors line-clamp-1">
+                                        {batch.name}
+                                      </h4>
+                                    </div>
+                                    
+                                    <div className="flex items-center justify-between mt-4">
+                                      <span className="text-xs text-muted-foreground font-medium">
+                                        {batchStudents.length} {batchStudents.length === 1 ? 'Student' : 'Students'}
+                                      </span>
+                                      <span className="text-xs font-bold text-primary flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                                        View Batch &rarr;
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
                               
-                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                {(() => {
-                                  const totalPaid = feeRecord.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
-                                  const remainingBalance = feeRecord.totalFees - totalPaid;
-                                  const emiMonthsRemaining = Math.max(1, feeRecord.emiMonths - (feeRecord.payments?.length || 0));
-                                  // Re-calculate the EMI structure based on remaining balance
-                                  const dynamicEmi = (remainingBalance / emiMonthsRemaining).toFixed(0);
-
-                                  return (
-                                    <>
-                                      <div className="bg-card border rounded-lg p-3">
-                                        <p className="text-xs text-muted-foreground">Total Fees</p>
-                                        <p className="text-lg font-semibold">₹{feeRecord.totalFees}</p>
+                              {unassignedStudents.length > 0 && (feesBatchSearch === "" || matchesUnassigned) && (
+                                <div
+                                  onClick={() => setSelectedBatchForFees('unassigned')}
+                                  className="group relative overflow-hidden p-6 rounded-2xl border border-dashed border-amber-500/50 bg-amber-500/5 hover:bg-amber-500/10 hover:border-amber-500 hover:shadow-lg transition-all duration-300 cursor-pointer flex flex-col justify-between h-44"
+                                >
+                                  <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-amber-500/5 rounded-full blur-xl group-hover:bg-amber-500/15 transition-all duration-300" />
+                                  
+                                  <div>
+                                    <div className="flex justify-between items-start">
+                                      <div className="p-3 bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-xl w-fit group-hover:scale-110 transition-transform">
+                                        <Users className="h-5 w-5" />
                                       </div>
-                                      <div className="bg-card border rounded-lg p-3">
-                                        <p className="text-xs text-muted-foreground">Total Paid</p>
-                                        <p className="text-lg font-semibold text-green-600">₹{totalPaid}</p>
-                                      </div>
-                                      <div className="bg-card border rounded-lg p-3">
-                                        <p className="text-xs text-muted-foreground">Remaining</p>
-                                        <p className="text-lg font-semibold text-red-500">₹{remainingBalance}</p>
-                                      </div>
-                                      <div className="bg-card border rounded-lg p-3">
-                                        <p className="text-xs text-muted-foreground">Adjusted EMI</p>
-                                        <p className="text-lg font-semibold text-blue-600">₹{dynamicEmi}</p>
-                                      </div>
-                                    </>
-                                  );
-                                })()}
-                              </div>
-
-                              
-                              <div className="bg-accent p-4 rounded-lg flex items-end gap-4 max-w-lg">
-                                <div className="flex-1">
-                                  <Label htmlFor="paymentAmount">Add Payment Amount</Label>
-                                  <div className="relative">
-                                    <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                                    <Input 
-                                      id="paymentAmount" 
-                                      type="number" 
-                                      className="pl-8" 
-                                      placeholder="Amount" 
-                                      value={paymentAmount}
-                                      onChange={(e) => setPaymentAmount(e.target.value)}
-                                    />
+                                      <span className="text-xs font-semibold px-2.5 py-1 bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded-full">
+                                        No Batch
+                                      </span>
+                                    </div>
+                                    
+                                    <h4 className="font-bold text-lg mt-3 text-amber-800 dark:text-amber-200 transition-colors line-clamp-1">
+                                      Unassigned Students
+                                    </h4>
+                                  </div>
+                                  
+                                  <div className="flex items-center justify-between mt-4">
+                                    <span className="text-xs text-amber-700/80 dark:text-amber-300/80 font-medium">
+                                      {unassignedStudents.length} {unassignedStudents.length === 1 ? 'Student' : 'Students'}
+                                    </span>
+                                    <span className="text-xs font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                                      View Batch &rarr;
+                                    </span>
                                   </div>
                                 </div>
-                                <Button onClick={handleAddPayment}>Record Payment</Button>
+                              )}
+                            </div>
+
+                            {filteredBatches.length === 0 && (unassignedStudents.length === 0 || !matchesUnassigned) && (
+                              <div className="py-12 text-center text-muted-foreground border-2 border-dashed rounded-2xl bg-accent/20">
+                                <Users className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
+                                <p className="text-sm font-semibold">No batches found matching "{feesBatchSearch}"</p>
+                                <p className="text-xs text-muted-foreground mt-1">Try searching another batch name, year, or view active batches.</p>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+                  ) : (
+                    // Split-pane layout for selected batch (State B)
+                    (() => {
+                      const activeBatch = batches.find(b => b.id === selectedBatchForFees);
+                      const batchName = selectedBatchForFees === 'unassigned' ? "Unassigned Students" : (activeBatch?.name || "Unknown Batch");
+                      const batchYear = selectedBatchForFees === 'unassigned' ? "No Batch" : (activeBatch?.year || "");
+
+                      const batchStudents = selectedBatchForFees === 'unassigned'
+                        ? students.filter(s => !s.batchId || !batches.some(b => b.id === s.batchId))
+                        : students.filter(s => s.batchId === selectedBatchForFees);
+
+                      const filteredBatchStudents = batchStudents.filter(s => 
+                        (s.name || '').toLowerCase().includes(feesStudentSearch.toLowerCase()) ||
+                        (s.phoneNo && s.phoneNo.includes(feesStudentSearch)) ||
+                        (s.email || '').toLowerCase().includes(feesStudentSearch.toLowerCase())
+                      );
+
+                      return (
+                        <div className="space-y-6">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
+                            <div className="flex items-center gap-3">
+                              <Button 
+                                variant="ghost" 
+                                size="icon"
+                                onClick={() => {
+                                  setSelectedBatchForFees(null);
+                                  setSelectedStudentForFees(null);
+                                  setFeesStudentSearch("");
+                                }} 
+                                className="h-10 w-10 rounded-xl hover:bg-accent border border-border"
+                                title="Back to Batches"
+                              >
+                                <ArrowLeft className="h-5 w-5 text-muted-foreground hover:text-foreground" />
+                              </Button>
+                              <div>
+                                <h4 className="font-bold text-lg flex items-center gap-2">
+                                  {batchName}
+                                  {batchYear && <span className="text-xs font-normal px-2.5 py-0.5 bg-accent text-accent-foreground rounded-full">{batchYear}</span>}
+                                </h4>
+                                <p className="text-xs text-muted-foreground">Select a student from the batch list to view and manage their fees</p>
+                              </div>
+                            </div>
+                            <Button 
+                              onClick={() => handleExportFeesCSV(batchStudents, batchName)} 
+                              variant="outline" 
+                              className="gap-2 shrink-0 self-start sm:self-center rounded-xl h-10 hover:bg-accent border border-border"
+                              disabled={batchStudents.length === 0}
+                            >
+                              <Download className="h-4 w-4 text-muted-foreground" />
+                              <span className="font-semibold text-xs text-foreground">Export Batch Report</span>
+                            </Button>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            {/* Desktop Student List Sidebar */}
+                            <div className="col-span-1 border-r pr-6 border-border hidden md:block max-h-[60vh] overflow-y-auto space-y-4">
+                              <div className="relative">
+                                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                <Input
+                                  type="text"
+                                  placeholder="Search student..."
+                                  className="pl-8 h-9 text-xs rounded-lg"
+                                  value={feesStudentSearch}
+                                  onChange={(e) => setFeesStudentSearch(e.target.value)}
+                                />
                               </div>
 
-                              
-                              <div>
-                                <h4 className="font-semibold mb-3">Payment History</h4>
-                                <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
-                                  {feeRecord.payments?.length > 0 ? (
-                                    feeRecord.payments.map((p, index) => (
-                                      <div key={p.id} className="flex justify-between items-center bg-card border p-3 rounded-md text-sm">
-                                        <div>
-                                          <p className="font-medium">Payment #{index + 1}</p>
-                                          <p className="text-xs text-muted-foreground">{new Date(p.date).toLocaleString()}</p>
-                                        </div>
-                                        <div className="font-semibold text-green-600">+₹{p.amount}</div>
-                                      </div>
-                                    ))
-                                  ) : (
-                                    <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
+                              <div className="space-y-2">
+                                <h4 className="font-semibold text-xs text-muted-foreground uppercase tracking-wider">
+                                  Students ({filteredBatchStudents.length})
+                                </h4>
+                                <div className="space-y-1 max-h-[48vh] overflow-y-auto pr-1">
+                                  {filteredBatchStudents.map(s => (
+                                    <div 
+                                      key={s.id} 
+                                      onClick={() => handleSelectStudentForFees(s)}
+                                      className={`p-3 rounded-xl cursor-pointer transition-all duration-200 border border-transparent ${selectedStudentForFees?.id === s.id ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/20' : 'hover:bg-accent hover:border-accent border-transparent'}`}
+                                    >
+                                      <p className="font-semibold text-sm">{s.name}</p>
+                                      <p className={`text-xs ${selectedStudentForFees?.id === s.id ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+                                        {s.phoneNo || s.email}
+                                      </p>
+                                    </div>
+                                  ))}
+                                  {filteredBatchStudents.length === 0 && (
+                                    <p className="text-sm text-muted-foreground text-center py-6">No students found.</p>
                                   )}
                                 </div>
                               </div>
                             </div>
-                          )}
+
+                            {/* Mobile Student List Dropdown */}
+                            <div className="md:hidden block mb-4 space-y-4">
+                               <div className="relative">
+                                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                 <Input
+                                   type="text"
+                                   placeholder="Filter student list..."
+                                   className="pl-8 h-9 text-xs rounded-lg"
+                                   value={feesStudentSearch}
+                                   onChange={(e) => setFeesStudentSearch(e.target.value)}
+                                 />
+                               </div>
+                               
+                               <div>
+                                 <h4 className="font-medium text-xs text-muted-foreground mb-2">Select Student</h4>
+                                 <Select 
+                                   value={selectedStudentForFees?.id || ""} 
+                                   onValueChange={(val) => {
+                                     const student = filteredBatchStudents.find(st => st.id === val);
+                                     if(student) handleSelectStudentForFees(student);
+                                   }}
+                                 >
+                                  <SelectTrigger className="rounded-xl">
+                                    <SelectValue placeholder="Choose a student" />
+                                  </SelectTrigger>
+                                  <SelectContent className="max-h-60">
+                                    {filteredBatchStudents.map((s) => (
+                                      <SelectItem key={s.id} value={s.id}>
+                                        {s.name} ({s.phoneNo || s.email})
+                                      </SelectItem>
+                                    ))}
+                                    {filteredBatchStudents.length === 0 && (
+                                      <div className="p-3 text-xs text-muted-foreground text-center">No students found</div>
+                                    )}
+                                  </SelectContent>
+                                </Select>
+                               </div>
+                            </div>
+
+                            {/* Right Pane: Student Fees details */}
+                            <div className="col-span-1 md:col-span-2">
+                              {!selectedStudentForFees ? (
+                                <div className="h-full flex flex-col items-center justify-center text-muted-foreground py-12 text-sm border-2 border-dashed rounded-2xl bg-accent/10">
+                                  <Users className="h-10 w-10 text-muted-foreground/30 mb-3" />
+                                  <p className="font-medium">No student selected</p>
+                                  <p className="text-xs text-muted-foreground/80 mt-0.5">Choose a student from the sidebar list to manage fees.</p>
+                                </div>
+                              ) : (
+                                <div className="space-y-6">
+                                  <div className="flex justify-between items-start border-b pb-4">
+                                    <div>
+                                      <h3 className="text-2xl font-bold">{selectedStudentForFees.name}</h3>
+                                      <p className="text-sm text-muted-foreground">{selectedStudentForFees.collegeName || "No College specified"} • {selectedStudentForFees.studentClass || "No Class specified"}</p>
+                                    </div>
+                                    
+                                    {receiptData && receiptData.student.id === selectedStudentForFees.id && (
+                                      <div className="flex gap-2">
+                                        <Button onClick={handlePrint} variant="outline" className="gap-2 shrink-0">
+                                          <Printer className="h-4 w-4" /> Print Latest Receipt
+                                        </Button>
+                                        <Button onClick={handleDownloadLatestPDF} variant="default" className="gap-2 shrink-0">
+                                          <Download className="h-4 w-4" /> Download Latest Receipt
+                                        </Button>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {!feeRecord ? (
+                                    <div className="bg-accent/40 p-6 rounded-2xl border">
+                                      <h4 className="font-semibold mb-2">Create Fee Structure</h4>
+                                      <form onSubmit={handleSaveFeeStructure} className="space-y-4 max-w-sm">
+                                        <div>
+                                          <Label htmlFor="totalFees">Total Fees</Label>
+                                          <Input id="totalFees" name="totalFees" type="number" placeholder="e.g. 24000" required />
+                                        </div>
+                                        <div>
+                                          <Label htmlFor="emiMonths">EMI Months</Label>
+                                          <Input id="emiMonths" name="emiMonths" type="number" placeholder="e.g. 3" required />
+                                        </div>
+                                        <Button type="submit">Save Structure</Button>
+                                      </form>
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-6">
+                                      
+                                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                        {(() => {
+                                          const totalPaid = feeRecord.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+                                          const remainingBalance = feeRecord.totalFees - totalPaid;
+                                          const emiMonthsRemaining = Math.max(1, feeRecord.emiMonths - (feeRecord.payments?.length || 0));
+                                          // Re-calculate the EMI structure based on remaining balance
+                                          const dynamicEmi = (remainingBalance / emiMonthsRemaining).toFixed(0);
+
+                                          return (
+                                            <>
+                                              <div className="bg-card border rounded-lg p-3">
+                                                <p className="text-xs text-muted-foreground">Total Fees</p>
+                                                <p className="text-lg font-semibold">₹{feeRecord.totalFees}</p>
+                                              </div>
+                                              <div className="bg-card border rounded-lg p-3">
+                                                <p className="text-xs text-muted-foreground">Total Paid</p>
+                                                <p className="text-lg font-semibold text-green-600">₹{totalPaid}</p>
+                                              </div>
+                                              <div className="bg-card border rounded-lg p-3">
+                                                <p className="text-xs text-muted-foreground">Remaining</p>
+                                                <p className="text-lg font-semibold text-red-500">₹{remainingBalance}</p>
+                                              </div>
+                                              <div className="bg-card border rounded-lg p-3">
+                                                <p className="text-xs text-muted-foreground">Adjusted EMI</p>
+                                                <p className="text-lg font-semibold text-blue-600">₹{dynamicEmi}</p>
+                                              </div>
+                                            </>
+                                          );
+                                        })()}
+                                      </div>
+
+                                      
+                                      <div className="bg-accent/40 p-4 rounded-xl flex items-end gap-4 max-w-lg">
+                                        <div className="flex-1">
+                                          <Label htmlFor="paymentAmount">Add Payment Amount</Label>
+                                          <div className="relative">
+                                            <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                            <Input 
+                                              id="paymentAmount" 
+                                              type="number" 
+                                              className="pl-8" 
+                                              placeholder="Amount" 
+                                              value={paymentAmount}
+                                              onChange={(e) => setPaymentAmount(e.target.value)}
+                                            />
+                                          </div>
+                                        </div>
+                                        <Button onClick={handleAddPayment}>Record Payment</Button>
+                                      </div>
+
+                                      
+                                      <div>
+                                        <h4 className="font-semibold mb-3">Payment History</h4>
+                                        <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
+                                          {feeRecord.payments?.length > 0 ? (
+                                            feeRecord.payments.map((p, index) => (
+                                              <div key={p.id} className="flex justify-between items-center bg-card border p-3 rounded-xl text-sm hover:shadow-sm transition-shadow">
+                                                <div className="flex-1">
+                                                  <p className="font-semibold">Payment #{index + 1}</p>
+                                                  <p className="text-xs text-muted-foreground">{new Date(p.date).toLocaleString()}</p>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                  <div className="font-bold text-green-600 mr-1">+₹{p.amount}</div>
+                                                  <Button 
+                                                    onClick={() => handlePrintReceipt(p)} 
+                                                    variant="ghost" 
+                                                    size="icon" 
+                                                    className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-xl"
+                                                    title="Print Receipt"
+                                                  >
+                                                    <Printer className="h-4 w-4" />
+                                                  </Button>
+                                                  <Button 
+                                                    onClick={() => handleDownloadReceiptPDF(p)} 
+                                                    variant="ghost" 
+                                                    size="icon" 
+                                                    className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-xl"
+                                                    title="Download Receipt PDF"
+                                                  >
+                                                    <Download className="h-4 w-4" />
+                                                  </Button>
+                                                </div>
+                                              </div>
+                                            ))
+                                          ) : (
+                                            <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
+                                          )}
+                                        </div>
+                                      </div>
+                                      
+                                      <div className="border-t pt-5 mt-5 space-y-4">
+                                        <div className="flex items-center gap-2">
+                                          <div className="h-2 w-2 rounded-full bg-[#25D366] animate-pulse" />
+                                          <h4 className="font-semibold text-sm">Send WhatsApp Fees Status</h4>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-accent/10 p-4 rounded-2xl border">
+                                          <div className="md:col-span-1 space-y-1.5">
+                                            <Label htmlFor="waPhone" className="text-xs font-semibold">WhatsApp Number</Label>
+                                            <Input
+                                              id="waPhone"
+                                              type="text"
+                                              placeholder="e.g. 919876543210"
+                                              value={waRecipientPhone}
+                                              onChange={(e) => setWaRecipientPhone(e.target.value)}
+                                              className="text-xs rounded-xl"
+                                            />
+                                            <p className="text-[10px] text-muted-foreground leading-tight">Prefilled from Parents WhatsApp &gt; Student WhatsApp &gt; Student Phone</p>
+                                          </div>
+                                          <div className="md:col-span-2 space-y-1.5">
+                                            <Label htmlFor="waMsg" className="text-xs font-semibold">Customizable Message Template</Label>
+                                            <div className="flex gap-2">
+                                              <textarea
+                                                id="waMsg"
+                                                rows={3}
+                                                className="flex min-h-[80px] w-full rounded-xl border border-input bg-transparent px-3 py-2 text-xs shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-y"
+                                                value={waCustomMessage}
+                                                onChange={(e) => setWaCustomMessage(e.target.value)}
+                                              />
+                                              <Button
+                                                onClick={() => {
+                                                  if (!waRecipientPhone) {
+                                                    toast.error("Please enter a WhatsApp contact number.");
+                                                    return;
+                                                  }
+                                                  const cleanedPhone = waRecipientPhone.split('+').join('').split(' ').join('');
+                                                  const waUrl = `https://wa.me/${cleanedPhone}?text=${encodeURIComponent(waCustomMessage)}`;
+                                                  window.open(waUrl, '_blank');
+                                                  toast.success("Opening WhatsApp...");
+                                                }}
+                                                className="bg-[#25D366] hover:bg-[#128C7E] text-white self-end gap-2 h-10 rounded-xl font-semibold shrink-0"
+                                              >
+                                                Send
+                                              </Button>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      )}
-                    </div>
-                  </div>
+                      );
+                    })()
+                  )}
                 </Card>
               </div>
             )}
@@ -1123,45 +1588,115 @@ const AdminDashboard = () => {
                               {new Date(selectedTest.date).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })} • Max: {selectedTest.totalMarks} marks
                             </p>
                           </div>
-                          <div className="p-4 space-y-2 max-h-[50vh] overflow-y-auto">
+                          <div className="p-4 space-y-3 max-h-[50vh] overflow-y-auto">
                             {(() => {
                               const allowedBatchIds = (selectedTest.batchIds && selectedTest.batchIds.length > 0) ? selectedTest.batchIds : (selectedTest.batchId ? [selectedTest.batchId] : []);
-                              const batchStudents = students.filter(s => allowedBatchIds.includes(s.batchId));
-                              if (batchStudents.length === 0) return <p className="text-sm text-muted-foreground py-4 text-center">No students in this batch.</p>;
-                              
-                              return batchStudents.map(student => {
-                                const existingResult = testResults.find(r => r.studentId === student.id);
-                                const percent = existingResult ? Math.round((existingResult.marksObtained / selectedTest.totalMarks) * 100) : null;
-                                
-                                return (
-                                  <div key={student.id} className="flex items-center justify-between p-3 border rounded-lg bg-background hover:bg-accent/30 transition-colors">
-                                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                                      <div className={`h-9 w-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                                        percent === null ? 'bg-muted text-muted-foreground'
-                                        : percent >= 75 ? 'bg-emerald-100 text-emerald-700'
-                                        : percent >= 40 ? 'bg-amber-100 text-amber-700'
-                                        : 'bg-red-100 text-red-700'
-                                      }`}>
-                                        {percent !== null ? `${percent}%` : '—'}
+                              const allBatchStudents = students.filter(s => allowedBatchIds.includes(s.batchId));
+                              if (allBatchStudents.length === 0) return <p className="text-sm text-muted-foreground py-4 text-center">No students in the selected batches.</p>;
+
+                              // Group students by batch
+                              const batchGroups = allowedBatchIds.map(bid => {
+                                const batch = batches.find(b => b.id === bid);
+                                const batchStudentsList = students.filter(s => s.batchId === bid);
+                                const batchResults = testResults.filter(r => batchStudentsList.some(s => s.id === r.studentId));
+                                const avgScore = batchResults.length > 0 ? Math.round((batchResults.reduce((s, r) => s + r.marksObtained, 0) / batchResults.length / selectedTest.totalMarks) * 100) : null;
+                                return { batchId: bid, batchName: batch?.name || 'Unknown', students: batchStudentsList, avgScore, markedCount: batchResults.length };
+                              }).filter(g => g.students.length > 0);
+
+                              // If only one batch, show students directly without batch cards
+                              if (batchGroups.length === 1) {
+                                return batchGroups[0].students.map(student => {
+                                  const existingResult = testResults.find(r => r.studentId === student.id);
+                                  const percent = existingResult ? Math.round((existingResult.marksObtained / selectedTest.totalMarks) * 100) : null;
+                                  return (
+                                    <div key={student.id} className="flex items-center justify-between p-3 border rounded-lg bg-background hover:bg-accent/30 transition-colors">
+                                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                                        <div className={`h-9 w-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                                          percent === null ? 'bg-muted text-muted-foreground'
+                                          : percent >= 75 ? 'bg-emerald-100 text-emerald-700'
+                                          : percent >= 40 ? 'bg-amber-100 text-amber-700'
+                                          : 'bg-red-100 text-red-700'
+                                        }`}>
+                                          {percent !== null ? `${percent}%` : '—'}
+                                        </div>
+                                        <div className="min-w-0">
+                                          <p className="font-medium text-sm truncate">{student.name}</p>
+                                          <p className="text-xs text-muted-foreground truncate">{student.phoneNo || student.email}</p>
+                                        </div>
                                       </div>
-                                      <div className="min-w-0">
-                                        <p className="font-medium text-sm truncate">{student.name}</p>
-                                        <p className="text-xs text-muted-foreground truncate">{student.phoneNo || student.email}</p>
+                                      <div className="flex items-center gap-2 shrink-0 ml-3">
+                                        <Input 
+                                          type="number" 
+                                          className="w-20 text-right text-sm" 
+                                          placeholder="—"
+                                          defaultValue={existingResult?.marksObtained}
+                                          onBlur={(e) => handleSaveMarks(student.id, e.target.value)}
+                                        />
+                                        <span className="text-xs text-muted-foreground whitespace-nowrap">/ {selectedTest.totalMarks}</span>
                                       </div>
                                     </div>
-                                    <div className="flex items-center gap-2 shrink-0 ml-3">
-                                      <Input 
-                                        type="number" 
-                                        className="w-20 text-right text-sm" 
-                                        placeholder="—"
-                                        defaultValue={existingResult?.marksObtained}
-                                        onBlur={(e) => handleSaveMarks(student.id, e.target.value)}
-                                      />
-                                      <span className="text-xs text-muted-foreground whitespace-nowrap">/ {selectedTest.totalMarks}</span>
+                                  );
+                                });
+                              }
+
+                              // Multiple batches: show batch cards
+                              return batchGroups.map(group => (
+                                <details key={group.batchId} className="group border rounded-xl overflow-hidden">
+                                  <summary className="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-accent/30 transition-colors list-none [&::-webkit-details-marker]:hidden">
+                                    <div className="flex items-center gap-3">
+                                      <div className="p-2.5 bg-primary/10 text-primary rounded-xl group-open:bg-primary group-open:text-primary-foreground transition-colors">
+                                        <Users className="h-4 w-4" />
+                                      </div>
+                                      <div>
+                                        <p className="font-semibold text-sm">{group.batchName}</p>
+                                        <p className="text-xs text-muted-foreground">{group.students.length} students • {group.markedCount} marked</p>
+                                      </div>
                                     </div>
+                                    <div className="flex items-center gap-3">
+                                      {group.avgScore !== null && (
+                                        <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${group.avgScore >= 75 ? 'bg-emerald-100 text-emerald-700' : group.avgScore >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                                          Avg: {group.avgScore}%
+                                        </span>
+                                      )}
+                                      <svg className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                                    </div>
+                                  </summary>
+                                  <div className="border-t p-3 space-y-2 bg-accent/5">
+                                    {group.students.map(student => {
+                                      const existingResult = testResults.find(r => r.studentId === student.id);
+                                      const percent = existingResult ? Math.round((existingResult.marksObtained / selectedTest.totalMarks) * 100) : null;
+                                      return (
+                                        <div key={student.id} className="flex items-center justify-between p-3 border rounded-lg bg-background hover:bg-accent/30 transition-colors">
+                                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                                            <div className={`h-9 w-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                                              percent === null ? 'bg-muted text-muted-foreground'
+                                              : percent >= 75 ? 'bg-emerald-100 text-emerald-700'
+                                              : percent >= 40 ? 'bg-amber-100 text-amber-700'
+                                              : 'bg-red-100 text-red-700'
+                                            }`}>
+                                              {percent !== null ? `${percent}%` : '—'}
+                                            </div>
+                                            <div className="min-w-0">
+                                              <p className="font-medium text-sm truncate">{student.name}</p>
+                                              <p className="text-xs text-muted-foreground truncate">{student.phoneNo || student.email}</p>
+                                            </div>
+                                          </div>
+                                          <div className="flex items-center gap-2 shrink-0 ml-3">
+                                            <Input 
+                                              type="number" 
+                                              className="w-20 text-right text-sm" 
+                                              placeholder="—"
+                                              defaultValue={existingResult?.marksObtained}
+                                              onBlur={(e) => handleSaveMarks(student.id, e.target.value)}
+                                            />
+                                            <span className="text-xs text-muted-foreground whitespace-nowrap">/ {selectedTest.totalMarks}</span>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
                                   </div>
-                                );
-                              });
+                                </details>
+                              ));
                             })()}
                           </div>
                           {/* Score Distribution */}
@@ -1643,7 +2178,7 @@ const AdminDashboard = () => {
                             <p className="text-sm text-primary/70 font-bold uppercase tracking-wider mb-1">Today's Present</p>
                             <p className="text-4xl font-black text-primary">
                               {(() => {
-                                const today = getLocalDateString();
+                                const today = currentDateStr || getLocalDateString();
                                 const batchStudents = students.filter(s => s.batchId === selectedReportBatch);
                                 const records = batchStudents.map(s => getStudentAttendance(s.id)).flat();
                                 return records.filter(r => r.date === today && r.status === 'present').length;
@@ -1654,7 +2189,7 @@ const AdminDashboard = () => {
                             <p className="text-sm text-destructive/70 font-bold uppercase tracking-wider mb-1">Today's Absent</p>
                             <p className="text-4xl font-black text-destructive">
                               {(() => {
-                                const today = getLocalDateString();
+                                const today = currentDateStr || getLocalDateString();
                                 const batchStudents = students.filter(s => s.batchId === selectedReportBatch);
                                 const records = batchStudents.map(s => getStudentAttendance(s.id)).flat();
                                 return records.filter(r => r.date === today && r.status === 'absent').length;
@@ -1787,7 +2322,7 @@ const AdminDashboard = () => {
 
                   <div className="grid gap-4">
                     {(() => {
-                      const today = getLocalDateString();
+                      const today = currentDateStr || getLocalDateString();
                       const absentToday = students.filter(student => {
                         if (student.batchId !== selectedReportBatch) return false;
                         const records = getStudentAttendance(student.id);
