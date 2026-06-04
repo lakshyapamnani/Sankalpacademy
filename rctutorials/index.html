@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Download RC Tutorials ERP</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: '#2563eb',
+                        'brand-dark': '#1e40af',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0e7ff 100%);
+            min-height: 100vh;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center p-4">
+
+    <!-- Header / Navbar -->
+    <header class="w-full max-w-6xl flex justify-between items-center py-6 px-4 absolute top-0">
+        <div class="flex items-center gap-3">
+            <img src="rctlogo.jpg" alt="RCT Logo" class="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm">
+            <span class="font-bold text-xl text-gray-800 tracking-tight">RC Tutorials</span>
+        </div>
+        <div class="flex items-center gap-4">
+            <a href="student.html" class="text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors">Student Portal</a>
+            <a href="#" class="text-sm font-semibold text-gray-600 hover:text-gray-900 transition-colors">Support</a>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="w-full max-w-3xl flex flex-col items-center justify-center text-center mt-24">
+        
+        <!-- Logo -->
+        <div class="mb-8 relative group">
+            <div class="absolute -inset-1 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200"></div>
+            <img src="rctlogo.jpg" alt="RC Tutorials Logo" class="relative w-32 h-32 rounded-full object-cover border-4 border-white shadow-xl mx-auto">
+        </div>
+
+        <h1 class="text-5xl md:text-6xl font-extrabold text-gray-900 tracking-tight mb-6 leading-tight">
+            Manage your institute <br/><span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">like never before.</span>
+        </h1>
+        
+        <p class="text-xl text-gray-600 mb-10 max-w-2xl font-medium">
+            Download the official RC Tutorials ERP Desktop App. Fast, secure, and built specifically for modern education centers.
+        </p>
+
+        <div class="glass-card rounded-3xl p-8 md:p-10 w-full max-w-lg mx-auto transition-transform hover:scale-[1.02] duration-300">
+            <div class="flex items-center justify-center mb-6">
+                <svg class="w-12 h-12 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                </svg>
+            </div>
+            
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">RC Tutorials ERP for Windows</h2>
+            <p class="text-sm text-gray-500 mb-8">Version 1.0.0 • Free Download</p>
+
+            <a href="RC_Tutorials_ERP_Setup.exe" download class="inline-flex items-center justify-center w-full px-8 py-4 text-lg font-bold text-white transition-all duration-200 bg-blue-600 border border-transparent rounded-xl hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-600 shadow-lg hover:shadow-xl hover:-translate-y-0.5">
+                Download for Windows
+            </a>
+            
+            <p class="mt-4 text-xs text-gray-400">Requires Windows 10 or later (64-bit)</p>
+        </div>
+        
+    </main>
+
+    <!-- Footer -->
+    <footer class="mt-24 py-6 w-full max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-gray-500 border-t border-gray-200">
+        <p>&copy; 2026 Drona. All rights reserved.</p>
+        <div class="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
+            <p>
+                Powered by <a href="https://drona-impact.vercel.app" target="_blank" rel="noopener noreferrer" class="text-blue-600 font-semibold hover:underline">Drona</a>
+            </p>
+            <a href="https://instagram.com/_.drona._" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 hover:text-pink-600 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-instagram"><rect width="20" height="20" x="2" y="2" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/></svg>
+                <span class="font-medium">_.drona._</span>
+            </a>
+        </div>
+    </footer>
+
+</body>
+</html>
