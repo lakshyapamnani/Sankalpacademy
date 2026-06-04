@@ -679,60 +679,81 @@ const AdminDashboard = () => {
               </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {students.filter(student => student.name.toLowerCase().includes(studentSearch.toLowerCase()) || student.email.toLowerCase().includes(studentSearch.toLowerCase())).map((student) => {
-                    const batch = batches.find(b => b.id === student.batchId);
-                    const attendance = getStudentAttendance(student.id);
-                    const total = attendance.length;
-                    const present = attendance.filter(a => String(a.status).toLowerCase() === 'present').length;
-                    const percent = total > 0 ? Math.round((present / total) * 100) : 0;
+                  {(() => {
+                    const filteredStudents = students.filter(student => {
+                      const batch = batches.find(b => b.id === student.batchId);
+                      const searchLower = studentSearch.toLowerCase();
+                      return (
+                        (student.name || '').toLowerCase().includes(searchLower) ||
+                        (student.email || '').toLowerCase().includes(searchLower) ||
+                        (student.phoneNo && student.phoneNo.includes(studentSearch)) ||
+                        (student.parentWhatsApp && student.parentWhatsApp.includes(studentSearch)) ||
+                        (student.collegeName && student.collegeName.toLowerCase().includes(searchLower)) ||
+                        (student.studentClass && student.studentClass.toLowerCase().includes(searchLower)) ||
+                        (batch && batch.name.toLowerCase().includes(searchLower))
+                      );
+                    });
 
-                    return (
-                      <div key={student.id} className="p-4 rounded-lg border bg-card text-sm flex flex-col justify-between hover:shadow-md transition-shadow">
-                        <div>
-                          <div className="flex justify-between items-start mb-2">
-                            <div>
-                              <p className="font-semibold text-base">{student.name}</p>
-                              <p className="text-xs text-muted-foreground">{student.email}</p>
-                             {student.phoneNo && <p className="text-xs text-muted-foreground">📞 {student.phoneNo}</p>}
-                             {student.whatsappNo && <p className="text-xs text-emerald-600">💬 {student.whatsappNo}</p>}
+                    if (filteredStudents.length === 0) {
+                      return (
+                        <div className="col-span-full py-8 text-center text-muted-foreground bg-accent rounded-lg border-2 border-dashed">
+                          {students.length === 0 
+                            ? "No students found. Add your first student to get started." 
+                            : `No students match the search query "${studentSearch}".`}
+                        </div>
+                      );
+                    }
+
+                    return filteredStudents.map((student) => {
+                      const batch = batches.find(b => b.id === student.batchId);
+                      const attendance = getStudentAttendance(student.id);
+                      const total = attendance.length;
+                      const present = attendance.filter(a => String(a.status).toLowerCase() === 'present').length;
+                      const percent = total > 0 ? Math.round((present / total) * 100) : 0;
+
+                      return (
+                        <div key={student.id} className="p-4 rounded-lg border bg-card text-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+                          <div>
+                            <div className="flex justify-between items-start mb-2">
+                              <div>
+                                <p className="font-semibold text-base">{student.name}</p>
+                                <p className="text-xs text-muted-foreground">{student.email}</p>
+                               {student.phoneNo && <p className="text-xs text-muted-foreground">📞 {student.phoneNo}</p>}
+                               {student.whatsappNo && <p className="text-xs text-emerald-600">💬 {student.whatsappNo}</p>}
+                              </div>
+                              <div className="flex gap-1 items-center">
+                                <button onClick={() => setEditingStudent(student)} className="p-2 text-primary hover:bg-primary/10 rounded-md transition-colors" title="Edit Student">
+                                  <Edit className="h-4 w-4" />
+                                </button>
+                                <DeleteDialog
+                                  title="Delete Student"
+                                  description={`Are you sure you want to delete ${student.name}? This will also delete all their attendance records. This action cannot be undone.`}
+                                  onDelete={() => handleDeleteStudent(student.id)}
+                                />
+                              </div>
                             </div>
-                            <div className="flex gap-1 items-center">
-                              <button onClick={() => setEditingStudent(student)} className="p-2 text-primary hover:bg-primary/10 rounded-md transition-colors" title="Edit Student">
-                                <Edit className="h-4 w-4" />
-                              </button>
-                              <DeleteDialog
-                                title="Delete Student"
-                                description={`Are you sure you want to delete ${student.name}? This will also delete all their attendance records. This action cannot be undone.`}
-                                onDelete={() => handleDeleteStudent(student.id)}
-                              />
+                            <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                              {student.collegeName && (
+                                <p className="col-span-2"><span className="font-medium">College:</span> {student.collegeName}</p>
+                              )}
+                              {student.parentWhatsApp && (
+                                <p className="col-span-2"><span className="font-medium">Parent WA:</span> {student.parentWhatsApp}</p>
+                              )}
+                              {student.studentClass && (
+                                <p><span className="font-medium">Class:</span> {student.studentClass}</p>
+                              )}
+                              <p>
+                                <span className="font-medium">Batch:</span> {batch?.name || 'Unknown'}
+                              </p>
+                              <p className="col-span-2 mt-1">
+                                <span className="font-medium">Attendance:</span> {percent}% ({present}/{total})
+                              </p>
                             </div>
-                          </div>
-                          <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                            {student.collegeName && (
-                              <p className="col-span-2"><span className="font-medium">College:</span> {student.collegeName}</p>
-                            )}
-                            {student.parentWhatsApp && (
-                              <p className="col-span-2"><span className="font-medium">Parent WA:</span> {student.parentWhatsApp}</p>
-                            )}
-                            {student.studentClass && (
-                              <p><span className="font-medium">Class:</span> {student.studentClass}</p>
-                            )}
-                            <p>
-                              <span className="font-medium">Batch:</span> {batch?.name || 'Unknown'}
-                            </p>
-                            <p className="col-span-2 mt-1">
-                              <span className="font-medium">Attendance:</span> {percent}% ({present}/{total})
-                            </p>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                  {students.length === 0 && (
-                    <div className="col-span-full py-8 text-center text-muted-foreground bg-accent rounded-lg border-2 border-dashed">
-                      No students found. Add your first student to get started.
-                    </div>
-                  )}
+                      );
+                    });
+                  })()}
                 </div>
               </Card>
             )}
