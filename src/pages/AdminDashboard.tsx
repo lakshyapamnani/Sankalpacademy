@@ -224,6 +224,7 @@ const AdminDashboard = () => {
 
   // Student Report State
   const [selectedStudentForReport, setSelectedStudentForReport] = useState<Student | null>(null);
+  const [selectedAbsentStudent, setSelectedAbsentStudent] = useState<Student | null>(null);
   const [reportSubjectFilter, setReportSubjectFilter] = useState<string>('all');
   const [reportCompareMonth1, setReportCompareMonth1] = useState<string>('');
   const [reportCompareMonth2, setReportCompareMonth2] = useState<string>('');
@@ -3425,7 +3426,7 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
 
                             return (
                               <tr key={student.id} className="hover:bg-accent transition-colors text-black dark:text-white">
-                                <td className="p-3 font-medium">{student.name}</td>
+                                <td className="p-3 font-medium cursor-pointer text-primary hover:underline" onClick={() => setSelectedAbsentStudent(student)}>{student.name}</td>
                                 <td className="p-3 text-muted-foreground">{batch?.name || 'N/A'}</td>
                                 <td className="p-3 text-center font-bold">{total}</td>
                                 <td className="p-3 text-center text-green-600 font-bold">{present}</td>
@@ -3556,6 +3557,102 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
               </Card>
             </div>
           )}
+
+          {/* Absent Dates Dialog */}
+          <Dialog open={!!selectedAbsentStudent} onOpenChange={(open) => {
+            if (!open) setSelectedAbsentStudent(null);
+          }}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle className="text-xl font-bold flex items-center gap-2">
+                  <Calendar className="h-5 w-5 text-destructive" />
+                  <span>Absence Records</span>
+                </DialogTitle>
+              </DialogHeader>
+              
+              {selectedAbsentStudent && (() => {
+                const student = selectedAbsentStudent;
+                const records = getStudentAttendance(student.id);
+                const absentRecords = records.filter(r => r.status === 'absent');
+                
+                // Sort absent dates descending (most recent first)
+                const sortedAbsences = [...absentRecords].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                
+                const total = records.length;
+                const present = records.filter(r => r.status === 'present').length;
+                const absent = absentRecords.length;
+                const pct = total > 0 ? Math.round((present / total) * 100) : 0;
+                
+                return (
+                  <div className="space-y-4 pt-2">
+                    <div className="bg-accent/40 p-4 rounded-2xl border">
+                      <h4 className="font-bold text-lg mb-1">{student.name}</h4>
+                      <p className="text-xs text-muted-foreground mb-3">
+                        Batch: {batches.find(b => b.id === student.batchId)?.name || 'N/A'}
+                      </p>
+                      <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                        <div className="bg-background p-2 rounded-xl border">
+                          <p className="text-muted-foreground font-medium mb-0.5">Present</p>
+                          <p className="text-base font-black text-green-600">{present}</p>
+                        </div>
+                        <div className="bg-background p-2 rounded-xl border">
+                          <p className="text-muted-foreground font-medium mb-0.5">Absent</p>
+                          <p className="text-base font-black text-destructive">{absent}</p>
+                        </div>
+                        <div className="bg-background p-2 rounded-xl border col-span-1">
+                          <p className="text-muted-foreground font-medium mb-0.5">Ratio</p>
+                          <p className={`text-base font-black ${pct >= 75 ? 'text-green-600' : 'text-destructive'}`}>
+                            {pct}%
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <h5 className="text-sm font-bold mb-2 flex items-center justify-between">
+                        <span>Absent Dates ({absent})</span>
+                      </h5>
+                      
+                      {sortedAbsences.length === 0 ? (
+                        <div className="text-center py-6 text-muted-foreground bg-accent/20 rounded-xl border border-dashed">
+                          <span className="text-2xl mb-1 block">🌟</span>
+                          No recorded absences for this student!
+                        </div>
+                      ) : (
+                        <div className="max-h-[40vh] overflow-y-auto space-y-2 pr-1">
+                          {sortedAbsences.map((record) => {
+                            const dateObj = new Date(record.date);
+                            const formattedDate = isNaN(dateObj.getTime()) 
+                              ? record.date 
+                              : dateObj.toLocaleDateString('en-US', {
+                                  weekday: 'short',
+                                  day: 'numeric',
+                                  month: 'short',
+                                  year: 'numeric'
+                                });
+                            
+                            return (
+                              <div key={record.id} className="flex justify-between items-center p-3 rounded-xl border bg-background hover:bg-accent/20 transition-colors">
+                                <div className="flex items-center gap-2">
+                                  <div className="h-2 w-2 rounded-full bg-destructive" />
+                                  <span className="font-semibold text-sm">{formattedDate}</span>
+                                </div>
+                                {record.markedBy && (
+                                  <span className="text-[10px] text-muted-foreground bg-accent px-2 py-0.5 rounded-full font-medium">
+                                    By {record.markedBy.split(' at ')[0]}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+            </DialogContent>
+          </Dialog>
         </div>
       )}
 
