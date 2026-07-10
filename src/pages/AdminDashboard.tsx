@@ -3562,7 +3562,7 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
           <Dialog open={!!selectedAbsentStudent} onOpenChange={(open) => {
             if (!open) setSelectedAbsentStudent(null);
           }}>
-            <DialogContent className="max-w-md">
+            <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="text-xl font-bold flex items-center gap-2">
                   <Calendar className="h-5 w-5 text-destructive" />
