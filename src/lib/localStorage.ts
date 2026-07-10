@@ -55,6 +55,7 @@ export interface Test {
   batchIds?: string[]; // new multi-batch assignment
   date: string;
   totalMarks: number;
+  subject?: string; // e.g. "Mathematics", "Physics", etc.
   type?: 'subjective' | 'mcq';
   questions?: MCQQuestion[];
 }
@@ -130,6 +131,11 @@ export interface Batch {
   year: string;
 }
 
+export interface Subject {
+  id: string;
+  name: string;
+}
+
 // Delete functions
 export const deleteStudent = (studentId: string): boolean => {
   try {
@@ -176,6 +182,19 @@ export const deleteClass = (classId: string): boolean => {
   }
 };
 
+export const deleteBatch = (batchId: string): boolean => {
+  try {
+    const batches = getFromStorage<Batch>(STORAGE_KEYS.BATCHES);
+    const filteredBatches = batches.filter(b => b.id !== batchId);
+    saveToStorage(STORAGE_KEYS.BATCHES, filteredBatches);
+    void removeItemFromRealtime(DB_PATHS.BATCHES, batchId);
+    return true;
+  } catch (error) {
+    console.error('Error deleting batch:', error);
+    return false;
+  }
+};
+
 const STORAGE_KEYS = {
   STUDENTS: 'smartclass_students',
   CLASSES: 'smartclass_classes',
@@ -188,6 +207,7 @@ const STORAGE_KEYS = {
   TEST_RESULTS: 'smartclass_test_results',
   STAFF: 'smartclass_staff',
   INSTITUTE_SETTINGS: 'smartclass_institute_settings',
+  SUBJECTS: 'smartclass_subjects',
 };
 
 const DB_PATHS = {
@@ -205,6 +225,7 @@ const DB_PATHS = {
   TEST_RESULTS: 'testResults',
   STAFF: 'staff',
   INSTITUTE_SETTINGS: 'instituteSettings',
+  SUBJECTS: 'subjects',
 };
 
 // Initialize default data
@@ -249,6 +270,10 @@ const initializeDefaultData = () => {
   if (!localStorage.getItem(STORAGE_KEYS.STAFF)) {
     localStorage.setItem(STORAGE_KEYS.STAFF, JSON.stringify([]));
   }
+
+  if (!localStorage.getItem(STORAGE_KEYS.SUBJECTS)) {
+    localStorage.setItem(STORAGE_KEYS.SUBJECTS, JSON.stringify([]));
+  }
 };
 
 initializeDefaultData();
@@ -286,7 +311,7 @@ const fetchCollectionFromRealtime = async <T>(collection: string): Promise<T[] |
 };
 
 const syncRealtimeData = async () => {
-  const [students, classes, notes, attendance, batches, fees, tests, testResults, staffList] = await Promise.all([
+  const [students, classes, notes, attendance, batches, fees, tests, testResults, staffList, subjects] = await Promise.all([
     fetchCollectionFromRealtime<Student>(DB_PATHS.STUDENTS),
     fetchCollectionFromRealtime<Class>(DB_PATHS.CLASSES),
     fetchCollectionFromRealtime<Note>(DB_PATHS.NOTES),
@@ -296,6 +321,7 @@ const syncRealtimeData = async () => {
     fetchCollectionFromRealtime<Test>(DB_PATHS.TESTS),
     fetchCollectionFromRealtime<TestResult>(DB_PATHS.TEST_RESULTS),
     fetchCollectionFromRealtime<Staff>(DB_PATHS.STAFF),
+    fetchCollectionFromRealtime<Subject>(DB_PATHS.SUBJECTS),
   ]);
 
   if (students) {
@@ -324,6 +350,9 @@ const syncRealtimeData = async () => {
   }
   if (staffList) {
     saveToStorage(STORAGE_KEYS.STAFF, staffList);
+  }
+  if (subjects) {
+    saveToStorage(STORAGE_KEYS.SUBJECTS, subjects);
   }
 };
 
@@ -438,6 +467,7 @@ export const subscribeToRealtimeUpdates = (onUpdate?: () => void): Unsubscribe =
     attachListener<Test>(DB_PATHS.TESTS, STORAGE_KEYS.TESTS, onUpdate),
     attachListener<TestResult>(DB_PATHS.TEST_RESULTS, STORAGE_KEYS.TEST_RESULTS, onUpdate),
     attachListener<Staff>(DB_PATHS.STAFF, STORAGE_KEYS.STAFF, onUpdate),
+    attachListener<Subject>(DB_PATHS.SUBJECTS, STORAGE_KEYS.SUBJECTS, onUpdate),
   ];
 
   if (!isElectron) {
@@ -724,6 +754,17 @@ export const addTest = (test: Test): void => {
   void writeItemToRealtime(DB_PATHS.TESTS, test.id, test);
 };
 
+export const updateTest = (testId: string, updates: Partial<Test>): void => {
+  const tests = getTests();
+  const index = tests.findIndex(t => t.id === testId);
+  if (index !== -1) {
+    const updatedTest = { ...tests[index], ...updates };
+    tests[index] = updatedTest;
+    saveToStorage(STORAGE_KEYS.TESTS, tests);
+    void writeItemToRealtime(DB_PATHS.TESTS, testId, updatedTest);
+  }
+};
+
 export const deleteTest = (testId: string): boolean => {
   try {
     const tests = getTests();
@@ -840,4 +881,28 @@ export const format12h = (time24: string): string => {
   if (h > 12) h -= 12;
   if (h === 0) h = 12;
   return `${h}:${mStr} ${period}`;
+};
+
+export const getSubjects = (): Subject[] => getFromStorage<Subject>(STORAGE_KEYS.SUBJECTS);
+
+export const addSubject = async (subject: Subject): Promise<void> => {
+  const subjects = getSubjects();
+  if (subjects.some(s => s.name.toLowerCase() === subject.name.toLowerCase())) {
+    throw new Error("Subject already exists");
+  }
+  saveToStorage(STORAGE_KEYS.SUBJECTS, [...subjects, subject]);
+  void writeItemToRealtime(DB_PATHS.SUBJECTS, subject.id, subject);
+};
+
+export const deleteSubject = async (subjectId: string): Promise<boolean> => {
+  try {
+    const subjects = getSubjects();
+    const filteredSubjects = subjects.filter(s => s.id !== subjectId);
+    saveToStorage(STORAGE_KEYS.SUBJECTS, filteredSubjects);
+    void removeItemFromRealtime(DB_PATHS.SUBJECTS, subjectId);
+    return true;
+  } catch (error) {
+    console.error('Error deleting subject:', error);
+    return false;
+  }
 };

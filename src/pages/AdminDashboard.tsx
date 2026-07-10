@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit, ArrowLeft, Search, Download } from "lucide-react";
+import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit, ArrowLeft, Search, Download, MessageSquare, Eye, TrendingUp, FileText, Trash2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -21,6 +21,7 @@ import {
   addBatch,
   deleteStudent,
   deleteClass,
+  deleteBatch,
   getStudentAttendance,
   getFeeRecordByStudent,
   getFeeRecords,
@@ -29,16 +30,22 @@ import {
   getTests,
   addTest,
   deleteTest,
+  updateTest,
   getTestResultsByTest,
+  getTestResultsByStudent,
   saveTestResult,
   subscribeToRealtimeUpdates,
   markAttendance,
   getStaff,
   addStaff,
   deleteStaff,
+  getSubjects,
+  addSubject,
+  deleteSubject,
   Student,
   Class,
   Batch,
+  Subject,
   FeeRecord,
   FeePayment,
   Test,
@@ -48,6 +55,56 @@ import {
   InstituteSettings,
   getInstituteSettings,
 } from "@/lib/localStorage";
+
+type StudentTestResult = TestResult & { test: Test };
+
+interface MonthlyAvg {
+  rawKey: string;
+  label: string;
+  avg: number;
+  count: number;
+}
+
+const getStudentTestsForReport = (
+  studentId: string,
+  allTests: Test[],
+  subjectFilter: string
+): StudentTestResult[] => {
+  const studentResults = getTestResultsByStudent(studentId);
+  const studentTests = studentResults
+    .map(r => {
+      const test = allTests.find(t => t.id === r.testId);
+      return test ? { ...r, test } : null;
+    })
+    .filter(Boolean) as StudentTestResult[];
+
+  return subjectFilter === 'all'
+    ? studentTests
+    : studentTests.filter(t => (t.test.subject || 'General') === subjectFilter);
+};
+
+const computeMonthlyAvgs = (sortedTests: StudentTestResult[]): MonthlyAvg[] => {
+  const monthlyData: Record<string, { total: number; count: number }> = {};
+  sortedTests.forEach(t => {
+    const d = new Date(t.test.date);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    if (!monthlyData[key]) monthlyData[key] = { total: 0, count: 0 };
+    monthlyData[key].total += (t.marksObtained / t.test.totalMarks) * 100;
+    monthlyData[key].count += 1;
+  });
+  return Object.keys(monthlyData).sort().map(k => ({
+    rawKey: k,
+    label: new Date(k + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+    avg: Math.round(monthlyData[k].total / monthlyData[k].count),
+    count: monthlyData[k].count,
+  }));
+};
+
+const getPreviousMonthKey = (monthKey: string): string => {
+  const [y, m] = monthKey.split('-').map(Number);
+  const d = new Date(y, m - 2, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
 
 const formatFirebaseError = (message: string): string => {
   const normalized = message.split("_").join(" ");
@@ -109,6 +166,22 @@ const AdminDashboard = () => {
   const [testResults, setTestResults] = useState<TestResult[]>([]);
   const [absentMessage, setAbsentMessage] = useState<string>("Hello parent, your child {name} was absent today {date}.");
   const [birthdayMessage, setBirthdayMessage] = useState<string>("Happy Birthday {name}! 🎂 Wishing you a fantastic day ahead! 🎉");
+  const [testMarksMessage, setTestMarksMessage] = useState<string>(
+    () => localStorage.getItem('smartclass_test_wa_template') ||
+      "Hello Parent, your child {name} has scored {marks}/{total} in the test '{testName}' conducted on {date}."
+  );
+  const [testAbsentMessage, setTestAbsentMessage] = useState<string>(
+    () => localStorage.getItem('smartclass_test_absent_wa_template') ||
+      "Hello Parent, your child {name} was absent for the test '{testName}' conducted on {date}."
+  );
+
+  useEffect(() => {
+    localStorage.setItem('smartclass_test_wa_template', testMarksMessage);
+  }, [testMarksMessage]);
+
+  useEffect(() => {
+    localStorage.setItem('smartclass_test_absent_wa_template', testAbsentMessage);
+  }, [testAbsentMessage]);
 
   // MCQ Creation State
   const [mcqQuestions, setMcqQuestions] = useState<MCQQuestion[]>([]);
@@ -146,6 +219,19 @@ const AdminDashboard = () => {
 
   const [studentSearch, setStudentSearch] = useState('');
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  const [editingTest, setEditingTest] = useState<Test | null>(null);
+  const [editTestSubject, setEditTestSubject] = useState<string>('');
+
+  // Student Report State
+  const [selectedStudentForReport, setSelectedStudentForReport] = useState<Student | null>(null);
+  const [reportSubjectFilter, setReportSubjectFilter] = useState<string>('all');
+  const [reportCompareMonth1, setReportCompareMonth1] = useState<string>('');
+  const [reportCompareMonth2, setReportCompareMonth2] = useState<string>('');
+  const [reportMonthlyMonth, setReportMonthlyMonth] = useState<string>('');
+  const [printingReport, setPrintingReport] = useState<boolean>(false);
+  const [reportPrintMode, setReportPrintMode] = useState<'full' | 'monthly'>('full');
+  const [testSubject, setTestSubject] = useState<string>('');
+  const [subjects, setSubjects] = useState<Subject[]>([]);
 
   useEffect(() => {
     loadData();
@@ -169,6 +255,7 @@ const AdminDashboard = () => {
     setBatches(getBatches());
     setTests(getTests());
     setStaff(getStaff());
+    setSubjects(getSubjects());
 
     if (selectedStudentForFees) {
       // Reload fee record if editing
@@ -408,6 +495,172 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
     }, 100);
   };
 
+  useEffect(() => {
+    if (!printingReport) return;
+
+    const handleAfterPrint = () => {
+      setPrintingReport(false);
+      setReportPrintMode('full');
+    };
+
+    window.addEventListener('afterprint', handleAfterPrint);
+    const timer = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.print();
+      });
+    });
+
+    return () => {
+      window.removeEventListener('afterprint', handleAfterPrint);
+      cancelAnimationFrame(timer);
+    };
+  }, [printingReport]);
+
+  const generateMonthlyReportHTML = (
+    student: Student,
+    batch: Batch | undefined,
+    monthKey: string,
+    monthTests: StudentTestResult[],
+    currentMonth: MonthlyAvg | undefined,
+    prevMonth: MonthlyAvg | undefined,
+    monthDiff: number | null,
+    settings: InstituteSettings
+  ): string => {
+    const monthLabel = currentMonth?.label || monthKey;
+    const prevLabel = prevMonth?.label || 'Previous Month';
+    const monthAvg = currentMonth?.avg ?? 0;
+    const prevAvg = prevMonth?.avg ?? null;
+    const diffText = monthDiff !== null
+      ? `${monthDiff > 0 ? '+' : ''}${monthDiff}% ${monthDiff > 0 ? 'Improvement' : monthDiff < 0 ? 'Decline' : 'Unchanged'}`
+      : 'N/A (no previous month data)';
+    const diffColor = monthDiff !== null && monthDiff > 0 ? '#15803d' : monthDiff !== null && monthDiff < 0 ? '#dc2626' : '#374151';
+
+    const testRows = monthTests.map((t, idx) => {
+      const pct = Math.round((t.marksObtained / t.test.totalMarks) * 100);
+      return `<tr>
+        <td style="border:1px solid #d1d5db;padding:8px">${idx + 1}</td>
+        <td style="border:1px solid #d1d5db;padding:8px">${new Date(t.test.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+        <td style="border:1px solid #d1d5db;padding:8px;font-weight:600">${t.test.name}</td>
+        <td style="border:1px solid #d1d5db;padding:8px">${t.test.subject || 'General'}</td>
+        <td style="border:1px solid #d1d5db;padding:8px;text-align:center;font-weight:700">${t.marksObtained}</td>
+        <td style="border:1px solid #d1d5db;padding:8px;text-align:center">${t.test.totalMarks}</td>
+        <td style="border:1px solid #d1d5db;padding:8px;text-align:center;font-weight:700">${pct}%</td>
+      </tr>`;
+    }).join('');
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Monthly Report Card - ${student.name} - ${monthLabel}</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #111; max-width: 800px; margin: 0 auto; padding: 32px; }
+    h1 { text-transform: uppercase; letter-spacing: 0.1em; margin: 0; }
+    .header { border-bottom: 3px solid #1f2937; padding-bottom: 16px; margin-bottom: 24px; text-align: center; }
+    .badge { display: inline-block; background: #1f2937; color: white; padding: 4px 16px; font-size: 11px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; margin-top: 12px; }
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; font-size: 14px; }
+    .label { font-size: 10px; text-transform: uppercase; color: #6b7280; font-weight: 700; letter-spacing: 0.05em; }
+    .comparison { border: 2px solid #c7d2fe; background: #eef2ff; border-radius: 12px; padding: 20px; margin-bottom: 24px; }
+    .comparison-grid { display: flex; justify-content: space-around; align-items: center; text-align: center; }
+    .score { font-size: 36px; font-weight: 900; color: #312e81; }
+    .delta { font-size: 14px; font-weight: 700; padding: 6px 14px; border-radius: 999px; display: inline-block; margin-top: 8px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 32px; }
+    th { background: #f3f4f6; border: 1px solid #d1d5db; padding: 10px; text-align: left; font-size: 11px; text-transform: uppercase; }
+    .signatures { display: flex; justify-content: space-between; margin-top: 64px; }
+    .sig-line { width: 180px; border-bottom: 2px solid #374151; margin-bottom: 6px; }
+    .footer { text-align: center; font-size: 10px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 12px; margin-top: 32px; }
+    @media print { body { padding: 16px; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>${settings.name || 'RC Tutorials'}</h1>
+    ${settings.address ? `<p style="color:#4b5563;margin:4px 0">${settings.address}</p>` : ''}
+    <div style="font-size:11px;color:#6b7280">${settings.phone ? `Phone: ${settings.phone}` : ''} ${settings.email ? `&nbsp; Email: ${settings.email}` : ''}</div>
+    <div class="badge">Monthly Report Card — ${monthLabel}</div>
+  </div>
+
+  <div class="info-grid">
+    <div>
+      <div class="label">Student Name</div>
+      <div style="font-size:18px;font-weight:700">${student.name}</div>
+      <div style="margin-top:8px"><span class="label">Batch</span> ${batch?.name || 'N/A'}</div>
+      ${student.studentClass ? `<div><span class="label">Class</span> ${student.studentClass}</div>` : ''}
+    </div>
+    <div style="text-align:right">
+      <div class="label">Report Generated</div>
+      <div>${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+      <div style="margin-top:8px"><span class="label">Tests This Month</span> ${monthTests.length}</div>
+    </div>
+  </div>
+
+  <div class="comparison">
+    <div style="font-size:12px;font-weight:800;text-transform:uppercase;color:#312e81;margin-bottom:16px;letter-spacing:0.05em">Month-on-Month Performance Comparison</div>
+    <div class="comparison-grid">
+      <div>
+        <div class="label">${prevLabel}</div>
+        <div class="score">${prevAvg !== null ? `${prevAvg}%` : '—'}</div>
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:800;color:#6366f1;margin-bottom:8px">VS</div>
+        <div class="delta" style="background:${monthDiff !== null && monthDiff > 0 ? '#dcfce7' : monthDiff !== null && monthDiff < 0 ? '#fee2e2' : '#f3f4f6'};color:${diffColor}">${diffText}</div>
+      </div>
+      <div>
+        <div class="label">${monthLabel}</div>
+        <div class="score">${monthAvg}%</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="label" style="margin-bottom:8px">Test Results — ${monthLabel}</div>
+  ${monthTests.length > 0 ? `<table>
+    <thead><tr>
+      <th>#</th><th>Date</th><th>Test Name</th><th>Subject</th><th style="text-align:center">Marks</th><th style="text-align:center">Total</th><th style="text-align:center">%</th>
+    </tr></thead>
+    <tbody>${testRows}</tbody>
+  </table>` : '<p style="text-align:center;color:#6b7280;padding:24px;border:1px dashed #d1d5db">No tests found for this month.</p>'}
+
+  <div class="signatures">
+    <div style="text-align:center"><div class="sig-line"></div><div style="font-size:11px;color:#6b7280">Parent / Guardian</div></div>
+    <div style="text-align:center"><div class="sig-line"></div><div style="font-size:11px;color:#6b7280">Authorized Signatory</div></div>
+  </div>
+  <div class="footer">This report is electronically generated by ${settings.name || 'RC Tutorials'} Management System</div>
+</body>
+</html>`;
+  };
+
+  const handleDownloadMonthlyReport = (
+    student: Student,
+    batch: Batch | undefined,
+    monthKey: string,
+    monthTests: StudentTestResult[],
+    monthlyAvgs: MonthlyAvg[]
+  ) => {
+    if (!monthKey) {
+      toast.error('Please select a month for the report card');
+      return;
+    }
+    const currentMonth = monthlyAvgs.find(m => m.rawKey === monthKey);
+    const prevKey = getPreviousMonthKey(monthKey);
+    const prevMonth = monthlyAvgs.find(m => m.rawKey === prevKey);
+    const monthDiff = currentMonth && prevMonth ? currentMonth.avg - prevMonth.avg : null;
+
+    const html = generateMonthlyReportHTML(
+      student, batch, monthKey, monthTests, currentMonth, prevMonth, monthDiff, instituteSettings
+    );
+    const monthLabel = currentMonth?.label.replace(/\s+/g, '_') || monthKey;
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Monthly_Report_${student.name.replace(/\s+/g, '_')}_${monthLabel}.html`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success('Monthly report card downloaded');
+  };
+
   // Staff Attendance State
   const [selectedAttendanceBatch, setSelectedAttendanceBatch] = useState<string | null>(null);
   const [dailyAttendance, setDailyAttendance] = useState<Record<string, 'present' | 'absent'>>({});
@@ -447,6 +700,23 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
       loadData();
     } else {
       toast.error("Failed to delete class");
+    }
+  };
+
+  const handleDeleteBatch = (batchId: string) => {
+    // Check if there are any students in this batch first
+    const batchStudents = students.filter(s => s.batchId === batchId);
+    if (batchStudents.length > 0) {
+      toast.error(`Cannot delete batch: ${batchStudents.length} students are currently assigned to it.`);
+      return;
+    }
+    if (window.confirm("Are you sure you want to delete this batch? This action cannot be undone.")) {
+      if (deleteBatch(batchId)) {
+        toast.success("Batch deleted successfully");
+        loadData();
+      } else {
+        toast.error("Failed to delete batch");
+      }
     }
   };
 
@@ -557,6 +827,7 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
   const handleAddTest = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    const subjectVal = testSubject === '__other__' ? (formData.get("customSubject") as string || '') : testSubject;
     const test: Test = {
       id: Date.now().toString(),
       name: formData.get("name") as string,
@@ -564,6 +835,7 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
       batchIds: selectedBatches,
       date: formData.get("date") as string,
       totalMarks: testType === 'mcq' ? mcqQuestions.length : Number(formData.get("totalMarks")),
+      subject: subjectVal || undefined,
       type: testType,
       questions: testType === 'mcq' ? mcqQuestions : undefined,
     };
@@ -593,7 +865,53 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
     setMcqQuestions([]);
     setSelectedBatches([]);
     setTestType('subjective');
+    setTestSubject('');
     loadData();
+  };
+
+  const handleStartEditTest = (test: Test) => {
+    setEditingTest(test);
+    const hasSubject = subjects.some(s => s.name === test.subject);
+    if (test.subject) {
+      if (hasSubject) {
+        setEditTestSubject(test.subject);
+      } else {
+        setEditTestSubject('__other__');
+      }
+    } else {
+      setEditTestSubject('');
+    }
+  };
+
+  const handleUpdateTest = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingTest) return;
+
+    const formData = new FormData(e.currentTarget);
+    const subjectVal = editTestSubject === '__other__' ? (formData.get("customSubject") as string || '') : editTestSubject;
+    const nameVal = formData.get("name") as string;
+    const dateVal = formData.get("date") as string;
+
+    if (!nameVal.trim()) {
+      toast.error("Test name is required");
+      return;
+    }
+
+    const updates: Partial<Test> = {
+      name: nameVal,
+      subject: subjectVal || undefined,
+      date: dateVal,
+    };
+
+    updateTest(editingTest.id, updates);
+    toast.success("Test updated successfully");
+    setEditingTest(null);
+    setEditTestSubject('');
+    loadData();
+
+    if (selectedTest && selectedTest.id === editingTest.id) {
+      setSelectedTest(prev => prev ? { ...prev, ...updates } : null);
+    }
   };
 
   const handleAddMcqQuestion = () => {
@@ -723,6 +1041,7 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
             
             
             {activeTab === 'students' && (
+              <div>
               <Card className="p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
                   <div>
@@ -900,6 +1219,9 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                                {student.whatsappNo && <p className="text-xs text-emerald-600">💬 {student.whatsappNo}</p>}
                               </div>
                               <div className="flex gap-1 items-center">
+                                <button onClick={() => { setSelectedStudentForReport(student); setReportSubjectFilter('all'); }} className="p-2 text-violet-600 hover:bg-violet-50 rounded-md transition-colors" title="View Report">
+                                  <Eye className="h-4 w-4" />
+                                </button>
                                 <button onClick={() => setEditingStudent(student)} className="p-2 text-primary hover:bg-primary/10 rounded-md transition-colors" title="Edit Student">
                                   <Edit className="h-4 w-4" />
                                 </button>
@@ -928,12 +1250,436 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                               </p>
                             </div>
                           </div>
+                          <button 
+                            onClick={() => { setSelectedStudentForReport(student); setReportSubjectFilter('all'); }}
+                            className="mt-3 w-full py-2 text-xs font-bold rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 transition-colors flex items-center justify-center gap-1.5"
+                          >
+                            <FileText className="h-3.5 w-3.5" />
+                            View Report Card
+                          </button>
                         </div>
                       );
                     });
                   })()}
                 </div>
               </Card>
+
+              {/* Student Report Dialog */}
+              <Dialog open={!!selectedStudentForReport} onOpenChange={(open) => {
+                if (!open) {
+                  setSelectedStudentForReport(null);
+                  setReportMonthlyMonth('');
+                  setReportCompareMonth1('');
+                  setReportCompareMonth2('');
+                  setReportSubjectFilter('all');
+                }
+              }}>
+                <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto">
+                  {selectedStudentForReport && (() => {
+                    const student = selectedStudentForReport;
+                    const batch = batches.find(b => b.id === student.batchId);
+                    const studentTests = getStudentTestsForReport(student.id, tests, reportSubjectFilter);
+                    const sortedTests = [...studentTests].sort((a, b) => new Date(a.test.date).getTime() - new Date(b.test.date).getTime());
+
+                    const allSubjects = [...new Set(getStudentTestsForReport(student.id, tests, 'all').map(t => t.test.subject || 'General').filter(Boolean))];
+                    const monthlyAvgs = computeMonthlyAvgs(sortedTests);
+                    const monthKeys = monthlyAvgs.map(m => m.rawKey);
+                    const maxBarValue = monthlyAvgs.length > 0 ? Math.max(...monthlyAvgs.map(m => m.avg), 100) : 100;
+
+                    // Auto-select latest month for monthly report card
+                    if (monthKeys.length > 0 && !reportMonthlyMonth) {
+                      setTimeout(() => setReportMonthlyMonth(monthKeys[monthKeys.length - 1]), 0);
+                    }
+
+                    const totalTests = sortedTests.length;
+                    const avgPercent = totalTests > 0 ? Math.round(sortedTests.reduce((sum, t) => sum + (t.marksObtained / t.test.totalMarks) * 100, 0) / totalTests) : 0;
+                    const highest = totalTests > 0 ? Math.max(...sortedTests.map(t => Math.round((t.marksObtained / t.test.totalMarks) * 100))) : 0;
+                    const lowest = totalTests > 0 ? Math.min(...sortedTests.map(t => Math.round((t.marksObtained / t.test.totalMarks) * 100))) : 0;
+
+                    const subjectAvgs: Record<string, { total: number; count: number }> = {};
+                    studentTests.forEach(t => {
+                      const subj = t.test.subject || 'General';
+                      if (!subjectAvgs[subj]) subjectAvgs[subj] = { total: 0, count: 0 };
+                      subjectAvgs[subj].total += (t.marksObtained / t.test.totalMarks) * 100;
+                      subjectAvgs[subj].count += 1;
+                    });
+                    
+                    const m1Data = reportCompareMonth1 && reportCompareMonth1 !== 'none' ? monthlyAvgs.find(m => m.rawKey === reportCompareMonth1) : null;
+                    const m2Data = reportCompareMonth2 && reportCompareMonth2 !== 'none' ? monthlyAvgs.find(m => m.rawKey === reportCompareMonth2) : null;
+                    const diff = m1Data && m2Data ? m2Data.avg - m1Data.avg : null;
+
+                    // Monthly report card data
+                    const monthlyReportTests = reportMonthlyMonth
+                      ? sortedTests.filter(t => {
+                          const d = new Date(t.test.date);
+                          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                          return key === reportMonthlyMonth;
+                        })
+                      : [];
+                    const currentMonthData = reportMonthlyMonth ? monthlyAvgs.find(m => m.rawKey === reportMonthlyMonth) : null;
+                    const prevMonthKey = reportMonthlyMonth ? getPreviousMonthKey(reportMonthlyMonth) : '';
+                    const prevMonthData = prevMonthKey ? monthlyAvgs.find(m => m.rawKey === prevMonthKey) : null;
+                    const monthDiff = currentMonthData && prevMonthData ? currentMonthData.avg - prevMonthData.avg : null;
+
+                    const handlePrintReport = () => {
+                      setReportPrintMode('full');
+                      setPrintingReport(true);
+                    };
+
+                    const handlePrintMonthlyReport = () => {
+                      if (!reportMonthlyMonth) {
+                        toast.error('Please select a month for the report card');
+                        return;
+                      }
+                      setReportPrintMode('monthly');
+                      setPrintingReport(true);
+                    };
+
+                    return (
+                      <>
+                        <div className="space-y-6">
+                          <DialogHeader>
+                            <DialogTitle className="text-xl flex items-center gap-2">
+                              <FileText className="h-5 w-5 text-violet-600" />
+                              Student Report Card
+                            </DialogTitle>
+                          </DialogHeader>
+
+                          {/* Student Header */}
+                          <div className="bg-gradient-to-r from-violet-50 to-indigo-50 rounded-xl p-4 border">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <h3 className="text-lg font-bold">{student.name}</h3>
+                                <p className="text-sm text-muted-foreground">{student.email}</p>
+                                <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
+                                  {student.studentClass && <span>Class: <strong className="text-foreground">{student.studentClass}</strong></span>}
+                                  <span>Batch: <strong className="text-foreground">{batch?.name || 'Unknown'}</strong></span>
+                                  {student.collegeName && <span>College: <strong className="text-foreground">{student.collegeName}</strong></span>}
+                                </div>
+                              </div>
+                              <div className="flex gap-2">
+                                <Button variant="outline" size="sm" onClick={handlePrintReport} className="flex items-center gap-1.5">
+                                  <Printer className="h-3.5 w-3.5" />
+                                  Print Full Report
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Subject Filter & Comparison Controls */}
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-muted/30 p-4 rounded-xl border">
+                            <div>
+                              <Label className="text-xs font-bold mb-1.5 block">Filter by Subject:</Label>
+                              <Select value={reportSubjectFilter} onValueChange={setReportSubjectFilter}>
+                                <SelectTrigger className="h-9 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="all">All Subjects</SelectItem>
+                                  {allSubjects.map(sub => (
+                                    <SelectItem key={sub} value={sub}>{sub}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div>
+                              <Label className="text-xs font-bold mb-1.5 block">Compare Month 1:</Label>
+                              <Select value={reportCompareMonth1} onValueChange={setReportCompareMonth1}>
+                                <SelectTrigger className="h-9 text-xs">
+                                  <SelectValue placeholder="Select Month" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">None</SelectItem>
+                                  {monthKeys.map(k => (
+                                    <SelectItem key={k} value={k}>{new Date(k + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div>
+                              <Label className="text-xs font-bold mb-1.5 block">Compare Month 2:</Label>
+                              <Select value={reportCompareMonth2} onValueChange={setReportCompareMonth2}>
+                                <SelectTrigger className="h-9 text-xs">
+                                  <SelectValue placeholder="Select Month" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">None</SelectItem>
+                                  {monthKeys.map(k => (
+                                    <SelectItem key={k} value={k}>{new Date(k + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+
+                          {/* Monthly Report Card */}
+                          {monthKeys.length > 0 && (
+                            <div className="p-4 rounded-xl border-2 border-violet-200 bg-violet-50/40 space-y-4">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <h4 className="text-sm font-bold flex items-center gap-2 text-violet-900">
+                                  <FileText className="h-4 w-4" />
+                                  Monthly Report Card
+                                </h4>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Select value={reportMonthlyMonth} onValueChange={setReportMonthlyMonth}>
+                                    <SelectTrigger className="h-9 text-xs w-40">
+                                      <SelectValue placeholder="Select Month" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {monthKeys.map(k => (
+                                        <SelectItem key={k} value={k}>
+                                          {new Date(k + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  <Button variant="outline" size="sm" onClick={() => handleDownloadMonthlyReport(student, batch, reportMonthlyMonth, monthlyReportTests, monthlyAvgs)} className="flex items-center gap-1.5 text-xs h-9">
+                                    <Download className="h-3.5 w-3.5" />
+                                    Download
+                                  </Button>
+                                  <Button variant="default" size="sm" onClick={handlePrintMonthlyReport} className="flex items-center gap-1.5 text-xs h-9 bg-violet-600 hover:bg-violet-700">
+                                    <Printer className="h-3.5 w-3.5" />
+                                    Print
+                                  </Button>
+                                </div>
+                              </div>
+
+                              {reportMonthlyMonth && currentMonthData && (
+                                <>
+                                  {/* Auto comparison with previous month */}
+                                  <div className="p-4 rounded-xl border border-violet-200 bg-white">
+                                    <h5 className="text-xs font-bold uppercase text-violet-700 mb-3 tracking-wider">
+                                      vs Previous Month
+                                    </h5>
+                                    <div className="flex items-center justify-around">
+                                      <div className="text-center">
+                                        <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">
+                                          {prevMonthData?.label || 'Previous Month'}
+                                        </p>
+                                        <p className="text-2xl font-black text-gray-600">
+                                          {prevMonthData ? `${prevMonthData.avg}%` : '—'}
+                                        </p>
+                                        {prevMonthData && (
+                                          <p className="text-[9px] text-muted-foreground">{prevMonthData.count} test{prevMonthData.count > 1 ? 's' : ''}</p>
+                                        )}
+                                      </div>
+                                      <div className="flex flex-col items-center px-4">
+                                        {monthDiff !== null ? (
+                                          <span className={`text-sm font-bold px-3 py-1.5 rounded-full flex items-center gap-1 ${monthDiff > 0 ? 'bg-emerald-100 text-emerald-700' : monthDiff < 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'}`}>
+                                            {monthDiff > 0 ? '↑' : monthDiff < 0 ? '↓' : '→'} {monthDiff > 0 ? '+' : ''}{monthDiff}%
+                                            <span className="text-[10px] font-semibold ml-1">
+                                              {monthDiff > 0 ? 'Improved' : monthDiff < 0 ? 'Declined' : 'Same'}
+                                            </span>
+                                          </span>
+                                        ) : (
+                                          <span className="text-xs text-muted-foreground italic">No previous month data</span>
+                                        )}
+                                      </div>
+                                      <div className="text-center">
+                                        <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">{currentMonthData.label}</p>
+                                        <p className="text-2xl font-black text-violet-700">{currentMonthData.avg}%</p>
+                                        <p className="text-[9px] text-muted-foreground">{currentMonthData.count} test{currentMonthData.count > 1 ? 's' : ''}</p>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Monthly test results preview */}
+                                  {monthlyReportTests.length > 0 && (
+                                    <div className="rounded-lg border overflow-hidden bg-white">
+                                      <table className="w-full text-xs">
+                                        <thead>
+                                          <tr className="bg-violet-50 text-[10px]">
+                                            <th className="text-left px-3 py-2 font-bold">Date</th>
+                                            <th className="text-left px-3 py-2 font-bold">Test</th>
+                                            <th className="text-left px-3 py-2 font-bold">Subject</th>
+                                            <th className="text-center px-3 py-2 font-bold">Marks</th>
+                                            <th className="text-center px-3 py-2 font-bold">%</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {monthlyReportTests.map(t => {
+                                            const pct = Math.round((t.marksObtained / t.test.totalMarks) * 100);
+                                            return (
+                                              <tr key={t.id} className="border-t">
+                                                <td className="px-3 py-1.5">{new Date(t.test.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}</td>
+                                                <td className="px-3 py-1.5 font-medium">{t.test.name}</td>
+                                                <td className="px-3 py-1.5">{t.test.subject || 'General'}</td>
+                                                <td className="px-3 py-1.5 text-center">{t.marksObtained}/{t.test.totalMarks}</td>
+                                                <td className="px-3 py-1.5 text-center font-bold">{pct}%</td>
+                                              </tr>
+                                            );
+                                          })}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Comparison Visualization */}
+                          {reportCompareMonth1 && reportCompareMonth1 !== 'none' && reportCompareMonth2 && reportCompareMonth2 !== 'none' && (
+                            <div className="p-4 rounded-xl border border-indigo-200 bg-indigo-50/50">
+                              <h4 className="text-sm font-bold mb-4 text-indigo-900 flex items-center gap-2">
+                                <TrendingUp className="h-4 w-4" />
+                                Performance Comparison: {reportSubjectFilter === 'all' ? 'Overall' : reportSubjectFilter}
+                              </h4>
+                              <div className="flex items-center justify-around">
+                                <div className="text-center">
+                                  <p className="text-xs font-bold text-muted-foreground uppercase mb-1">{m1Data?.label || '-'}</p>
+                                  <p className="text-3xl font-black text-indigo-700">{m1Data?.avg || 0}%</p>
+                                </div>
+                                <div className="flex flex-col items-center justify-center px-8">
+                                  <div className="h-0.5 w-16 bg-indigo-200 relative mb-4">
+                                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-indigo-100 text-indigo-700 text-[10px] font-black px-2 py-0.5 rounded-full border border-indigo-200">
+                                      VS
+                                    </div>
+                                  </div>
+                                  {diff !== null && (
+                                    <span className={`text-sm font-bold px-3 py-1 rounded-full ${diff > 0 ? 'bg-emerald-100 text-emerald-700' : diff < 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'}`}>
+                                      {diff > 0 ? '+' : ''}{diff}% {diff > 0 ? 'Improvement' : diff < 0 ? 'Decline' : 'Unchanged'}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-center">
+                                  <p className="text-xs font-bold text-muted-foreground uppercase mb-1">{m2Data?.label || '-'}</p>
+                                  <p className="text-3xl font-black text-indigo-700">{m2Data?.avg || 0}%</p>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Performance Summary */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-center">
+                              <p className="text-2xl font-black text-blue-700">{totalTests}</p>
+                              <p className="text-[10px] text-blue-600 font-bold uppercase tracking-wider">Tests Taken</p>
+                            </div>
+                            <div className="p-3 rounded-xl bg-violet-50 border border-violet-200 text-center">
+                              <p className="text-2xl font-black text-violet-700">{avgPercent}%</p>
+                              <p className="text-[10px] text-violet-600 font-bold uppercase tracking-wider">Average</p>
+                            </div>
+                            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-center">
+                              <p className="text-2xl font-black text-emerald-700">{highest}%</p>
+                              <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">Highest</p>
+                            </div>
+                            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-center">
+                              <p className="text-2xl font-black text-amber-700">{lowest}%</p>
+                              <p className="text-[10px] text-amber-600 font-bold uppercase tracking-wider">Lowest</p>
+                            </div>
+                          </div>
+
+                          {/* Subject-wise Breakdown */}
+                          {Object.keys(subjectAvgs).length > 1 && (
+                            <div>
+                              <h4 className="text-sm font-bold mb-2 flex items-center gap-1.5">
+                                <BarChart3 className="h-4 w-4 text-violet-600" />
+                                Subject-wise Average
+                              </h4>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                {Object.entries(subjectAvgs).map(([subj, data]) => {
+                                  const avg = Math.round(data.total / data.count);
+                                  return (
+                                    <div key={subj} className="flex items-center gap-2 p-2 rounded-lg border bg-card">
+                                      <div className={`h-8 w-8 rounded-full flex items-center justify-center text-[10px] font-black ${avg >= 75 ? 'bg-emerald-100 text-emerald-700' : avg >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                                        {avg}%
+                                      </div>
+                                      <div>
+                                        <p className="text-xs font-bold">{subj}</p>
+                                        <p className="text-[10px] text-muted-foreground">{data.count} test{data.count > 1 ? 's' : ''}</p>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Month-on-Month Chart */}
+                          {monthlyAvgs.length > 0 && (
+                            <div>
+                              <h4 className="text-sm font-bold mb-3 flex items-center gap-1.5">
+                                <TrendingUp className="h-4 w-4 text-violet-600" />
+                                Month-on-Month Trend
+                              </h4>
+                              <div className="p-4 rounded-xl border bg-card">
+                                <div className="flex items-end gap-2 h-40">
+                                  {monthlyAvgs.map((m, i) => (
+                                    <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                                      <span className="text-[10px] font-black">{m.avg}%</span>
+                                      <div className="w-full relative flex-1 flex items-end">
+                                        <div 
+                                          className={`w-full rounded-t-md transition-all ${m.avg >= 75 ? 'bg-emerald-500' : m.avg >= 40 ? 'bg-amber-500' : 'bg-red-500'}`}
+                                          style={{ height: `${(m.avg / maxBarValue) * 100}%`, minHeight: '4px' }}
+                                        />
+                                      </div>
+                                      <div className="text-center">
+                                        <p className="text-[9px] font-bold text-muted-foreground whitespace-nowrap">{m.label}</p>
+                                        <p className="text-[8px] text-muted-foreground">{m.count} test{m.count > 1 ? 's' : ''}</p>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Test Results Table */}
+                          <div>
+                            <h4 className="text-sm font-bold mb-2">Detailed Test Results</h4>
+                            {sortedTests.length > 0 ? (
+                              <div className="rounded-xl border overflow-hidden">
+                                <table className="w-full text-sm">
+                                  <thead>
+                                    <tr className="bg-muted/50 text-xs">
+                                      <th className="text-left px-3 py-2.5 font-bold">#</th>
+                                      <th className="text-left px-3 py-2.5 font-bold">Date</th>
+                                      <th className="text-left px-3 py-2.5 font-bold">Test Name</th>
+                                      <th className="text-left px-3 py-2.5 font-bold">Subject</th>
+                                      <th className="text-center px-3 py-2.5 font-bold">Marks</th>
+                                      <th className="text-center px-3 py-2.5 font-bold">Total</th>
+                                      <th className="text-center px-3 py-2.5 font-bold">%</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {sortedTests.map((t, idx) => {
+                                      const pct = Math.round((t.marksObtained / t.test.totalMarks) * 100);
+                                      return (
+                                        <tr key={t.id} className="border-t hover:bg-muted/20 transition-colors">
+                                          <td className="px-3 py-2 text-muted-foreground text-xs">{idx + 1}</td>
+                                          <td className="px-3 py-2 text-xs">{new Date(t.test.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                                          <td className="px-3 py-2 font-medium">{t.test.name}</td>
+                                          <td className="px-3 py-2">
+                                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700">{t.test.subject || 'General'}</span>
+                                          </td>
+                                          <td className="px-3 py-2 text-center font-bold">{t.marksObtained}</td>
+                                          <td className="px-3 py-2 text-center text-muted-foreground">{t.test.totalMarks}</td>
+                                          <td className="px-3 py-2 text-center">
+                                            <span className={`text-xs font-black px-2 py-0.5 rounded-full ${pct >= 75 ? 'bg-emerald-100 text-emerald-700' : pct >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                                              {pct}%
+                                            </span>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            ) : (
+                              <p className="text-sm text-muted-foreground text-center py-8 border-2 border-dashed rounded-lg bg-accent/50">
+                                No test results found{reportSubjectFilter !== 'all' ? ` for ${reportSubjectFilter}` : ''}.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+
+                </DialogContent>
+              </Dialog>
+              </div>
             )}
 
             
@@ -1396,6 +2142,63 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                     <p className="text-sm text-muted-foreground mt-1">Create exams and track student performance</p>
                   </div>
                   <div className="flex items-center gap-3">
+                    <Dialog open={openDialog === "subjects"} onOpenChange={(open) => setOpenDialog(open ? "subjects" : null)}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" className="flex items-center gap-2 h-12 px-6 rounded-xl border-accent focus:ring-primary hover:scale-[1.02] transition-all">
+                          <BookOpen className="h-5 w-5 text-primary" />
+                          <span className="font-bold">Manage Subjects</span>
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+                        <DialogHeader>
+                          <DialogTitle>Manage Subjects</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <form onSubmit={async (e) => {
+                            e.preventDefault();
+                            const form = e.currentTarget;
+                            const fd = new FormData(form);
+                            const name = fd.get('subjectName') as string;
+                            if (!name.trim()) return;
+                            try {
+                              await addSubject({ id: Date.now().toString(), name: name.trim() });
+                              toast.success("Subject added successfully");
+                              form.reset();
+                              loadData();
+                            } catch (err: any) {
+                              toast.error(err.message || "Failed to add subject");
+                            }
+                          }} className="flex gap-2">
+                            <Input name="subjectName" placeholder="New Subject Name (e.g., Physics)" required />
+                            <Button type="submit">Add</Button>
+                          </form>
+                          
+                          <div className="border rounded-lg max-h-60 overflow-y-auto divide-y">
+                            {subjects.map(sub => (
+                              <div key={sub.id} className="flex items-center justify-between p-3">
+                                <span className="font-medium text-sm">{sub.name}</span>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={async () => {
+                                  if (window.confirm(`Are you sure you want to delete ${sub.name}?`)) {
+                                    if (await deleteSubject(sub.id)) {
+                                      toast.success("Subject deleted");
+                                      loadData();
+                                    } else {
+                                      toast.error("Failed to delete subject");
+                                    }
+                                  }
+                                }}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            ))}
+                            {subjects.length === 0 && (
+                              <p className="text-sm text-muted-foreground text-center py-6">No subjects created yet. Add one above.</p>
+                            )}
+                          </div>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+
                     <Dialog open={openDialog === "test"} onOpenChange={(open) => setOpenDialog(open ? "test" : null)}>
                       <DialogTrigger asChild>
                         <Button className="flex items-center gap-2 h-12 px-6 rounded-xl shadow-lg shadow-primary hover:scale-[1.02] transition-all">
@@ -1417,6 +2220,24 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                               <Label htmlFor="test-date">Date</Label>
                               <Input id="test-date" name="date" type="date" required />
                             </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label>Subject</Label>
+                            <Select value={testSubject} onValueChange={setTestSubject}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select subject (optional)" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {subjects.map(sub => (
+                                  <SelectItem key={sub.id} value={sub.name}>{sub.name}</SelectItem>
+                                ))}
+                                <SelectItem value="__other__">Other (Custom)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            {testSubject === '__other__' && (
+                              <Input name="customSubject" placeholder="Enter custom subject name" className="mt-2" />
+                            )}
                           </div>
 
                           <div className="space-y-2">
@@ -1527,6 +2348,67 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                         </form>
                       </DialogContent>
                     </Dialog>
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" className="flex items-center gap-2 h-12 px-6 rounded-xl border border-border bg-background shadow-sm hover:bg-accent font-bold">
+                          Edit Message Template
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+                        <DialogHeader>
+                          <DialogTitle>Test Message Templates</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-6 pt-4">
+                          {/* Marks Template */}
+                          <div className="space-y-2">
+                            <Label className="font-bold text-xs">Test Marks Template</Label>
+                            <p className="text-[10px] text-muted-foreground">
+                              Use <code className="bg-muted px-1.5 py-0.5 rounded text-[10px] font-mono">{'{name}'}</code>, <code className="bg-muted px-1.5 py-0.5 rounded text-[10px] font-mono">{'{marks}'}</code>, <code className="bg-muted px-1.5 py-0.5 rounded text-[10px] font-mono">{'{total}'}</code>, <code className="bg-muted px-1.5 py-0.5 rounded text-[10px] font-mono">{'{testName}'}</code>, and <code className="bg-muted px-1.5 py-0.5 rounded text-[10px] font-mono">{'{date}'}</code>.
+                            </p>
+                            <textarea 
+                              className="w-full min-h-[80px] p-3 rounded-xl border bg-background text-xs focus:ring-2 focus:ring-primary outline-none resize-y"
+                              value={testMarksMessage}
+                              onChange={(e) => setTestMarksMessage(e.target.value)}
+                              placeholder="Type your WhatsApp message template here..."
+                            />
+                            <div className="bg-accent/40 p-3 rounded-xl border text-[11px] leading-relaxed">
+                              <strong className="text-[9px] text-muted-foreground uppercase tracking-widest block mb-1">Preview:</strong>
+                              <p className="whitespace-pre-wrap">
+                                {testMarksMessage
+                                  .replace('{name}', 'John Doe')
+                                  .replace('{marks}', '18')
+                                  .replace('{total}', '20')
+                                  .replace('{testName}', 'Maths Quiz')
+                                  .replace('{date}', new Date().toLocaleDateString())}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Absent Template */}
+                          <div className="space-y-2 border-t pt-4">
+                            <Label className="font-bold text-xs">Test Absent Template</Label>
+                            <p className="text-[10px] text-muted-foreground">
+                              Use <code className="bg-muted px-1.5 py-0.5 rounded text-[10px] font-mono">{'{name}'}</code>, <code className="bg-muted px-1.5 py-0.5 rounded text-[10px] font-mono">{'{testName}'}</code>, and <code className="bg-muted px-1.5 py-0.5 rounded text-[10px] font-mono">{'{date}'}</code>.
+                            </p>
+                            <textarea 
+                              className="w-full min-h-[80px] p-3 rounded-xl border bg-background text-xs focus:ring-2 focus:ring-primary outline-none resize-y"
+                              value={testAbsentMessage}
+                              onChange={(e) => setTestAbsentMessage(e.target.value)}
+                              placeholder="Type your WhatsApp absent message template here..."
+                            />
+                            <div className="bg-accent/40 p-3 rounded-xl border text-[11px] leading-relaxed">
+                              <strong className="text-[9px] text-muted-foreground uppercase tracking-widest block mb-1">Preview:</strong>
+                              <p className="whitespace-pre-wrap">
+                                {testAbsentMessage
+                                  .replace('{name}', 'John Doe')
+                                  .replace('{testName}', 'Maths Quiz')
+                                  .replace('{date}', new Date().toLocaleDateString())}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
                   </div>
                 </div>
 
@@ -1551,12 +2433,32 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                             onClick={() => handleSelectTest(test)}
                           >
                             <div className="flex justify-between items-start mb-2">
-                              <h4 className="font-semibold">{test.name}</h4>
-                              <DeleteDialog
-                                title="Delete Test"
-                                description="Are you sure? This will remove all student marks for this test."
-                                onDelete={() => handleDeleteTest(test.id)}
-                              />
+                              <div>
+                                <h4 className="font-semibold">{test.name}</h4>
+                                {test.subject && (
+                                  <span className="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 mt-1">{test.subject}</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                  onClick={() => handleStartEditTest(test)}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <DeleteDialog
+                                  title="Delete Test"
+                                  description="Are you sure? This will remove all student marks for this test."
+                                  onDelete={() => handleDeleteTest(test.id)}
+                                  trigger={
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10">
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  }
+                                />
+                              </div>
                             </div>
                             <div className="text-xs text-muted-foreground space-y-1">
                               <p>Batches: <span className="font-medium text-foreground">{batchNames}</span></p>
@@ -1620,7 +2522,113 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                                           {percent !== null ? `${percent}%` : '—'}
                                         </div>
                                         <div className="min-w-0">
-                                          <p className="font-medium text-sm truncate">{student.name}</p>
+                                          <div className="flex items-center gap-1.5">
+
+                                            <p className="font-medium text-sm truncate">{student.name}</p>
+
+                                            {(() => {
+
+                                              const phone = student.parentWhatsApp || student.whatsappNo || student.phoneNo || "";
+
+                                              if (!phone) return null;
+
+                                              const cleanedPhone = phone.split('+').join('').split(' ').join('');
+
+                                              return (
+
+                                                <div className="flex items-center gap-1">
+
+                                                  <button
+
+                                                    type="button"
+
+                                                    className="inline-flex items-center justify-center h-5 w-5 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-full shrink-0 transition-colors"
+
+                                                    title={`WhatsApp Parent: ${phone}`}
+
+                                                    onClick={() => {
+
+                                                      const marks = existingResult !== undefined ? String(existingResult.marksObtained) : "—";
+
+                                                      const total = selectedTest ? String(selectedTest.totalMarks) : "";
+
+                                                      const testName = selectedTest ? selectedTest.name : "";
+
+                                                      const date = selectedTest ? new Date(selectedTest.date).toLocaleDateString() : "";
+
+                                                      
+
+                                                      const msg = testMarksMessage
+
+                                                        .replace('{name}', student.name)
+
+                                                        .replace('{marks}', marks)
+
+                                                        .replace('{total}', total)
+
+                                                        .replace('{testName}', testName)
+
+                                                        .replace('{date}', date);
+
+                                                      
+
+                                                      const waUrl = `https://wa.me/${cleanedPhone}?text=${encodeURIComponent(msg)}`;
+
+                                                      window.open(waUrl, '_blank');
+
+                                                    }}
+
+                                                  >
+
+                                                    <MessageSquare className="h-3.5 w-3.5" />
+
+                                                  </button>
+
+                                                  <button
+
+                                                    type="button"
+
+                                                    className="inline-flex items-center justify-center h-5 w-5 bg-red-50 text-red-600 hover:text-red-700 hover:bg-red-100 rounded-full shrink-0 text-[9px] font-black transition-colors"
+
+                                                    title={`Send Test Absent Message: ${phone}`}
+
+                                                    onClick={() => {
+
+                                                      const testName = selectedTest ? selectedTest.name : "";
+
+                                                      const date = selectedTest ? new Date(selectedTest.date).toLocaleDateString() : "";
+
+                                                      
+
+                                                      const msg = testAbsentMessage
+
+                                                        .replace('{name}', student.name)
+
+                                                        .replace('{testName}', testName)
+
+                                                        .replace('{date}', date);
+
+                                                      
+
+                                                      const waUrl = `https://wa.me/${cleanedPhone}?text=${encodeURIComponent(msg)}`;
+
+                                                      window.open(waUrl, '_blank');
+
+                                                    }}
+
+                                                  >
+
+                                                    AB
+
+                                                  </button>
+
+                                                </div>
+
+                                              );
+
+                                            })()}
+
+                                          </div>
                                           <p className="text-xs text-muted-foreground truncate">{student.phoneNo || student.email}</p>
                                         </div>
                                       </div>
@@ -1677,7 +2685,113 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                                               {percent !== null ? `${percent}%` : '—'}
                                             </div>
                                             <div className="min-w-0">
-                                              <p className="font-medium text-sm truncate">{student.name}</p>
+                                              <div className="flex items-center gap-1.5">
+
+                                                <p className="font-medium text-sm truncate">{student.name}</p>
+
+                                                {(() => {
+
+                                                  const phone = student.parentWhatsApp || student.whatsappNo || student.phoneNo || "";
+
+                                                  if (!phone) return null;
+
+                                                  const cleanedPhone = phone.split('+').join('').split(' ').join('');
+
+                                                  return (
+
+                                                    <div className="flex items-center gap-1">
+
+                                                      <button
+
+                                                        type="button"
+
+                                                        className="inline-flex items-center justify-center h-5 w-5 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-full shrink-0 transition-colors"
+
+                                                        title={`WhatsApp Parent: ${phone}`}
+
+                                                        onClick={() => {
+
+                                                          const marks = existingResult !== undefined ? String(existingResult.marksObtained) : "—";
+
+                                                          const total = selectedTest ? String(selectedTest.totalMarks) : "";
+
+                                                          const testName = selectedTest ? selectedTest.name : "";
+
+                                                          const date = selectedTest ? new Date(selectedTest.date).toLocaleDateString() : "";
+
+                                                          
+
+                                                          const msg = testMarksMessage
+
+                                                            .replace('{name}', student.name)
+
+                                                            .replace('{marks}', marks)
+
+                                                            .replace('{total}', total)
+
+                                                            .replace('{testName}', testName)
+
+                                                            .replace('{date}', date);
+
+                                                          
+
+                                                          const waUrl = `https://wa.me/${cleanedPhone}?text=${encodeURIComponent(msg)}`;
+
+                                                          window.open(waUrl, '_blank');
+
+                                                        }}
+
+                                                      >
+
+                                                        <MessageSquare className="h-3.5 w-3.5" />
+
+                                                      </button>
+
+                                                      <button
+
+                                                        type="button"
+
+                                                        className="inline-flex items-center justify-center h-5 w-5 bg-red-50 text-red-600 hover:text-red-700 hover:bg-red-100 rounded-full shrink-0 text-[9px] font-black transition-colors"
+
+                                                        title={`Send Test Absent Message: ${phone}`}
+
+                                                        onClick={() => {
+
+                                                          const testName = selectedTest ? selectedTest.name : "";
+
+                                                          const date = selectedTest ? new Date(selectedTest.date).toLocaleDateString() : "";
+
+                                                          
+
+                                                          const msg = testAbsentMessage
+
+                                                            .replace('{name}', student.name)
+
+                                                            .replace('{testName}', testName)
+
+                                                            .replace('{date}', date);
+
+                                                          
+
+                                                          const waUrl = `https://wa.me/${cleanedPhone}?text=${encodeURIComponent(msg)}`;
+
+                                                          window.open(waUrl, '_blank');
+
+                                                        }}
+
+                                                      >
+
+                                                        AB
+
+                                                      </button>
+
+                                                    </div>
+
+                                                  );
+
+                                                })()}
+
+                                              </div>
                                               <p className="text-xs text-muted-foreground truncate">{student.phoneNo || student.email}</p>
                                             </div>
                                           </div>
@@ -1730,6 +2844,76 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
 
                 </Card>
             )}
+
+            {/* Edit Test Dialog */}
+            <Dialog open={!!editingTest} onOpenChange={(open) => !open && setEditingTest(null)}>
+              <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Edit Test Details</DialogTitle>
+                </DialogHeader>
+                {editingTest && (
+                  <form onSubmit={handleUpdateTest} className="space-y-6 pt-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-test-name">Test Name</Label>
+                      <Input 
+                        id="edit-test-name" 
+                        name="name" 
+                        defaultValue={editingTest.name} 
+                        placeholder="e.g. Midterm exam" 
+                        required 
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-test-date">Date</Label>
+                      <Input 
+                        id="edit-test-date" 
+                        name="date" 
+                        type="date" 
+                        defaultValue={editingTest.date} 
+                        required 
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Subject</Label>
+                      <Select value={editTestSubject} onValueChange={setEditTestSubject}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select subject (optional)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {subjects.map(sub => (
+                            <SelectItem key={sub.id} value={sub.name}>{sub.name}</SelectItem>
+                          ))}
+                          <SelectItem value="__other__">Other (Custom)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {editTestSubject === '__other__' && (
+                        <Input 
+                          name="customSubject" 
+                          placeholder="Enter custom subject name" 
+                          defaultValue={subjects.some(s => s.name === editingTest.subject) ? "" : editingTest.subject} 
+                          className="mt-2" 
+                        />
+                      )}
+                    </div>
+
+                    <div className="flex gap-2 justify-end pt-4">
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        onClick={() => setEditingTest(null)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button type="submit">
+                        Save Changes
+                      </Button>
+                    </div>
+                  </form>
+                )}
+              </DialogContent>
+            </Dialog>
 
             
             {activeTab === 'staff' && (
@@ -2100,9 +3284,14 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                             <h4 className="font-semibold text-lg">{batch.name}</h4>
                             <span className="text-sm text-muted-foreground">Academic Year {batch.year}</span>
                           </div>
-                          <Button variant="outline" size="sm" onClick={() => navigate(`/admin-dashboard/batches/${batch.id}`)}>
-                            View Details
-                          </Button>
+                          <div className="flex items-center gap-2">
+                            <Button variant="outline" size="sm" onClick={() => navigate(`/admin-dashboard/batches/${batch.id}`)}>
+                              View Details
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => handleDeleteBatch(batch.id)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </div>
                         <div className="flex gap-4">
                           <div className="bg-primary/10 text-primary px-3 py-1.5 rounded-md text-sm font-medium">
@@ -2515,7 +3704,7 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
       </div>
 
       
-      {receiptData && (
+      {receiptData && !printingReport && (
         <div className="hidden print:block absolute top-0 left-0 w-full bg-white text-black min-h-screen" style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
           <div className="max-w-[210mm] mx-auto px-10 py-8">
             
@@ -2640,6 +3829,214 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
           </div>
         </div>
       )}
+
+      {/* Printable Student Report */}
+      {printingReport && selectedStudentForReport && (() => {
+        const student = selectedStudentForReport;
+        const batch = batches.find(b => b.id === student.batchId);
+        const studentResults = getTestResultsByStudent(student.id);
+        const studentTests = studentResults.map(r => {
+          const test = tests.find(t => t.id === r.testId);
+          return test ? { ...r, test } : null;
+        }).filter(Boolean) as (TestResult & { test: Test })[];
+
+        const filteredTests = reportSubjectFilter === 'all' 
+          ? studentTests 
+          : studentTests.filter(t => (t.test.subject || 'General') === reportSubjectFilter);
+        const sortedTests = [...filteredTests].sort((a, b) => new Date(a.test.date).getTime() - new Date(b.test.date).getTime());
+
+        const totalTests = sortedTests.length;
+        const avgPercent = totalTests > 0 ? Math.round(sortedTests.reduce((sum, t) => sum + (t.marksObtained / t.test.totalMarks) * 100, 0) / totalTests) : 0;
+        const highest = totalTests > 0 ? Math.max(...sortedTests.map(t => Math.round((t.marksObtained / t.test.totalMarks) * 100))) : 0;
+        const lowest = totalTests > 0 ? Math.min(...sortedTests.map(t => Math.round((t.marksObtained / t.test.totalMarks) * 100))) : 0;
+
+        // Month-on-month data for print
+        const monthlyData: Record<string, { total: number; count: number }> = {};
+        sortedTests.forEach(t => {
+          const d = new Date(t.test.date);
+          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          if (!monthlyData[key]) monthlyData[key] = { total: 0, count: 0 };
+          monthlyData[key].total += (t.marksObtained / t.test.totalMarks) * 100;
+          monthlyData[key].count += 1;
+        });
+        const monthKeys = Object.keys(monthlyData).sort();
+        const monthlyAvgs = monthKeys.map(k => ({
+          label: new Date(k + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+          avg: Math.round(monthlyData[k].total / monthlyData[k].count),
+          count: monthlyData[k].count,
+        }));
+        const maxBarValue = monthlyAvgs.length > 0 ? Math.max(...monthlyAvgs.map(m => m.avg), 100) : 100;
+
+        // Subject-wise averages for print
+        const subjectAvgs: Record<string, { total: number; count: number }> = {};
+        studentTests.forEach(t => {
+          const subj = t.test.subject || 'General';
+          if (!subjectAvgs[subj]) subjectAvgs[subj] = { total: 0, count: 0 };
+          subjectAvgs[subj].total += (t.marksObtained / t.test.totalMarks) * 100;
+          subjectAvgs[subj].count += 1;
+        });
+
+        return (
+          <div className="hidden print:block absolute top-0 left-0 w-full bg-white text-black min-h-screen" style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
+            <div className="max-w-[210mm] mx-auto px-10 py-8">
+
+              {/* Invoice Header Style for Report */}
+              <div className="border-b-2 border-gray-800 pb-5 mb-6">
+                <div className="text-center">
+                  <h1 className="text-2xl font-bold uppercase tracking-widest text-gray-900">{instituteSettings.name || 'RC Tutorials ERP'}</h1>
+                  {instituteSettings.address && (
+                    <p className="text-sm text-gray-600 mt-1">{instituteSettings.address}</p>
+                  )}
+                  <div className="flex items-center justify-center gap-6 mt-1 text-xs text-gray-500">
+                    {instituteSettings.phone && <span>Phone: {instituteSettings.phone}</span>}
+                    {instituteSettings.email && <span>Email: {instituteSettings.email}</span>}
+                  </div>
+                </div>
+                <div className="mt-4 text-center">
+                  <span className="inline-block bg-gray-900 text-white text-xs font-bold uppercase tracking-widest px-4 py-1 rounded-sm">
+                    Student Performance Report
+                  </span>
+                </div>
+              </div>
+
+              {/* Receipt Meta & Student Details Style */}
+              <div className="grid grid-cols-2 gap-8 mb-6 text-sm">
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Student Details</h3>
+                  <table className="text-sm">
+                    <tbody>
+                      <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Name:</td><td className="font-semibold">{student.name}</td></tr>
+                      <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Phone:</td><td>{student.phoneNo || 'N/A'}</td></tr>
+                      <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">College:</td><td>{student.collegeName || 'N/A'}</td></tr>
+                      <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Class:</td><td>{student.studentClass || 'N/A'}</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div className="text-right">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Report Info</h3>
+                  <table className="text-sm ml-auto">
+                    <tbody>
+                      <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Batch:</td><td className="font-semibold">{batch?.name || 'N/A'}</td></tr>
+                      <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Subject Filter:</td><td className="font-semibold uppercase">{reportSubjectFilter}</td></tr>
+                      <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Date:</td><td>{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Detailed Results Table formatted like itemized table */}
+              <div className="mb-6">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Academic Results</h3>
+                {sortedTests.length > 0 ? (
+                  <table className="w-full border-collapse text-sm">
+                    <thead>
+                      <tr className="bg-gray-100">
+                        <th className="border border-gray-300 px-4 py-2.5 text-left font-semibold text-gray-700">#</th>
+                        <th className="border border-gray-300 px-4 py-2.5 text-left font-semibold text-gray-700">Date</th>
+                        <th className="border border-gray-300 px-4 py-2.5 text-left font-semibold text-gray-700">Test Name</th>
+                        <th className="border border-gray-300 px-4 py-2.5 text-left font-semibold text-gray-700">Subject</th>
+                        <th className="border border-gray-300 px-4 py-2.5 text-center font-semibold text-gray-700">Marks</th>
+                        <th className="border border-gray-300 px-4 py-2.5 text-center font-semibold text-gray-700">Total</th>
+                        <th className="border border-gray-300 px-4 py-2.5 text-center font-semibold text-gray-700">%</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedTests.map((t, idx) => {
+                        const pct = Math.round((t.marksObtained / t.test.totalMarks) * 100);
+                        return (
+                          <tr key={t.id}>
+                            <td className="border border-gray-300 px-4 py-3 text-gray-600">{idx + 1}</td>
+                            <td className="border border-gray-300 px-4 py-3 text-gray-600">{new Date(t.test.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                            <td className="border border-gray-300 px-4 py-3 font-medium">{t.test.name}</td>
+                            <td className="border border-gray-300 px-4 py-3 text-gray-600">{t.test.subject || 'General'}</td>
+                            <td className="border border-gray-300 px-4 py-3 text-center font-bold">{t.marksObtained}</td>
+                            <td className="border border-gray-300 px-4 py-3 text-center text-gray-600">{t.test.totalMarks}</td>
+                            <td className="border border-gray-300 px-4 py-3 text-center font-bold">{pct}%</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="text-sm text-gray-500 text-center py-4 border border-gray-300 rounded">No test results available.</p>
+                )}
+              </div>
+
+              {/* Summary and Comparison Boxes */}
+              <div className="grid grid-cols-2 gap-6 mb-10">
+                {/* Performance Summary Box */}
+                <div className="border border-gray-300 rounded text-sm h-fit">
+                  <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 font-semibold text-xs uppercase tracking-wider text-gray-500">
+                    Performance Summary
+                  </div>
+                  <div className="flex justify-between px-4 py-2 border-b border-gray-200">
+                    <span className="text-gray-500">Total Tests Taken</span>
+                    <span className="font-semibold">{totalTests}</span>
+                  </div>
+                  <div className="flex justify-between px-4 py-2 border-b border-gray-200">
+                    <span className="text-gray-500">Overall Average Score</span>
+                    <span className="font-semibold text-indigo-700">{avgPercent}%</span>
+                  </div>
+                  <div className="flex justify-between px-4 py-2 border-b border-gray-200">
+                    <span className="text-gray-500">Highest Percentage</span>
+                    <span className="font-semibold text-green-700">{highest}%</span>
+                  </div>
+                  <div className="flex justify-between px-4 py-2.5 bg-gray-50">
+                    <span className="font-bold text-gray-800">Lowest Percentage</span>
+                    <span className="font-bold text-amber-600">{lowest}%</span>
+                  </div>
+                </div>
+
+                {/* Month-on-Month Comparison Box */}
+                {reportCompareMonth1 && reportCompareMonth1 !== 'none' && reportCompareMonth2 && reportCompareMonth2 !== 'none' && (() => {
+                  const m1Data = monthlyAvgs.find(m => m.rawKey === reportCompareMonth1);
+                  const m2Data = monthlyAvgs.find(m => m.rawKey === reportCompareMonth2);
+                  const diff = m1Data && m2Data ? m2Data.avg - m1Data.avg : null;
+                  return (
+                    <div className="border border-gray-300 rounded text-sm h-fit">
+                      <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 font-semibold text-xs uppercase tracking-wider text-gray-500">
+                        Month Comparison ({reportSubjectFilter === 'all' ? 'All Subjects' : reportSubjectFilter})
+                      </div>
+                      <div className="flex justify-between px-4 py-2 border-b border-gray-200">
+                        <span className="text-gray-500">{m1Data?.label || 'Month 1'} Average</span>
+                        <span className="font-semibold">{m1Data?.avg || 0}%</span>
+                      </div>
+                      <div className="flex justify-between px-4 py-2 border-b border-gray-200">
+                        <span className="text-gray-500">{m2Data?.label || 'Month 2'} Average</span>
+                        <span className="font-semibold">{m2Data?.avg || 0}%</span>
+                      </div>
+                      <div className="flex justify-between px-4 py-2.5 bg-gray-50">
+                        <span className="font-bold text-gray-800">Performance Delta</span>
+                        <span className={`font-bold ${diff !== null && diff > 0 ? 'text-green-700' : diff !== null && diff < 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                          {diff !== null ? (diff > 0 ? `+${diff}%` : `${diff}%`) : 'N/A'} {diff !== null && diff > 0 ? '(Improved)' : diff !== null && diff < 0 ? '(Declined)' : ''}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Signatures */}
+              <div className="flex justify-between items-end mt-16">
+                <div className="text-center">
+                  <div className="w-40 border-b-2 border-gray-400 mb-1"></div>
+                  <p className="text-xs text-gray-500">Parent / Guardian Signature</p>
+                </div>
+                <div className="text-center">
+                  <div className="w-40 border-b-2 border-gray-400 mb-1"></div>
+                  <p className="text-xs text-gray-500">Authorized Signatory</p>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="mt-8 text-center text-[10px] text-gray-300 border-t pt-3">
+                Generated by {instituteSettings.name || 'RC Tutorials ERP'} Management System • {new Date().toLocaleDateString()}
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
     </>
   );
 };
