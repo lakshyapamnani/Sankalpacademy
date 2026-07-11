@@ -242,6 +242,7 @@ const AdminDashboard = () => {
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [editingTest, setEditingTest] = useState<Test | null>(null);
   const [editTestSubject, setEditTestSubject] = useState<string>('');
+  const [testSearch, setTestSearch] = useState('');
 
   // Student Report State
   const [selectedStudentForReport, setSelectedStudentForReport] = useState<Student | null>(null);
@@ -2795,68 +2796,105 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
 
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* Test List */}
-                    <div className="lg:col-span-1 space-y-3 max-h-[60vh] overflow-y-auto pr-2">
-                      {tests.map(test => {
-                        const batchNames = (test.batchIds && test.batchIds.length > 0)
-                          ? test.batchIds.map(bid => batches.find(b => b.id === bid)?.name).filter(Boolean).join(', ')
-                          : (batches.find(b => b.id === test.batchId)?.name || 'Unknown');
-                        const isSelected = selectedTest?.id === test.id;
-                        const results = getTestResultsByTest(test.id);
-                        const presentResults = results.filter(r => !r.isAbsent);
-                        const avgScore = presentResults.length > 0 ? Math.round((presentResults.reduce((s, r) => s + r.marksObtained, 0) / presentResults.length / test.totalMarks) * 100) : null;
-                        
-                        return (
-                          <div 
-                            key={test.id} 
-                            className={`p-4 rounded-lg border cursor-pointer hover:shadow-md transition-all ${isSelected ? 'border-primary ring-1 ring-primary bg-primary/5' : 'bg-card'}`}
-                            onClick={() => handleSelectTest(test)}
-                          >
-                            <div className="flex justify-between items-start mb-2">
-                              <div>
-                                <h4 className="font-semibold">{test.name}</h4>
-                                {test.subject && (
-                                  <span className="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 mt-1">{test.subject}</span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon" 
-                                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                                  onClick={() => handleStartEditTest(test)}
-                                >
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                                <DeleteDialog
-                                  title="Delete Test"
-                                  description="Are you sure? This will remove all student marks for this test."
-                                  onDelete={() => handleDeleteTest(test.id)}
-                                  trigger={
-                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10">
-                                      <Trash2 className="h-4 w-4" />
+                    <div className="lg:col-span-1 flex flex-col max-h-[65vh] space-y-3">
+                      <div className="relative mb-1 shrink-0">
+                        <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Search tests..."
+                          className="pl-9 h-10 rounded-xl bg-accent border-accent focus-visible:ring-primary"
+                          value={testSearch}
+                          onChange={(e) => setTestSearch(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-3 overflow-y-auto pr-2 flex-1">
+                        {(() => {
+                          const filteredTests = tests.filter(test => {
+                            const searchLower = testSearch.toLowerCase();
+                            const matchesName = test.name.toLowerCase().includes(searchLower);
+                            const matchesSubject = test.subject ? test.subject.toLowerCase().includes(searchLower) : false;
+                            const batchNames = (test.batchIds && test.batchIds.length > 0)
+                              ? test.batchIds.map(bid => batches.find(b => b.id === bid)?.name || '').filter(Boolean).join(' ')
+                              : (batches.find(b => b.id === test.batchId)?.name || '');
+                            const matchesBatch = batchNames.toLowerCase().includes(searchLower);
+                            return matchesName || matchesSubject || matchesBatch;
+                          });
+
+                          if (tests.length === 0) {
+                            return (
+                              <p className="text-sm text-center py-8 text-muted-foreground border-2 border-dashed rounded-xl bg-accent/30">
+                                No tests created yet.
+                              </p>
+                            );
+                          }
+
+                          if (filteredTests.length === 0) {
+                            return (
+                              <p className="text-sm text-center py-8 text-muted-foreground border-2 border-dashed rounded-xl bg-accent/30">
+                                No matching tests found.
+                              </p>
+                            );
+                          }
+
+                          return filteredTests.map(test => {
+                            const batchNames = (test.batchIds && test.batchIds.length > 0)
+                              ? test.batchIds.map(bid => batches.find(b => b.id === bid)?.name).filter(Boolean).join(', ')
+                              : (batches.find(b => b.id === test.batchId)?.name || 'Unknown');
+                            const isSelected = selectedTest?.id === test.id;
+                            const results = getTestResultsByTest(test.id);
+                            const presentResults = results.filter(r => !r.isAbsent);
+                            const avgScore = presentResults.length > 0 ? Math.round((presentResults.reduce((s, r) => s + r.marksObtained, 0) / presentResults.length / test.totalMarks) * 100) : null;
+                            
+                            return (
+                              <div 
+                                key={test.id} 
+                                className={`p-4 rounded-lg border cursor-pointer hover:shadow-md transition-all ${isSelected ? 'border-primary ring-1 ring-primary bg-primary/5' : 'bg-card'}`}
+                                onClick={() => handleSelectTest(test)}
+                              >
+                                <div className="flex justify-between items-start mb-2">
+                                  <div>
+                                    <h4 className="font-semibold">{test.name}</h4>
+                                    {test.subject && (
+                                      <span className="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 mt-1">{test.subject}</span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="icon" 
+                                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                      onClick={() => handleStartEditTest(test)}
+                                    >
+                                      <Edit className="h-4 w-4" />
                                     </Button>
-                                  }
-                                />
+                                    <DeleteDialog
+                                      title="Delete Test"
+                                      description="Are you sure? This will remove all student marks for this test."
+                                      onDelete={() => handleDeleteTest(test.id)}
+                                      trigger={
+                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10">
+                                          <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                      }
+                                    />
+                                  </div>
+                                </div>
+                                <div className="text-xs text-muted-foreground space-y-1">
+                                  <p>Batches: <span className="font-medium text-foreground">{batchNames}</span></p>
+                                  <p>{new Date(test.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                                  <div className="flex items-center justify-between mt-2">
+                                    <span>{test.questions ? `${test.questions.length} MCQ` : `Total: ${test.totalMarks} marks`}</span>
+                                    {avgScore !== null && (
+                                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${avgScore >= 75 ? 'bg-emerald-100 text-emerald-700' : avgScore >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                                        Avg: {avgScore}%
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
-                            </div>
-                            <div className="text-xs text-muted-foreground space-y-1">
-                              <p>Batches: <span className="font-medium text-foreground">{batchNames}</span></p>
-                              <p>{new Date(test.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
-                              <div className="flex items-center justify-between mt-2">
-                                <span>{test.questions ? `${test.questions.length} MCQ` : `Total: ${test.totalMarks} marks`}</span>
-                                {avgScore !== null && (
-                                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${avgScore >= 75 ? 'bg-emerald-100 text-emerald-700' : avgScore >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
-                                    Avg: {avgScore}%
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })}
-                      {tests.length === 0 && (
-                        <p className="text-sm text-center py-4 text-muted-foreground border-2 border-dashed rounded-lg bg-accent/50">No tests created yet.</p>
-                      )}
+                            );
+                          });
+                        })()}
+                      </div>
                     </div>
 
                     {/* Student Marks Entry */}
