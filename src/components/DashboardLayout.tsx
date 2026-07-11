@@ -33,7 +33,7 @@ const DashboardLayout = ({ children, role, title, sidebarItems = [], activeSideb
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-background via-primary/5 to-accent/5 overflow-x-hidden">
-      <header className="bg-card border-b sticky top-0 z-40 backdrop-blur-sm bg-card/90 shadow-sm shrink-0">
+      <header className="bg-card border-b fixed top-0 left-0 right-0 z-40 backdrop-blur-sm bg-card/90 shadow-sm shrink-0">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             {sidebarItems.length > 0 && (
@@ -47,7 +47,7 @@ const DashboardLayout = ({ children, role, title, sidebarItems = [], activeSideb
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-menu"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
               </Button>
             )}
-            <img src="/icons/rctlogo.jpg" alt="RCT Logo" className="w-10 h-10 rounded-full object-cover hidden sm:block border border-primary/20" />
+            <img src="./icons/rctlogo.jpg" alt="RCT Logo" className="w-10 h-10 rounded-full object-cover hidden sm:block border border-primary/20" />
             <span className="font-semibold sm:hidden text-lg">RC Tutorials ERP</span>
             <span className="sr-only">RC Tutorials ERP</span>
           </div>
@@ -65,7 +65,7 @@ const DashboardLayout = ({ children, role, title, sidebarItems = [], activeSideb
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden pt-[65px]">
         {/* Sidebar */}
         {sidebarItems.length > 0 && (
           <>

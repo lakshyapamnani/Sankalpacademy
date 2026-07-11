@@ -42,6 +42,10 @@ import {
   getSubjects,
   addSubject,
   deleteSubject,
+  getNotes,
+  addNote,
+  updateNote,
+  deleteNote,
   Student,
   Class,
   Batch,
@@ -54,6 +58,7 @@ import {
   MCQQuestion,
   InstituteSettings,
   getInstituteSettings,
+  Note,
 } from "@/lib/localStorage";
 
 type StudentTestResult = TestResult & { test: Test };
@@ -86,6 +91,7 @@ const getStudentTestsForReport = (
 const computeMonthlyAvgs = (sortedTests: StudentTestResult[]): MonthlyAvg[] => {
   const monthlyData: Record<string, { total: number; count: number }> = {};
   sortedTests.forEach(t => {
+    if (t.isAbsent) return;
     const d = new Date(t.test.date);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     if (!monthlyData[key]) monthlyData[key] = { total: 0, count: 0 };
@@ -103,6 +109,12 @@ const computeMonthlyAvgs = (sortedTests: StudentTestResult[]): MonthlyAvg[] => {
 const getPreviousMonthKey = (monthKey: string): string => {
   const [y, m] = monthKey.split('-').map(Number);
   const d = new Date(y, m - 2, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
+
+const getNextMonthKey = (monthKey: string): string => {
+  const [y, m] = monthKey.split('-').map(Number);
+  const d = new Date(y, m, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
 
@@ -133,7 +145,7 @@ const AdminDashboard = () => {
     return `${year}-${month}-${day}`;
   };
 
-  const [activeTab, setActiveTab] = useState<'batches' | 'students' | 'staff' | 'classes' | 'fees' | 'tests' | 'attendance' | 'birthdays'>('students');
+  const [activeTab, setActiveTab] = useState<'batches' | 'students' | 'staff' | 'classes' | 'fees' | 'tests' | 'attendance' | 'birthdays' | 'notes'>('students');
   const [currentDateStr, setCurrentDateStr] = useState<string>('');
 
   useEffect(() => {
@@ -149,6 +161,15 @@ const AdminDashboard = () => {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [tests, setTests] = useState<Test[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
+
+  // Notes state
+  const [editingNote, setEditingNote] = useState<Note | null>(null);
+  const [noteTitle, setNoteTitle] = useState('');
+  const [noteDescription, setNoteDescription] = useState('');
+  const [noteLink, setNoteLink] = useState('');
+  const [noteBatchId, setNoteBatchId] = useState('');
+  const [noteSubject, setNoteSubject] = useState('');
   const [openDialog, setOpenDialog] = useState<string | null>(null);
   const [selectedReportBatch, setSelectedReportBatch] = useState<string | null>(null);
 
@@ -228,7 +249,9 @@ const AdminDashboard = () => {
   const [reportSubjectFilter, setReportSubjectFilter] = useState<string>('all');
   const [reportCompareMonth1, setReportCompareMonth1] = useState<string>('');
   const [reportCompareMonth2, setReportCompareMonth2] = useState<string>('');
-  const [reportMonthlyMonth, setReportMonthlyMonth] = useState<string>('');
+  const [reportMonthlyMonth1, setReportMonthlyMonth1] = useState<string>('');
+  const [reportMonthlyMonth2, setReportMonthlyMonth2] = useState<string>('');
+  const [reportMonthlyMode, setReportMonthlyMode] = useState<'single' | 'compare_1v1' | 'compare_2v2'>('compare_1v1');
   const [printingReport, setPrintingReport] = useState<boolean>(false);
   const [reportPrintMode, setReportPrintMode] = useState<'full' | 'monthly'>('full');
   const [testSubject, setTestSubject] = useState<string>('');
@@ -257,6 +280,7 @@ const AdminDashboard = () => {
     setTests(getTests());
     setStaff(getStaff());
     setSubjects(getSubjects());
+    setNotes(getNotes());
 
     if (selectedStudentForFees) {
       // Reload fee record if editing
@@ -520,42 +544,62 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
   const generateMonthlyReportHTML = (
     student: Student,
     batch: Batch | undefined,
-    monthKey: string,
-    monthTests: StudentTestResult[],
-    currentMonth: MonthlyAvg | undefined,
-    prevMonth: MonthlyAvg | undefined,
+    mode: 'single' | 'compare_1v1' | 'compare_2v2',
+    label1: string,
+    label2: string,
+    avg1: number,
+    avg2: number,
+    monthTests1: StudentTestResult[],
+    monthTests2: StudentTestResult[],
     monthDiff: number | null,
     settings: InstituteSettings
   ): string => {
-    const monthLabel = currentMonth?.label || monthKey;
-    const prevLabel = prevMonth?.label || 'Previous Month';
-    const monthAvg = currentMonth?.avg ?? 0;
-    const prevAvg = prevMonth?.avg ?? null;
     const diffText = monthDiff !== null
       ? `${monthDiff > 0 ? '+' : ''}${monthDiff}% ${monthDiff > 0 ? 'Improvement' : monthDiff < 0 ? 'Decline' : 'Unchanged'}`
-      : 'N/A (no previous month data)';
+      : 'N/A';
     const diffColor = monthDiff !== null && monthDiff > 0 ? '#15803d' : monthDiff !== null && monthDiff < 0 ? '#dc2626' : '#374151';
 
-    const testRows = monthTests.map((t, idx) => {
-      const pct = Math.round((t.marksObtained / t.test.totalMarks) * 100);
-      return `<tr>
-        <td style="border:1px solid #d1d5db;padding:8px">${idx + 1}</td>
-        <td style="border:1px solid #d1d5db;padding:8px">${new Date(t.test.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-        <td style="border:1px solid #d1d5db;padding:8px;font-weight:600">${t.test.name}</td>
-        <td style="border:1px solid #d1d5db;padding:8px">${t.test.subject || 'General'}</td>
-        <td style="border:1px solid #d1d5db;padding:8px;text-align:center;font-weight:700">${t.marksObtained}</td>
-        <td style="border:1px solid #d1d5db;padding:8px;text-align:center">${t.test.totalMarks}</td>
-        <td style="border:1px solid #d1d5db;padding:8px;text-align:center;font-weight:700">${pct}%</td>
-      </tr>`;
-    }).join('');
+    const generateTestRows = (tests: StudentTestResult[]) => {
+      return tests.map((t, idx) => {
+        const pct = Math.round((t.marksObtained / t.test.totalMarks) * 100);
+        const marksText = t.isAbsent ? '<span style="color:#dc2626;font-weight:700">AB</span>' : `${t.marksObtained}/${t.test.totalMarks}`;
+        const pctText = t.isAbsent ? '<span style="color:#dc2626;font-weight:700">AB</span>' : `${pct}%`;
+        return `<tr>
+          <td style="border:1px solid #d1d5db;padding:6px;text-align:center">${idx + 1}</td>
+          <td style="border:1px solid #d1d5db;padding:6px">${new Date(t.test.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</td>
+          <td style="border:1px solid #d1d5db;padding:6px;font-weight:600">${t.test.name}</td>
+          <td style="border:1px solid #d1d5db;padding:6px;text-align:center;font-weight:700">${marksText}</td>
+          <td style="border:1px solid #d1d5db;padding:6px;text-align:center;font-weight:700">${pctText}</td>
+        </tr>`;
+      }).join('');
+    };
+
+    const testRows1 = generateTestRows(monthTests1);
+    const testRows2 = mode !== 'single' ? generateTestRows(monthTests2) : '';
+
+    const title = mode === 'single'
+      ? `Monthly Report Card - ${student.name} - ${label1}`
+      : `Monthly Comparison Report - ${student.name} - ${label1} vs ${label2}`;
+
+    const reportHeader = mode === 'single'
+      ? `Monthly Report Card — ${label1}`
+      : `Monthly Comparison Report`;
+
+    const comparisonTitle = mode === 'single'
+      ? `vs Previous Month`
+      : `Month Performance Comparison`;
+
+    // Extract test counts correctly
+    const month1Count = monthTests1.length;
+    const month2Count = mode === 'single' ? (monthTests2 ? monthTests2.length : 0) : monthTests2.length;
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Monthly Report Card - ${student.name} - ${monthLabel}</title>
+  <title>${title}</title>
   <style>
-    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #111; max-width: 800px; margin: 0 auto; padding: 32px; }
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #111; max-width: 900px; margin: 0 auto; padding: 32px; }
     h1 { text-transform: uppercase; letter-spacing: 0.1em; margin: 0; }
     .header { border-bottom: 3px solid #1f2937; padding-bottom: 16px; margin-bottom: 24px; text-align: center; }
     .badge { display: inline-block; background: #1f2937; color: white; padding: 4px 16px; font-size: 11px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; margin-top: 12px; }
@@ -565,8 +609,9 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
     .comparison-grid { display: flex; justify-content: space-around; align-items: center; text-align: center; }
     .score { font-size: 36px; font-weight: 900; color: #312e81; }
     .delta { font-size: 14px; font-weight: 700; padding: 6px 14px; border-radius: 999px; display: inline-block; margin-top: 8px; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 32px; }
-    th { background: #f3f4f6; border: 1px solid #d1d5db; padding: 10px; text-align: left; font-size: 11px; text-transform: uppercase; }
+    .results-container { display: ${mode === 'single' ? 'block' : 'grid'}; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 24px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 32px; }
+    th { background: #f3f4f6; border: 1px solid #d1d5db; padding: 8px; text-align: left; font-size: 10px; text-transform: uppercase; }
     .signatures { display: flex; justify-content: space-between; margin-top: 64px; }
     .sig-line { width: 180px; border-bottom: 2px solid #374151; margin-bottom: 6px; }
     .footer { text-align: center; font-size: 10px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 12px; margin-top: 32px; }
@@ -578,7 +623,7 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
     <h1>${settings.name || 'RC Tutorials'}</h1>
     ${settings.address ? `<p style="color:#4b5563;margin:4px 0">${settings.address}</p>` : ''}
     <div style="font-size:11px;color:#6b7280">${settings.phone ? `Phone: ${settings.phone}` : ''} ${settings.email ? `&nbsp; Email: ${settings.email}` : ''}</div>
-    <div class="badge">Monthly Report Card — ${monthLabel}</div>
+    <div class="badge">${reportHeader}</div>
   </div>
 
   <div class="info-grid">
@@ -591,35 +636,52 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
     <div style="text-align:right">
       <div class="label">Report Generated</div>
       <div>${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
-      <div style="margin-top:8px"><span class="label">Tests This Month</span> ${monthTests.length}</div>
+      <div style="margin-top:8px"><span class="label">${mode === 'single' ? 'Selected Month' : 'Comparison Period'}</span> ${mode === 'single' ? label1 : `${label1} vs ${label2}`}</div>
     </div>
   </div>
 
   <div class="comparison">
-    <div style="font-size:12px;font-weight:800;text-transform:uppercase;color:#312e81;margin-bottom:16px;letter-spacing:0.05em">Month-on-Month Performance Comparison</div>
+    <div style="font-size:12px;font-weight:800;text-transform:uppercase;color:#312e81;margin-bottom:16px;letter-spacing:0.05em">${comparisonTitle}</div>
     <div class="comparison-grid">
       <div>
-        <div class="label">${prevLabel}</div>
-        <div class="score">${prevAvg !== null ? `${prevAvg}%` : '—'}</div>
+        <div class="label">${mode === 'single' ? label2 : label1}</div>
+        <div class="score">${mode === 'single' ? (avg2 ? `${avg2}%` : '—') : (avg1 ? `${avg1}%` : '—')}</div>
+        <div style="font-size:10px;color:#6b7280;margin-top:4px">${mode === 'single' ? month2Count : month1Count} test${(mode === 'single' ? month2Count : month1Count) !== 1 ? 's' : ''}</div>
       </div>
       <div>
         <div style="font-size:10px;font-weight:800;color:#6366f1;margin-bottom:8px">VS</div>
         <div class="delta" style="background:${monthDiff !== null && monthDiff > 0 ? '#dcfce7' : monthDiff !== null && monthDiff < 0 ? '#fee2e2' : '#f3f4f6'};color:${diffColor}">${diffText}</div>
       </div>
       <div>
-        <div class="label">${monthLabel}</div>
-        <div class="score">${monthAvg}%</div>
+        <div class="label">${mode === 'single' ? label1 : label2}</div>
+        <div class="score">${mode === 'single' ? (avg1 ? `${avg1}%` : '—') : (avg2 ? `${avg2}%` : '—')}</div>
+        <div style="font-size:10px;color:#6b7280;margin-top:4px">${mode === 'single' ? month1Count : month2Count} test${(mode === 'single' ? month1Count : month2Count) !== 1 ? 's' : ''}</div>
       </div>
     </div>
   </div>
 
-  <div class="label" style="margin-bottom:8px">Test Results — ${monthLabel}</div>
-  ${monthTests.length > 0 ? `<table>
-    <thead><tr>
-      <th>#</th><th>Date</th><th>Test Name</th><th>Subject</th><th style="text-align:center">Marks</th><th style="text-align:center">Total</th><th style="text-align:center">%</th>
-    </tr></thead>
-    <tbody>${testRows}</tbody>
-  </table>` : '<p style="text-align:center;color:#6b7280;padding:24px;border:1px dashed #d1d5db">No tests found for this month.</p>'}
+  <div class="results-container">
+    <div>
+      <div class="label" style="margin-bottom:8px;font-weight:800;color:#1f2937">Test Results — ${label1}</div>
+      ${monthTests1.length > 0 ? `<table>
+        <thead><tr>
+          <th>#</th><th>Date</th><th>Test Name</th><th style="text-align:center">Marks</th><th style="text-align:center">%</th>
+        </tr></thead>
+        <tbody>${testRows1}</tbody>
+      </table>` : '<p style="text-align:center;color:#6b7280;padding:16px;border:1px dashed #d1d5db;font-size:12px">No tests found for this month.</p>'}
+    </div>
+    
+    ${mode !== 'single' ? `
+    <div>
+      <div class="label" style="margin-bottom:8px;font-weight:800;color:#1f2937">Test Results — ${label2}</div>
+      ${monthTests2.length > 0 ? `<table>
+        <thead><tr>
+          <th>#</th><th>Date</th><th>Test Name</th><th style="text-align:center">Marks</th><th style="text-align:center">%</th>
+        </tr></thead>
+        <tbody>${testRows2}</tbody>
+      </table>` : '<p style="text-align:center;color:#6b7280;padding:16px;border:1px dashed #d1d5db;font-size:12px">No tests found for this month.</p>'}
+    </div>` : ''}
+  </div>
 
   <div class="signatures">
     <div style="text-align:center"><div class="sig-line"></div><div style="font-size:11px;color:#6b7280">Parent / Guardian</div></div>
@@ -633,33 +695,47 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
   const handleDownloadMonthlyReport = (
     student: Student,
     batch: Batch | undefined,
-    monthKey: string,
-    monthTests: StudentTestResult[],
-    monthlyAvgs: MonthlyAvg[]
+    mode: 'single' | 'compare_1v1' | 'compare_2v2',
+    label1: string,
+    label2: string,
+    avg1: number,
+    avg2: number,
+    monthTests1: StudentTestResult[],
+    monthTests2: StudentTestResult[],
+    monthDiff: number | null,
+    monthKey1: string,
+    monthKey2: string
   ) => {
-    if (!monthKey) {
-      toast.error('Please select a month for the report card');
+    if (mode === 'single' && !monthKey1) {
+      toast.error('Please select a month');
       return;
     }
-    const currentMonth = monthlyAvgs.find(m => m.rawKey === monthKey);
-    const prevKey = getPreviousMonthKey(monthKey);
-    const prevMonth = monthlyAvgs.find(m => m.rawKey === prevKey);
-    const monthDiff = currentMonth && prevMonth ? currentMonth.avg - prevMonth.avg : null;
+    if (mode !== 'single' && (!monthKey1 || !monthKey2)) {
+      toast.error('Please select both months for comparison');
+      return;
+    }
 
     const html = generateMonthlyReportHTML(
-      student, batch, monthKey, monthTests, currentMonth, prevMonth, monthDiff, instituteSettings
+      student, batch, mode, label1, label2, avg1, avg2, monthTests1, monthTests2, monthDiff, instituteSettings
     );
-    const monthLabel = currentMonth?.label.replace(/\s+/g, '_') || monthKey;
+    const m1Label = label1.replace(/\s+/g, '_');
+    const m2Label = label2.replace(/\s+/g, '_');
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Monthly_Report_${student.name.replace(/\s+/g, '_')}_${monthLabel}.html`;
+    
+    if (mode === 'single') {
+      link.download = `Monthly_Report_${student.name.replace(/\s+/g, '_')}_${m1Label}.html`;
+    } else {
+      link.download = `Monthly_Comparison_${student.name.replace(/\s+/g, '_')}_${m1Label}_vs_${m2Label}.html`;
+    }
+    
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    toast.success('Monthly report card downloaded');
+    toast.success('Monthly report downloaded');
   };
 
   // Staff Attendance State
@@ -965,13 +1041,14 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
       id: resultId,
       testId: selectedTest.id,
       studentId: studentId,
-      marksObtained: marks
+      marksObtained: marks,
+      isAbsent: false
     });
     
     // update local state instantly for UI
     setTestResults(prev => {
       const idx = prev.findIndex(r => r.id === resultId);
-      const newR = { id: resultId, testId: selectedTest.id, studentId, marksObtained: marks };
+      const newR = { id: resultId, testId: selectedTest.id, studentId, marksObtained: marks, isAbsent: false };
       if (idx >= 0) {
         const copy = [...prev];
         copy[idx] = newR;
@@ -980,6 +1057,88 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
       return [...prev, newR];
     });
     toast.success("Marks saved");
+  };
+
+  const toggleAbsent = (studentId: string) => {
+    if (!selectedTest) return;
+    const resultId = `${studentId}_${selectedTest.id}`;
+    const existing = testResults.find(r => r.id === resultId);
+    const isAbsent = !existing?.isAbsent;
+    
+    const updatedResult = {
+      id: resultId,
+      testId: selectedTest.id,
+      studentId: studentId,
+      marksObtained: 0,
+      isAbsent: isAbsent
+    };
+
+    saveTestResult(updatedResult);
+
+    setTestResults(prev => {
+      const idx = prev.findIndex(r => r.id === resultId);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = updatedResult;
+        return copy;
+      }
+      return [...prev, updatedResult];
+    });
+
+    toast.success(isAbsent ? "Marked student as absent" : "Marked student as present");
+  };
+
+  const handleSaveNote = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!noteTitle.trim() || !noteBatchId || !noteSubject) {
+      toast.error("Please fill in Batch, Subject, and Title fields");
+      return;
+    }
+
+    if (editingNote) {
+      const updated: Note = {
+        ...editingNote,
+        title: noteTitle,
+        content: noteDescription,
+        fileUrl: noteLink,
+        batchId: noteBatchId,
+        subject: noteSubject,
+      };
+      updateNote(editingNote.id, updated);
+      setNotes(prev => prev.map(n => n.id === editingNote.id ? updated : n));
+      toast.success("Note updated successfully");
+    } else {
+      const newNote: Note = {
+        id: Date.now().toString(),
+        title: noteTitle,
+        content: noteDescription,
+        fileUrl: noteLink,
+        batchId: noteBatchId,
+        subject: noteSubject,
+        createdAt: new Date().toISOString(),
+      };
+      addNote(newNote);
+      setNotes(prev => [...prev, newNote]);
+      toast.success("Note added successfully");
+    }
+
+    // reset fields
+    setEditingNote(null);
+    setNoteTitle('');
+    setNoteDescription('');
+    setNoteLink('');
+    setNoteBatchId('');
+    setNoteSubject('');
+    setOpenDialog(null);
+  };
+
+  const handleDeleteNote = (noteId: string) => {
+    if (deleteNote(noteId)) {
+      setNotes(prev => prev.filter(n => n.id !== noteId));
+      toast.success("Note deleted successfully");
+    } else {
+      toast.error("Failed to delete note");
+    }
   };
 
   const handleSaveStaff = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -1026,6 +1185,7 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
     { id: 'fees', label: 'Fees Mgmt', icon: IndianRupee, action: () => setActiveTab('fees') },
     { id: 'attendance', label: 'Reports', icon: BarChart3, action: () => setActiveTab('attendance') },
     { id: 'tests', label: 'Tests', icon: CheckSquare, action: () => setActiveTab('tests') },
+    { id: 'notes', label: 'Notes', icon: FileText, action: () => setActiveTab('notes') },
     { id: 'birthdays', label: 'Birthdays', icon: Cake, action: () => setActiveTab('birthdays') },
   ];
 
@@ -1269,7 +1429,9 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
               <Dialog open={!!selectedStudentForReport} onOpenChange={(open) => {
                 if (!open) {
                   setSelectedStudentForReport(null);
-                  setReportMonthlyMonth('');
+                  setReportMonthlyMonth1('');
+                  setReportMonthlyMonth2('');
+                  setReportMonthlyMode('compare_1v1');
                   setReportCompareMonth1('');
                   setReportCompareMonth2('');
                   setReportSubjectFilter('all');
@@ -1287,18 +1449,27 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                     const monthKeys = monthlyAvgs.map(m => m.rawKey);
                     const maxBarValue = monthlyAvgs.length > 0 ? Math.max(...monthlyAvgs.map(m => m.avg), 100) : 100;
 
-                    // Auto-select latest month for monthly report card
-                    if (monthKeys.length > 0 && !reportMonthlyMonth) {
-                      setTimeout(() => setReportMonthlyMonth(monthKeys[monthKeys.length - 1]), 0);
+                    // Auto-select latest two months for monthly report card
+                    if (monthKeys.length > 0) {
+                      if (!reportMonthlyMonth1 || !reportMonthlyMonth2) {
+                        const m2 = monthKeys[monthKeys.length - 1];
+                        const m1 = monthKeys.length > 1 ? monthKeys[monthKeys.length - 2] : m2;
+                        setTimeout(() => {
+                          if (!reportMonthlyMonth1) setReportMonthlyMonth1(m1);
+                          if (!reportMonthlyMonth2) setReportMonthlyMonth2(m2);
+                        }, 0);
+                      }
                     }
 
-                    const totalTests = sortedTests.length;
-                    const avgPercent = totalTests > 0 ? Math.round(sortedTests.reduce((sum, t) => sum + (t.marksObtained / t.test.totalMarks) * 100, 0) / totalTests) : 0;
-                    const highest = totalTests > 0 ? Math.max(...sortedTests.map(t => Math.round((t.marksObtained / t.test.totalMarks) * 100))) : 0;
-                    const lowest = totalTests > 0 ? Math.min(...sortedTests.map(t => Math.round((t.marksObtained / t.test.totalMarks) * 100))) : 0;
+                    const presentTests = sortedTests.filter(t => !t.isAbsent);
+                    const totalTests = presentTests.length;
+                    const avgPercent = totalTests > 0 ? Math.round(presentTests.reduce((sum, t) => sum + (t.marksObtained / t.test.totalMarks) * 100, 0) / totalTests) : 0;
+                    const highest = totalTests > 0 ? Math.max(...presentTests.map(t => Math.round((t.marksObtained / t.test.totalMarks) * 100))) : 0;
+                    const lowest = totalTests > 0 ? Math.min(...presentTests.map(t => Math.round((t.marksObtained / t.test.totalMarks) * 100))) : 0;
 
                     const subjectAvgs: Record<string, { total: number; count: number }> = {};
                     studentTests.forEach(t => {
+                      if (t.isAbsent) return;
                       const subj = t.test.subject || 'General';
                       if (!subjectAvgs[subj]) subjectAvgs[subj] = { total: 0, count: 0 };
                       subjectAvgs[subj].total += (t.marksObtained / t.test.totalMarks) * 100;
@@ -1309,18 +1480,119 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                     const m2Data = reportCompareMonth2 && reportCompareMonth2 !== 'none' ? monthlyAvgs.find(m => m.rawKey === reportCompareMonth2) : null;
                     const diff = m1Data && m2Data ? m2Data.avg - m1Data.avg : null;
 
-                    // Monthly report card data
-                    const monthlyReportTests = reportMonthlyMonth
-                      ? sortedTests.filter(t => {
-                          const d = new Date(t.test.date);
-                          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-                          return key === reportMonthlyMonth;
-                        })
-                      : [];
-                    const currentMonthData = reportMonthlyMonth ? monthlyAvgs.find(m => m.rawKey === reportMonthlyMonth) : null;
-                    const prevMonthKey = reportMonthlyMonth ? getPreviousMonthKey(reportMonthlyMonth) : '';
-                    const prevMonthData = prevMonthKey ? monthlyAvgs.find(m => m.rawKey === prevMonthKey) : null;
-                    const monthDiff = currentMonthData && prevMonthData ? currentMonthData.avg - prevMonthData.avg : null;
+                    // Dynamic Monthly report card variables depending on mode
+                    let monthlyReportTests1: StudentTestResult[] = [];
+                    let monthlyReportTests2: StudentTestResult[] = [];
+                    let month1Avg = 0;
+                    let month2Avg = 0;
+                    let month1Count = 0;
+                    let month2Count = 0;
+                    let label1 = '';
+                    let label2 = '';
+                    let monthDiff: number | null = null;
+
+                    if (reportMonthlyMode === 'single') {
+                      monthlyReportTests1 = reportMonthlyMonth1
+                        ? sortedTests.filter(t => {
+                            const d = new Date(t.test.date);
+                            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                            return key === reportMonthlyMonth1;
+                          })
+                        : [];
+                      const m1Data = reportMonthlyMonth1 ? monthlyAvgs.find(m => m.rawKey === reportMonthlyMonth1) : null;
+                      month1Avg = m1Data?.avg ?? 0;
+                      month1Count = m1Data?.count ?? 0;
+                      label1 = m1Data?.label || '';
+
+                      const prevMonthKey = reportMonthlyMonth1 ? getPreviousMonthKey(reportMonthlyMonth1) : '';
+                      const prevMonthData = prevMonthKey ? monthlyAvgs.find(m => m.rawKey === prevMonthKey) : null;
+                      
+                      // For single month, we show vs Previous Month
+                      // monthDiff is current (m1Data) - previous (prevMonthData)
+                      monthlyReportTests2 = prevMonthKey
+                        ? sortedTests.filter(t => {
+                            const d = new Date(t.test.date);
+                            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                            return key === prevMonthKey;
+                          })
+                        : [];
+                      month2Avg = prevMonthData?.avg ?? 0;
+                      month2Count = prevMonthData?.count ?? 0;
+                      label2 = prevMonthData?.label || 'Previous Month';
+
+                      monthDiff = m1Data && prevMonthData ? m1Data.avg - prevMonthData.avg : null;
+                    } else if (reportMonthlyMode === 'compare_1v1') {
+                      monthlyReportTests1 = reportMonthlyMonth1
+                        ? sortedTests.filter(t => {
+                            const d = new Date(t.test.date);
+                            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                            return key === reportMonthlyMonth1;
+                          })
+                        : [];
+                      monthlyReportTests2 = reportMonthlyMonth2
+                        ? sortedTests.filter(t => {
+                            const d = new Date(t.test.date);
+                            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                            return key === reportMonthlyMonth2;
+                          })
+                        : [];
+                      const m1Data = reportMonthlyMonth1 ? monthlyAvgs.find(m => m.rawKey === reportMonthlyMonth1) : null;
+                      const m2Data = reportMonthlyMonth2 ? monthlyAvgs.find(m => m.rawKey === reportMonthlyMonth2) : null;
+                      month1Avg = m1Data?.avg ?? 0;
+                      month1Count = m1Data?.count ?? 0;
+                      label1 = m1Data?.label || '';
+                      
+                      month2Avg = m2Data?.avg ?? 0;
+                      month2Count = m2Data?.count ?? 0;
+                      label2 = m2Data?.label || '';
+
+                      monthDiff = m1Data && m2Data ? m2Data.avg - m1Data.avg : null;
+                    } else if (reportMonthlyMode === 'compare_2v2') {
+                      const nextMonthKey1 = reportMonthlyMonth1 ? getNextMonthKey(reportMonthlyMonth1) : '';
+                      const nextMonthKey2 = reportMonthlyMonth2 ? getNextMonthKey(reportMonthlyMonth2) : '';
+
+                      monthlyReportTests1 = reportMonthlyMonth1
+                        ? sortedTests.filter(t => {
+                            const d = new Date(t.test.date);
+                            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                            return key === reportMonthlyMonth1 || key === nextMonthKey1;
+                          })
+                        : [];
+                      monthlyReportTests2 = reportMonthlyMonth2
+                        ? sortedTests.filter(t => {
+                            const d = new Date(t.test.date);
+                            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                            return key === reportMonthlyMonth2 || key === nextMonthKey2;
+                          })
+                        : [];
+
+                      const m1AData = reportMonthlyMonth1 ? monthlyAvgs.find(m => m.rawKey === reportMonthlyMonth1) : null;
+                      const m1BData = nextMonthKey1 ? monthlyAvgs.find(m => m.rawKey === nextMonthKey1) : null;
+                      const m2AData = reportMonthlyMonth2 ? monthlyAvgs.find(m => m.rawKey === reportMonthlyMonth2) : null;
+                      const m2BData = nextMonthKey2 ? monthlyAvgs.find(m => m.rawKey === nextMonthKey2) : null;
+
+                      // Combined average calculation for Period 1
+                      const presentM1 = monthlyReportTests1.filter(t => !t.isAbsent);
+                      const totalM1Marks = presentM1.reduce((sum, t) => sum + (t.marksObtained / t.test.totalMarks) * 100, 0);
+                      month1Avg = presentM1.length > 0 ? Math.round(totalM1Marks / presentM1.length) : 0;
+                      month1Count = presentM1.length;
+                      
+                      const label1A = m1AData?.label || '';
+                      const label1B = m1BData?.label || (nextMonthKey1 ? new Date(nextMonthKey1 + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '');
+                      label1 = label1A && label1B ? `${label1A} & ${label1B}` : label1A || 'Period 1';
+
+                      // Combined average calculation for Period 2
+                      const presentM2 = monthlyReportTests2.filter(t => !t.isAbsent);
+                      const totalM2Marks = presentM2.reduce((sum, t) => sum + (t.marksObtained / t.test.totalMarks) * 100, 0);
+                      month2Avg = presentM2.length > 0 ? Math.round(totalM2Marks / presentM2.length) : 0;
+                      month2Count = presentM2.length;
+                      
+                      const label2A = m2AData?.label || '';
+                      const label2B = m2BData?.label || (nextMonthKey2 ? new Date(nextMonthKey2 + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '');
+                      label2 = label2A && label2B ? `${label2A} & ${label2B}` : label2A || 'Period 2';
+
+                      monthDiff = monthlyReportTests1.length > 0 && monthlyReportTests2.length > 0 ? month2Avg - month1Avg : null;
+                    }
 
                     const handlePrintReport = () => {
                       setReportPrintMode('full');
@@ -1328,8 +1600,12 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                     };
 
                     const handlePrintMonthlyReport = () => {
-                      if (!reportMonthlyMonth) {
+                      if (reportMonthlyMode === 'single' && !reportMonthlyMonth1) {
                         toast.error('Please select a month for the report card');
+                        return;
+                      }
+                      if (reportMonthlyMode !== 'single' && (!reportMonthlyMonth1 || !reportMonthlyMonth2)) {
+                        toast.error('Please select both months for the report card');
                         return;
                       }
                       setReportPrintMode('monthly');
@@ -1416,25 +1692,68 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                           {/* Monthly Report Card */}
                           {monthKeys.length > 0 && (
                             <div className="p-4 rounded-xl border-2 border-violet-200 bg-violet-50/40 space-y-4">
-                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-violet-100 pb-3">
                                 <h4 className="text-sm font-bold flex items-center gap-2 text-violet-900">
                                   <FileText className="h-4 w-4" />
                                   Monthly Report Card
                                 </h4>
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <Select value={reportMonthlyMonth} onValueChange={setReportMonthlyMonth}>
-                                    <SelectTrigger className="h-9 text-xs w-40">
-                                      <SelectValue placeholder="Select Month" />
+                                  {/* Mode Selector */}
+                                  <Select value={reportMonthlyMode} onValueChange={(val: 'single' | 'compare_1v1' | 'compare_2v2') => setReportMonthlyMode(val)}>
+                                    <SelectTrigger className="h-9 text-xs w-48 bg-white border-violet-200">
+                                      <SelectValue placeholder="Report Mode" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                      {monthKeys.map(k => (
-                                        <SelectItem key={k} value={k}>
-                                          {new Date(k + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
-                                        </SelectItem>
-                                      ))}
+                                      <SelectItem value="single">Single Month</SelectItem>
+                                      <SelectItem value="compare_1v1">Compare Month vs Month</SelectItem>
+                                      <SelectItem value="compare_2v2">Compare 2 Months vs 2 Months</SelectItem>
                                     </SelectContent>
                                   </Select>
-                                  <Button variant="outline" size="sm" onClick={() => handleDownloadMonthlyReport(student, batch, reportMonthlyMonth, monthlyReportTests, monthlyAvgs)} className="flex items-center gap-1.5 text-xs h-9">
+
+                                  {/* Month 1 Dropdown */}
+                                  <Select value={reportMonthlyMonth1} onValueChange={setReportMonthlyMonth1}>
+                                    <SelectTrigger className="h-9 text-xs w-40 bg-white border-violet-200">
+                                      <SelectValue placeholder={reportMonthlyMode === 'compare_2v2' ? "Period 1 Start" : "Select Month"} />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {monthKeys.map(k => {
+                                        const label = reportMonthlyMode === 'compare_2v2'
+                                          ? `${new Date(k + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} & ${new Date(getNextMonthKey(k) + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`
+                                          : new Date(k + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                                        return (
+                                          <SelectItem key={k} value={k}>
+                                            {label}
+                                          </SelectItem>
+                                        );
+                                      })}
+                                    </SelectContent>
+                                  </Select>
+
+                                  {/* VS Separator & Month 2 Dropdown (Conditional) */}
+                                  {reportMonthlyMode !== 'single' && (
+                                    <>
+                                      <span className="text-xs font-bold text-violet-700">vs</span>
+                                      <Select value={reportMonthlyMonth2} onValueChange={setReportMonthlyMonth2}>
+                                        <SelectTrigger className="h-9 text-xs w-40 bg-white border-violet-200">
+                                          <SelectValue placeholder={reportMonthlyMode === 'compare_2v2' ? "Period 2 Start" : "Select Month"} />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {monthKeys.map(k => {
+                                            const label = reportMonthlyMode === 'compare_2v2'
+                                              ? `${new Date(k + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} & ${new Date(getNextMonthKey(k) + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`
+                                              : new Date(k + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                                            return (
+                                              <SelectItem key={k} value={k}>
+                                                {label}
+                                              </SelectItem>
+                                            );
+                                          })}
+                                        </SelectContent>
+                                      </Select>
+                                    </>
+                                  )}
+
+                                  <Button variant="outline" size="sm" onClick={() => handleDownloadMonthlyReport(student, batch, reportMonthlyMode, label1, label2, month1Avg, month2Avg, monthlyReportTests1, monthlyReportTests2, monthDiff, reportMonthlyMonth1, reportMonthlyMonth2)} className="flex items-center gap-1.5 text-xs h-9 bg-white border-violet-200">
                                     <Download className="h-3.5 w-3.5" />
                                     Download
                                   </Button>
@@ -1445,24 +1764,24 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                                 </div>
                               </div>
 
-                              {reportMonthlyMonth && currentMonthData && (
+                              {(reportMonthlyMonth1 || (reportMonthlyMode !== 'single' && reportMonthlyMonth2)) && (
                                 <>
-                                  {/* Auto comparison with previous month */}
+                                  {/* Performance comparison */}
                                   <div className="p-4 rounded-xl border border-violet-200 bg-white">
                                     <h5 className="text-xs font-bold uppercase text-violet-700 mb-3 tracking-wider">
-                                      vs Previous Month
+                                      {reportMonthlyMode === 'single' ? 'vs Previous Month' : 'Month Comparison'}
                                     </h5>
                                     <div className="flex items-center justify-around">
                                       <div className="text-center">
                                         <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">
-                                          {prevMonthData?.label || 'Previous Month'}
+                                          {reportMonthlyMode === 'single' ? label2 : label1}
                                         </p>
                                         <p className="text-2xl font-black text-gray-600">
-                                          {prevMonthData ? `${prevMonthData.avg}%` : '—'}
+                                          {reportMonthlyMode === 'single' ? (month2Avg ? `${month2Avg}%` : '—') : (month1Avg ? `${month1Avg}%` : '—')}
                                         </p>
-                                        {prevMonthData && (
-                                          <p className="text-[9px] text-muted-foreground">{prevMonthData.count} test{prevMonthData.count > 1 ? 's' : ''}</p>
-                                        )}
+                                        <p className="text-[9px] text-muted-foreground">
+                                          {reportMonthlyMode === 'single' ? month2Count : month1Count} test{(reportMonthlyMode === 'single' ? month2Count : month1Count) !== 1 ? 's' : ''}
+                                        </p>
                                       </div>
                                       <div className="flex flex-col items-center px-4">
                                         {monthDiff !== null ? (
@@ -1473,47 +1792,99 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                                             </span>
                                           </span>
                                         ) : (
-                                          <span className="text-xs text-muted-foreground italic">No previous month data</span>
+                                          <span className="text-xs text-muted-foreground italic">Select values to compare</span>
                                         )}
                                       </div>
                                       <div className="text-center">
-                                        <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">{currentMonthData.label}</p>
-                                        <p className="text-2xl font-black text-violet-700">{currentMonthData.avg}%</p>
-                                        <p className="text-[9px] text-muted-foreground">{currentMonthData.count} test{currentMonthData.count > 1 ? 's' : ''}</p>
+                                        <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">
+                                          {reportMonthlyMode === 'single' ? label1 : label2}
+                                        </p>
+                                        <p className="text-2xl font-black text-violet-700">
+                                          {reportMonthlyMode === 'single' ? (month1Avg ? `${month1Avg}%` : '—') : (month2Avg ? `${month2Avg}%` : '—')}
+                                        </p>
+                                        <p className="text-[9px] text-muted-foreground">
+                                          {reportMonthlyMode === 'single' ? month1Count : month2Count} test{(reportMonthlyMode === 'single' ? month1Count : month2Count) !== 1 ? 's' : ''}
+                                        </p>
                                       </div>
                                     </div>
                                   </div>
 
-                                  {/* Monthly test results preview */}
-                                  {monthlyReportTests.length > 0 && (
-                                    <div className="rounded-lg border overflow-hidden bg-white">
-                                      <table className="w-full text-xs">
-                                        <thead>
-                                          <tr className="bg-violet-50 text-[10px]">
-                                            <th className="text-left px-3 py-2 font-bold">Date</th>
-                                            <th className="text-left px-3 py-2 font-bold">Test</th>
-                                            <th className="text-left px-3 py-2 font-bold">Subject</th>
-                                            <th className="text-center px-3 py-2 font-bold">Marks</th>
-                                            <th className="text-center px-3 py-2 font-bold">%</th>
-                                          </tr>
-                                        </thead>
-                                        <tbody>
-                                          {monthlyReportTests.map(t => {
-                                            const pct = Math.round((t.marksObtained / t.test.totalMarks) * 100);
-                                            return (
-                                              <tr key={t.id} className="border-t">
-                                                <td className="px-3 py-1.5">{new Date(t.test.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}</td>
-                                                <td className="px-3 py-1.5 font-medium">{t.test.name}</td>
-                                                <td className="px-3 py-1.5">{t.test.subject || 'General'}</td>
-                                                <td className="px-3 py-1.5 text-center">{t.marksObtained}/{t.test.totalMarks}</td>
-                                                <td className="px-3 py-1.5 text-center font-bold">{pct}%</td>
+                                  {/* Test Results list grid */}
+                                  <div className={reportMonthlyMode === 'single' ? 'space-y-2' : 'grid grid-cols-1 md:grid-cols-2 gap-4'}>
+                                    {/* Month 1 / Period 1 Tests Table */}
+                                    <div className="space-y-2">
+                                      <h6 className="text-xs font-bold text-violet-800 uppercase tracking-wide">
+                                        {label1 || 'Month 1'} Tests
+                                      </h6>
+                                      {monthlyReportTests1.length > 0 ? (
+                                        <div className="rounded-lg border overflow-hidden bg-white">
+                                          <table className="w-full text-xs">
+                                            <thead>
+                                              <tr className="bg-violet-50 text-[10px]">
+                                                <th className="text-left px-2 py-1.5 font-bold">Date</th>
+                                                <th className="text-left px-2 py-1.5 font-bold">Test</th>
+                                                <th className="text-center px-2 py-1.5 font-bold">Marks</th>
+                                                <th className="text-center px-2 py-1.5 font-bold">%</th>
                                               </tr>
-                                            );
-                                          })}
-                                        </tbody>
-                                      </table>
+                                            </thead>
+                                            <tbody>
+                                              {monthlyReportTests1.map(t => {
+                                                const pct = Math.round((t.marksObtained / t.test.totalMarks) * 100);
+                                                return (
+                                                  <tr key={t.id} className="border-t">
+                                                    <td className="px-2 py-1.5 whitespace-nowrap">{new Date(t.test.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}</td>
+                                                    <td className="px-2 py-1.5 font-medium truncate max-w-[120px]" title={t.test.name}>{t.test.name}</td>
+                                                    <td className="px-2 py-1.5 text-center">{t.isAbsent ? <span className="text-red-600 font-bold">AB</span> : `${t.marksObtained}/${t.test.totalMarks}`}</td>
+                                                    <td className="px-2 py-1.5 text-center font-bold">{t.isAbsent ? <span className="text-red-600 font-bold">AB</span> : `${pct}%`}</td>
+                                                  </tr>
+                                                );
+                                              })}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      ) : (
+                                        <p className="text-xs text-muted-foreground italic p-3 text-center border rounded-lg bg-white">No tests this month</p>
+                                      )}
                                     </div>
-                                  )}
+
+                                    {/* Month 2 / Period 2 Tests Table (Conditional) */}
+                                    {reportMonthlyMode !== 'single' && (
+                                      <div className="space-y-2">
+                                        <h6 className="text-xs font-bold text-violet-800 uppercase tracking-wide">
+                                          {label2 || 'Month 2'} Tests
+                                        </h6>
+                                        {monthlyReportTests2.length > 0 ? (
+                                          <div className="rounded-lg border overflow-hidden bg-white">
+                                            <table className="w-full text-xs">
+                                              <thead>
+                                                <tr className="bg-violet-50 text-[10px]">
+                                                  <th className="text-left px-2 py-1.5 font-bold">Date</th>
+                                                  <th className="text-left px-2 py-1.5 font-bold">Test</th>
+                                                  <th className="text-center px-2 py-1.5 font-bold">Marks</th>
+                                                  <th className="text-center px-2 py-1.5 font-bold">%</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody>
+                                                {monthlyReportTests2.map(t => {
+                                                  const pct = Math.round((t.marksObtained / t.test.totalMarks) * 100);
+                                                  return (
+                                                    <tr key={t.id} className="border-t">
+                                                      <td className="px-2 py-1.5 whitespace-nowrap">{new Date(t.test.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}</td>
+                                                      <td className="px-2 py-1.5 font-medium truncate max-w-[120px]" title={t.test.name}>{t.test.name}</td>
+                                                      <td className="px-2 py-1.5 text-center">{t.isAbsent ? <span className="text-red-600 font-bold">AB</span> : `${t.marksObtained}/${t.test.totalMarks}`}</td>
+                                                      <td className="px-2 py-1.5 text-center font-bold">{t.isAbsent ? <span className="text-red-600 font-bold">AB</span> : `${pct}%`}</td>
+                                                    </tr>
+                                                  );
+                                                })}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                        ) : (
+                                          <p className="text-xs text-muted-foreground italic p-3 text-center border rounded-lg bg-white">No tests this month</p>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
                                 </>
                               )}
                             </div>
@@ -1654,12 +2025,18 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                                           <td className="px-3 py-2">
                                             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700">{t.test.subject || 'General'}</span>
                                           </td>
-                                          <td className="px-3 py-2 text-center font-bold">{t.marksObtained}</td>
+                                          <td className="px-3 py-2 text-center font-bold">{t.isAbsent ? <span className="text-red-600">AB</span> : t.marksObtained}</td>
                                           <td className="px-3 py-2 text-center text-muted-foreground">{t.test.totalMarks}</td>
                                           <td className="px-3 py-2 text-center">
-                                            <span className={`text-xs font-black px-2 py-0.5 rounded-full ${pct >= 75 ? 'bg-emerald-100 text-emerald-700' : pct >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
-                                              {pct}%
-                                            </span>
+                                            {t.isAbsent ? (
+                                              <span className="text-xs font-black px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                                                AB
+                                              </span>
+                                            ) : (
+                                              <span className={`text-xs font-black px-2 py-0.5 rounded-full ${pct >= 75 ? 'bg-emerald-100 text-emerald-700' : pct >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                                                {pct}%
+                                              </span>
+                                            )}
                                           </td>
                                         </tr>
                                       );
@@ -2425,7 +2802,8 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                           : (batches.find(b => b.id === test.batchId)?.name || 'Unknown');
                         const isSelected = selectedTest?.id === test.id;
                         const results = getTestResultsByTest(test.id);
-                        const avgScore = results.length > 0 ? Math.round((results.reduce((s, r) => s + r.marksObtained, 0) / results.length / test.totalMarks) * 100) : null;
+                        const presentResults = results.filter(r => !r.isAbsent);
+                        const avgScore = presentResults.length > 0 ? Math.round((presentResults.reduce((s, r) => s + r.marksObtained, 0) / presentResults.length / test.totalMarks) * 100) : null;
                         
                         return (
                           <div 
@@ -2502,7 +2880,8 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                                 const batch = batches.find(b => b.id === bid);
                                 const batchStudentsList = students.filter(s => s.batchId === bid);
                                 const batchResults = testResults.filter(r => batchStudentsList.some(s => s.id === r.studentId));
-                                const avgScore = batchResults.length > 0 ? Math.round((batchResults.reduce((s, r) => s + r.marksObtained, 0) / batchResults.length / selectedTest.totalMarks) * 100) : null;
+                                const presentBatchResults = batchResults.filter(r => !r.isAbsent);
+                                const avgScore = presentBatchResults.length > 0 ? Math.round((presentBatchResults.reduce((s, r) => s + r.marksObtained, 0) / presentBatchResults.length / selectedTest.totalMarks) * 100) : null;
                                 return { batchId: bid, batchName: batch?.name || 'Unknown', students: batchStudentsList, avgScore, markedCount: batchResults.length };
                               }).filter(g => g.students.length > 0);
 
@@ -2515,12 +2894,13 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                                     <div key={student.id} className="flex items-center justify-between p-3 border rounded-lg bg-background hover:bg-accent/30 transition-colors">
                                       <div className="flex items-center gap-3 min-w-0 flex-1">
                                         <div className={`h-9 w-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                                          percent === null ? 'bg-muted text-muted-foreground'
+                                          existingResult?.isAbsent ? 'bg-red-100 text-red-700'
+                                          : percent === null ? 'bg-muted text-muted-foreground'
                                           : percent >= 75 ? 'bg-emerald-100 text-emerald-700'
                                           : percent >= 40 ? 'bg-amber-100 text-amber-700'
                                           : 'bg-red-100 text-red-700'
                                         }`}>
-                                          {percent !== null ? `${percent}%` : '—'}
+                                          {existingResult?.isAbsent ? 'AB' : percent !== null ? `${percent}%` : '—'}
                                         </div>
                                         <div className="min-w-0">
                                           <div className="flex items-center gap-1.5">
@@ -2634,14 +3014,27 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                                         </div>
                                       </div>
                                       <div className="flex items-center gap-2 shrink-0 ml-3">
-                                        <Input 
-                                          type="number" 
-                                          className="w-20 text-right text-sm" 
-                                          placeholder="—"
-                                          defaultValue={existingResult?.marksObtained}
-                                          onBlur={(e) => handleSaveMarks(student.id, e.target.value)}
-                                        />
-                                        <span className="text-xs text-muted-foreground whitespace-nowrap">/ {selectedTest.totalMarks}</span>
+                                        {existingResult?.isAbsent ? (
+                                          <span className="text-xs font-black px-3 py-1.5 rounded-lg bg-red-100 text-red-700">ABSENT</span>
+                                        ) : (
+                                          <Input 
+                                            type="number" 
+                                            className="w-20 text-right text-sm" 
+                                            placeholder="—"
+                                            key={existingResult ? String(existingResult.marksObtained) : 'empty'}
+                                            defaultValue={existingResult?.marksObtained}
+                                            onBlur={(e) => handleSaveMarks(student.id, e.target.value)}
+                                          />
+                                        )}
+                                        <span className="text-xs text-muted-foreground whitespace-nowrap mr-1">/ {selectedTest.totalMarks}</span>
+                                        <Button
+                                          type="button"
+                                          variant={existingResult?.isAbsent ? "destructive" : "outline"}
+                                          className="h-8 px-2 text-xs font-bold shrink-0"
+                                          onClick={() => toggleAbsent(student.id)}
+                                        >
+                                          {existingResult?.isAbsent ? "Mark Present" : "Mark Absent"}
+                                        </Button>
                                       </div>
                                     </div>
                                   );
@@ -2678,12 +3071,13 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                                         <div key={student.id} className="flex items-center justify-between p-3 border rounded-lg bg-background hover:bg-accent/30 transition-colors">
                                           <div className="flex items-center gap-3 min-w-0 flex-1">
                                             <div className={`h-9 w-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                                              percent === null ? 'bg-muted text-muted-foreground'
+                                              existingResult?.isAbsent ? 'bg-red-100 text-red-700'
+                                              : percent === null ? 'bg-muted text-muted-foreground'
                                               : percent >= 75 ? 'bg-emerald-100 text-emerald-700'
                                               : percent >= 40 ? 'bg-amber-100 text-amber-700'
                                               : 'bg-red-100 text-red-700'
                                             }`}>
-                                              {percent !== null ? `${percent}%` : '—'}
+                                              {existingResult?.isAbsent ? 'AB' : percent !== null ? `${percent}%` : '—'}
                                             </div>
                                             <div className="min-w-0">
                                               <div className="flex items-center gap-1.5">
@@ -2797,14 +3191,27 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                                             </div>
                                           </div>
                                           <div className="flex items-center gap-2 shrink-0 ml-3">
-                                            <Input 
-                                              type="number" 
-                                              className="w-20 text-right text-sm" 
-                                              placeholder="—"
-                                              defaultValue={existingResult?.marksObtained}
-                                              onBlur={(e) => handleSaveMarks(student.id, e.target.value)}
-                                            />
-                                            <span className="text-xs text-muted-foreground whitespace-nowrap">/ {selectedTest.totalMarks}</span>
+                                            {existingResult?.isAbsent ? (
+                                              <span className="text-xs font-black px-3 py-1.5 rounded-lg bg-red-100 text-red-700">ABSENT</span>
+                                            ) : (
+                                              <Input 
+                                                type="number" 
+                                                className="w-20 text-right text-sm" 
+                                                placeholder="—"
+                                                key={existingResult ? String(existingResult.marksObtained) : 'empty'}
+                                                defaultValue={existingResult?.marksObtained}
+                                                onBlur={(e) => handleSaveMarks(student.id, e.target.value)}
+                                              />
+                                            )}
+                                            <span className="text-xs text-muted-foreground whitespace-nowrap mr-1">/ {selectedTest.totalMarks}</span>
+                                            <Button
+                                              type="button"
+                                              variant={existingResult?.isAbsent ? "destructive" : "outline"}
+                                              className="h-8 px-2 text-xs font-bold shrink-0"
+                                              onClick={() => toggleAbsent(student.id)}
+                                            >
+                                              {existingResult?.isAbsent ? "Mark Present" : "Mark Absent"}
+                                            </Button>
                                           </div>
                                         </div>
                                       );
@@ -3796,6 +4203,169 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                 </Card>
               </div>
             )}
+
+            {activeTab === 'notes' && (
+              <div>
+                <Card className="p-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+                    <div>
+                      <h3 className="text-xl font-semibold">Notes Management</h3>
+                      <p className="text-sm text-muted-foreground mr-4">Assign and manage study notes for your batches</p>
+                    </div>
+                    <Dialog open={openDialog === 'add_note'} onOpenChange={(open) => {
+                      setOpenDialog(open ? 'add_note' : null);
+                      if (!open) {
+                        setEditingNote(null);
+                        setNoteTitle('');
+                        setNoteDescription('');
+                        setNoteLink('');
+                        setNoteBatchId('');
+                        setNoteSubject('');
+                      }
+                    }}>
+                      <DialogTrigger asChild>
+                        <Button className="rounded-xl font-bold bg-primary hover:bg-primary/90 flex items-center gap-1.5 self-start">
+                          <Plus className="h-4 w-4" /> Add Note
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="sm:max-w-md">
+                        <DialogHeader>
+                          <DialogTitle>{editingNote ? 'Edit Note' : 'Add New Note'}</DialogTitle>
+                        </DialogHeader>
+                        <form onSubmit={handleSaveNote} className="space-y-4">
+                          <div>
+                            <Label htmlFor="noteBatch">Batch</Label>
+                            <Select value={noteBatchId} onValueChange={setNoteBatchId}>
+                              <SelectTrigger id="noteBatch" className="w-full">
+                                <SelectValue placeholder="Select Batch" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {batches.map(b => (
+                                  <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label htmlFor="noteSubject">Subject</Label>
+                            <Select value={noteSubject} onValueChange={setNoteSubject}>
+                              <SelectTrigger id="noteSubject" className="w-full">
+                                <SelectValue placeholder="Select Subject" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {subjects.map(s => (
+                                  <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
+                                ))}
+                                <SelectItem value="General">General</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label htmlFor="noteTitle">Note Title</Label>
+                            <Input 
+                              id="noteTitle" 
+                              value={noteTitle} 
+                              onChange={(e) => setNoteTitle(e.target.value)} 
+                              placeholder="e.g. Chapter 1: Introduction to Mechanics"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="noteDescription">Description</Label>
+                            <textarea 
+                              id="noteDescription"
+                              rows={3}
+                              className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                              value={noteDescription} 
+                              onChange={(e) => setNoteDescription(e.target.value)} 
+                              placeholder="Describe the content of the notes..."
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="noteLink">Notes URL / Link</Label>
+                            <Input 
+                              id="noteLink" 
+                              value={noteLink} 
+                              onChange={(e) => setNoteLink(e.target.value)} 
+                              placeholder="e.g. Google Drive link or PDF URL"
+                            />
+                          </div>
+                          <Button type="submit" className="w-full font-bold rounded-xl mt-4">
+                            {editingNote ? 'Save Changes' : 'Create Note'}
+                          </Button>
+                        </form>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {notes.map(note => {
+                      const batch = batches.find(b => b.id === note.batchId);
+                      return (
+                        <div key={note.id} className="p-6 rounded-[32px] border-2 border-accent bg-card hover:border-primary transition-all flex flex-col justify-between group">
+                          <div>
+                            <div className="flex items-center justify-between mb-3 gap-2">
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">
+                                {note.subject}
+                              </span>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                                {batch?.name || 'Unknown Batch'}
+                              </span>
+                            </div>
+                            <h4 className="font-bold text-lg mb-2 text-card-foreground group-hover:text-primary transition-colors truncate" title={note.title}>{note.title}</h4>
+                            <p className="text-xs text-muted-foreground line-clamp-3 mb-4">{note.content || 'No description provided.'}</p>
+                          </div>
+                          
+                          <div className="space-y-2 mt-4 pt-4 border-t border-accent">
+                            {note.fileUrl && (
+                              <Button
+                                variant="outline"
+                                className="w-full text-xs font-bold border-2 h-10 rounded-xl flex items-center justify-center gap-1.5"
+                                onClick={() => {
+                                  if (note.fileUrl) {
+                                    window.open(note.fileUrl.startsWith('http') ? note.fileUrl : `https://${note.fileUrl}`, '_blank');
+                                  }
+                                }}
+                              >
+                                <Eye className="h-4 w-4" /> Open Note
+                              </Button>
+                            )}
+                            <div className="flex gap-2">
+                              <Button
+                                variant="ghost"
+                                className="flex-1 text-xs font-bold h-9 rounded-xl flex items-center justify-center gap-1 text-primary hover:bg-primary/10"
+                                onClick={() => {
+                                  setEditingNote(note);
+                                  setNoteTitle(note.title);
+                                  setNoteDescription(note.content || '');
+                                  setNoteLink(note.fileUrl || '');
+                                  setNoteBatchId(note.batchId);
+                                  setNoteSubject(note.subject);
+                                  setOpenDialog('add_note');
+                                }}
+                              >
+                                <Edit className="h-3.5 w-3.5" /> Edit
+                              </Button>
+                              <DeleteDialog
+                                title="Delete Note"
+                                description={`Are you sure you want to delete the note "${note.title}"?`}
+                                onDelete={() => handleDeleteNote(note.id)}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {notes.length === 0 && (
+                      <div className="col-span-full text-center py-12 text-muted-foreground border-2 border-dashed rounded-lg bg-accent/30">
+                        <FileText className="h-12 w-12 mx-auto mb-3 opacity-20" />
+                        <p className="font-medium text-sm">No notes assigned yet. Click "Add Note" to create one.</p>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              </div>
+            )}
           </div>
         </DashboardLayout>
       </div>
@@ -3942,14 +4512,16 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
           : studentTests.filter(t => (t.test.subject || 'General') === reportSubjectFilter);
         const sortedTests = [...filteredTests].sort((a, b) => new Date(a.test.date).getTime() - new Date(b.test.date).getTime());
 
-        const totalTests = sortedTests.length;
-        const avgPercent = totalTests > 0 ? Math.round(sortedTests.reduce((sum, t) => sum + (t.marksObtained / t.test.totalMarks) * 100, 0) / totalTests) : 0;
-        const highest = totalTests > 0 ? Math.max(...sortedTests.map(t => Math.round((t.marksObtained / t.test.totalMarks) * 100))) : 0;
-        const lowest = totalTests > 0 ? Math.min(...sortedTests.map(t => Math.round((t.marksObtained / t.test.totalMarks) * 100))) : 0;
+        const presentTests = sortedTests.filter(t => !t.isAbsent);
+        const totalTests = presentTests.length;
+        const avgPercent = totalTests > 0 ? Math.round(presentTests.reduce((sum, t) => sum + (t.marksObtained / t.test.totalMarks) * 100, 0) / totalTests) : 0;
+        const highest = totalTests > 0 ? Math.max(...presentTests.map(t => Math.round((t.marksObtained / t.test.totalMarks) * 100))) : 0;
+        const lowest = totalTests > 0 ? Math.min(...presentTests.map(t => Math.round((t.marksObtained / t.test.totalMarks) * 100))) : 0;
 
         // Month-on-month data for print
         const monthlyData: Record<string, { total: number; count: number }> = {};
         sortedTests.forEach(t => {
+          if (t.isAbsent) return;
           const d = new Date(t.test.date);
           const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
           if (!monthlyData[key]) monthlyData[key] = { total: 0, count: 0 };
@@ -3961,17 +4533,311 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
           label: new Date(k + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
           avg: Math.round(monthlyData[k].total / monthlyData[k].count),
           count: monthlyData[k].count,
+          rawKey: k,
         }));
         const maxBarValue = monthlyAvgs.length > 0 ? Math.max(...monthlyAvgs.map(m => m.avg), 100) : 100;
 
         // Subject-wise averages for print
         const subjectAvgs: Record<string, { total: number; count: number }> = {};
         studentTests.forEach(t => {
+          if (t.isAbsent) return;
           const subj = t.test.subject || 'General';
           if (!subjectAvgs[subj]) subjectAvgs[subj] = { total: 0, count: 0 };
           subjectAvgs[subj].total += (t.marksObtained / t.test.totalMarks) * 100;
           subjectAvgs[subj].count += 1;
         });
+
+        // Compute Month 1 and Month 2 details for printing dynamically based on mode
+        let monthlyReportTests1: StudentTestResult[] = [];
+        let monthlyReportTests2: StudentTestResult[] = [];
+        let month1Avg = 0;
+        let month2Avg = 0;
+        let month1Count = 0;
+        let month2Count = 0;
+        let label1 = '';
+        let label2 = '';
+        let monthDiff: number | null = null;
+
+        if (reportMonthlyMode === 'single') {
+          monthlyReportTests1 = reportMonthlyMonth1
+            ? sortedTests.filter(t => {
+                const d = new Date(t.test.date);
+                const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                return key === reportMonthlyMonth1;
+              })
+            : [];
+          const m1Data = reportMonthlyMonth1 ? monthlyAvgs.find(m => m.rawKey === reportMonthlyMonth1) : null;
+          month1Avg = m1Data?.avg ?? 0;
+          month1Count = m1Data?.count ?? 0;
+          label1 = m1Data?.label || '';
+
+          const prevMonthKey = reportMonthlyMonth1 ? getPreviousMonthKey(reportMonthlyMonth1) : '';
+          const prevMonthData = prevMonthKey ? monthlyAvgs.find(m => m.rawKey === prevMonthKey) : null;
+          
+          monthlyReportTests2 = prevMonthKey
+            ? sortedTests.filter(t => {
+                const d = new Date(t.test.date);
+                const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                return key === prevMonthKey;
+              })
+            : [];
+          month2Avg = prevMonthData?.avg ?? 0;
+          month2Count = prevMonthData?.count ?? 0;
+          label2 = prevMonthData?.label || 'Previous Month';
+
+          monthDiff = m1Data && prevMonthData ? m1Data.avg - prevMonthData.avg : null;
+        } else if (reportMonthlyMode === 'compare_1v1') {
+          monthlyReportTests1 = reportMonthlyMonth1
+            ? sortedTests.filter(t => {
+                const d = new Date(t.test.date);
+                const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                return key === reportMonthlyMonth1;
+              })
+            : [];
+          monthlyReportTests2 = reportMonthlyMonth2
+            ? sortedTests.filter(t => {
+                const d = new Date(t.test.date);
+                const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                return key === reportMonthlyMonth2;
+              })
+            : [];
+          const m1Data = reportMonthlyMonth1 ? monthlyAvgs.find(m => m.rawKey === reportMonthlyMonth1) : null;
+          const m2Data = reportMonthlyMonth2 ? monthlyAvgs.find(m => m.rawKey === reportMonthlyMonth2) : null;
+          month1Avg = m1Data?.avg ?? 0;
+          month1Count = m1Data?.count ?? 0;
+          label1 = m1Data?.label || '';
+          
+          month2Avg = m2Data?.avg ?? 0;
+          month2Count = m2Data?.count ?? 0;
+          label2 = m2Data?.label || '';
+
+          monthDiff = m1Data && m2Data ? m2Data.avg - m1Data.avg : null;
+        } else if (reportMonthlyMode === 'compare_2v2') {
+          const nextMonthKey1 = reportMonthlyMonth1 ? getNextMonthKey(reportMonthlyMonth1) : '';
+          const nextMonthKey2 = reportMonthlyMonth2 ? getNextMonthKey(reportMonthlyMonth2) : '';
+
+          monthlyReportTests1 = reportMonthlyMonth1
+            ? sortedTests.filter(t => {
+                const d = new Date(t.test.date);
+                const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                return key === reportMonthlyMonth1 || key === nextMonthKey1;
+              })
+            : [];
+          monthlyReportTests2 = reportMonthlyMonth2
+            ? sortedTests.filter(t => {
+                const d = new Date(t.test.date);
+                const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                return key === reportMonthlyMonth2 || key === nextMonthKey2;
+              })
+            : [];
+
+          const m1AData = reportMonthlyMonth1 ? monthlyAvgs.find(m => m.rawKey === reportMonthlyMonth1) : null;
+          const m1BData = nextMonthKey1 ? monthlyAvgs.find(m => m.rawKey === nextMonthKey1) : null;
+          const m2AData = reportMonthlyMonth2 ? monthlyAvgs.find(m => m.rawKey === reportMonthlyMonth2) : null;
+          const m2BData = nextMonthKey2 ? monthlyAvgs.find(m => m.rawKey === nextMonthKey2) : null;
+
+          // Combined average calculation for Period 1
+          const presentM1 = monthlyReportTests1.filter(t => !t.isAbsent);
+          const totalM1Marks = presentM1.reduce((sum, t) => sum + (t.marksObtained / t.test.totalMarks) * 100, 0);
+          month1Avg = presentM1.length > 0 ? Math.round(totalM1Marks / presentM1.length) : 0;
+          month1Count = presentM1.length;
+          
+          const label1A = m1AData?.label || '';
+          const label1B = m1BData?.label || (nextMonthKey1 ? new Date(nextMonthKey1 + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '');
+          label1 = label1A && label1B ? `${label1A} & ${label1B}` : label1A || 'Period 1';
+
+          // Combined average calculation for Period 2
+          const presentM2 = monthlyReportTests2.filter(t => !t.isAbsent);
+          const totalM2Marks = presentM2.reduce((sum, t) => sum + (t.marksObtained / t.test.totalMarks) * 100, 0);
+          month2Avg = presentM2.length > 0 ? Math.round(totalM2Marks / presentM2.length) : 0;
+          month2Count = presentM2.length;
+          
+          const label2A = m2AData?.label || '';
+          const label2B = m2BData?.label || (nextMonthKey2 ? new Date(nextMonthKey2 + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '');
+          label2 = label2A && label2B ? `${label2A} & ${label2B}` : label2A || 'Period 2';
+
+          monthDiff = monthlyReportTests1.length > 0 && monthlyReportTests2.length > 0 ? month2Avg - month1Avg : null;
+        }
+
+        if (reportPrintMode === 'monthly') {
+          return (
+            <div className="hidden print:block absolute top-0 left-0 w-full bg-white text-black min-h-screen" style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
+              <div className="max-w-[210mm] mx-auto px-10 py-8">
+                {/* Header */}
+                <div className="border-b-2 border-gray-800 pb-5 mb-6">
+                  <div className="text-center">
+                    <h1 className="text-2xl font-bold uppercase tracking-widest text-gray-900">{instituteSettings.name || 'RC Tutorials ERP'}</h1>
+                    {instituteSettings.address && (
+                      <p className="text-sm text-gray-600 mt-1">{instituteSettings.address}</p>
+                    )}
+                    <div className="flex items-center justify-center gap-6 mt-1 text-xs text-gray-500">
+                      {instituteSettings.phone && <span>Phone: {instituteSettings.phone}</span>}
+                      {instituteSettings.email && <span>Email: {instituteSettings.email}</span>}
+                    </div>
+                  </div>
+                  <div className="mt-4 text-center">
+                    <span className="inline-block bg-gray-900 text-white text-xs font-bold uppercase tracking-widest px-4 py-1 rounded-sm">
+                      {reportMonthlyMode === 'single' ? 'Monthly Report Card' : 'Monthly Comparison Report'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Details */}
+                <div className="grid grid-cols-2 gap-8 mb-6 text-sm">
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Student Details</h3>
+                    <table className="text-sm">
+                      <tbody>
+                        <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Name:</td><td className="font-semibold">{student.name}</td></tr>
+                        <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Phone:</td><td>{student.phoneNo || 'N/A'}</td></tr>
+                        <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Class:</td><td>{student.studentClass || 'N/A'}</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="text-right">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Report Info</h3>
+                    <table className="text-sm ml-auto">
+                      <tbody>
+                        <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Batch:</td><td className="font-semibold">{batch?.name || 'N/A'}</td></tr>
+                        <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Subject Filter:</td><td className="font-semibold uppercase">{reportSubjectFilter}</td></tr>
+                        <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Date:</td><td>{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Comparison Card */}
+                <div className="border border-indigo-200 bg-indigo-50/50 rounded-xl p-6 mb-6">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-900 mb-4 text-center">
+                    {reportMonthlyMode === 'single' ? 'Performance vs Previous Month' : 'Month-on-Month Performance Comparison'}
+                  </h4>
+                  <div className="flex items-center justify-around">
+                    <div className="text-center">
+                      <p className="text-xs font-bold text-muted-foreground uppercase mb-1">
+                        {reportMonthlyMode === 'single' ? label2 : label1}
+                      </p>
+                      <p className="text-3xl font-black text-indigo-700">
+                        {reportMonthlyMode === 'single' ? (month2Avg ? `${month2Avg}%` : '—') : (month1Avg ? `${month1Avg}%` : '—')}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {reportMonthlyMode === 'single' ? month2Count : month1Count} test{(reportMonthlyMode === 'single' ? month2Count : month1Count) !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-center justify-center px-8">
+                      <div className="h-0.5 w-16 bg-indigo-200 relative mb-4">
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-indigo-100 text-indigo-700 text-[10px] font-black px-2 py-0.5 rounded-full border border-indigo-200">
+                          VS
+                        </div>
+                      </div>
+                      {monthDiff !== null && (
+                        <span className={`text-xs font-bold px-3 py-1 rounded-full ${monthDiff > 0 ? 'bg-emerald-100 text-emerald-700' : monthDiff < 0 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'}`}>
+                          {monthDiff > 0 ? '+' : ''}{monthDiff}% {monthDiff > 0 ? 'Improved' : monthDiff < 0 ? 'Declined' : 'Same'}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs font-bold text-muted-foreground uppercase mb-1">
+                        {reportMonthlyMode === 'single' ? label1 : label2}
+                      </p>
+                      <p className="text-3xl font-black text-indigo-700">
+                        {reportMonthlyMode === 'single' ? (month1Avg ? `${month1Avg}%` : '—') : (month2Avg ? `${month2Avg}%` : '—')}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {reportMonthlyMode === 'single' ? month1Count : month2Count} test{(reportMonthlyMode === 'single' ? month1Count : month2Count) !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Academic Results Grid (Side-by-side or consecutive tables) */}
+                <div className={reportMonthlyMode === 'single' ? 'grid grid-cols-1 mb-10' : 'grid grid-cols-2 gap-6 mb-10'}>
+                  {/* Month 1 Tests Table */}
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">{label1 || 'Month 1'} Academic Results</h3>
+                    {monthlyReportTests1.length > 0 ? (
+                      <table className="w-full border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-gray-100">
+                            <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 font-bold uppercase">Date</th>
+                            <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 font-bold uppercase">Test</th>
+                            <th className="border border-gray-300 px-3 py-2 text-center font-semibold text-gray-700 font-bold uppercase">Marks</th>
+                            <th className="border border-gray-300 px-3 py-2 text-center font-semibold text-gray-700 font-bold uppercase">%</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {monthlyReportTests1.map(t => {
+                            const pct = Math.round((t.marksObtained / t.test.totalMarks) * 100);
+                            return (
+                              <tr key={t.id}>
+                                <td className="border border-gray-300 px-3 py-2 text-gray-600">{new Date(t.test.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</td>
+                                <td className="border border-gray-300 px-3 py-2 font-medium truncate max-w-[120px]" title={t.test.name}>{t.test.name}</td>
+                                <td className="border border-gray-300 px-3 py-2 text-center font-bold">{t.isAbsent ? <span className="text-red-600 font-bold">AB</span> : `${t.marksObtained}/${t.test.totalMarks}`}</td>
+                                <td className="border border-gray-300 px-3 py-2 text-center font-bold">{t.isAbsent ? <span className="text-red-600 font-bold">AB</span> : `${pct}%`}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <p className="text-xs text-gray-500 text-center py-4 border border-gray-300 rounded bg-gray-50/50">No test results available.</p>
+                    )}
+                  </div>
+
+                  {/* Month 2 Tests Table (Conditional) */}
+                  {reportMonthlyMode !== 'single' && (
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">{label2 || 'Month 2'} Academic Results</h3>
+                      {monthlyReportTests2.length > 0 ? (
+                        <table className="w-full border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-gray-100">
+                              <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 font-bold uppercase">Date</th>
+                              <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 font-bold uppercase">Test</th>
+                              <th className="border border-gray-300 px-3 py-2 text-center font-semibold text-gray-700 font-bold uppercase">Marks</th>
+                              <th className="border border-gray-300 px-3 py-2 text-center font-semibold text-gray-700 font-bold uppercase">%</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {monthlyReportTests2.map(t => {
+                              const pct = Math.round((t.marksObtained / t.test.totalMarks) * 100);
+                              return (
+                                <tr key={t.id}>
+                                  <td className="border border-gray-300 px-3 py-2 text-gray-600">{new Date(t.test.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</td>
+                                  <td className="border border-gray-300 px-3 py-2 font-medium truncate max-w-[120px]" title={t.test.name}>{t.test.name}</td>
+                                  <td className="border border-gray-300 px-3 py-2 text-center font-bold">{t.isAbsent ? <span className="text-red-600 font-bold">AB</span> : `${t.marksObtained}/${t.test.totalMarks}`}</td>
+                                  <td className="border border-gray-300 px-3 py-2 text-center font-bold">{t.isAbsent ? <span className="text-red-600 font-bold">AB</span> : `${pct}%`}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <p className="text-xs text-gray-500 text-center py-4 border border-gray-300 rounded bg-gray-50/50">No test results available.</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Signatures */}
+                <div className="flex justify-between items-end mt-16">
+                  <div className="text-center">
+                    <div className="w-40 border-b-2 border-gray-400 mb-1"></div>
+                    <p className="text-xs text-gray-500">Parent / Guardian Signature</p>
+                  </div>
+                  <div className="text-center">
+                    <div className="w-40 border-b-2 border-gray-400 mb-1"></div>
+                    <p className="text-xs text-gray-500">Authorized Signatory</p>
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className="mt-8 text-center text-[10px] text-gray-300 border-t pt-3">
+                  Generated by {instituteSettings.name || 'RC Tutorials ERP'} Management System • {new Date().toLocaleDateString()}
+                </div>
+              </div>
+            </div>
+          );
+        }
 
         return (
           <div className="hidden print:block absolute top-0 left-0 w-full bg-white text-black min-h-screen" style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
@@ -4046,9 +4912,9 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                             <td className="border border-gray-300 px-4 py-3 text-gray-600">{new Date(t.test.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
                             <td className="border border-gray-300 px-4 py-3 font-medium">{t.test.name}</td>
                             <td className="border border-gray-300 px-4 py-3 text-gray-600">{t.test.subject || 'General'}</td>
-                            <td className="border border-gray-300 px-4 py-3 text-center font-bold">{t.marksObtained}</td>
+                            <td className="border border-gray-300 px-4 py-3 text-center font-bold">{t.isAbsent ? <span className="text-red-600 font-bold">AB</span> : t.marksObtained}</td>
                             <td className="border border-gray-300 px-4 py-3 text-center text-gray-600">{t.test.totalMarks}</td>
-                            <td className="border border-gray-300 px-4 py-3 text-center font-bold">{pct}%</td>
+                            <td className="border border-gray-300 px-4 py-3 text-center font-bold">{t.isAbsent ? <span className="text-red-600 font-bold">AB</span> : `${pct}%`}</td>
                           </tr>
                         );
                       })}

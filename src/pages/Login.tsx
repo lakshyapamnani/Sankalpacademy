@@ -90,7 +90,7 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
           <div className="w-full max-w-5xl">
           <div className="text-center mb-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-4">
-              <img src="/icons/rctlogo.jpg" alt="RCT Logo" className="w-20 h-20 rounded-full object-cover border-4 border-primary/10 shadow-xl" />
+              <img src="./icons/rctlogo.jpg" alt="RCT Logo" className="w-20 h-20 rounded-full object-cover border-4 border-primary/10 shadow-xl" />
               <h1 className="text-5xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
                 RC Tutorials ERP
               </h1>

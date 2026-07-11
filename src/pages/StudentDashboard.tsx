@@ -302,8 +302,12 @@ const StudentDashboard = () => {
               </div>
               <div className="flex items-center gap-3">
                 {hasResult ? (
-                  <div className="text-right px-4 py-2 rounded-xl bg-primary/10">
-                    <p className="font-black text-xl text-primary">{result.marksObtained} <span className="text-sm text-muted-foreground font-normal">/ {test.totalMarks}</span></p>
+                  <div className={`text-right px-4 py-2 rounded-xl ${result.isAbsent ? 'bg-red-50' : 'bg-primary/10'}`}>
+                    {result.isAbsent ? (
+                      <p className="font-black text-xl text-red-600">AB</p>
+                    ) : (
+                      <p className="font-black text-xl text-primary">{result.marksObtained} <span className="text-sm text-muted-foreground font-normal">/ {test.totalMarks}</span></p>
+                    )}
                   </div>
                 ) : (
                   isMcq ? (

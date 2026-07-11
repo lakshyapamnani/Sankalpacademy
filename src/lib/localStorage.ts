@@ -67,6 +67,7 @@ export interface TestResult {
   marksObtained: number;
   answers?: Record<string, number>; // questionId -> selectedOptionIndex
   submittedAt?: string;
+  isAbsent?: boolean;
 }
 
 export interface Class {
@@ -637,6 +638,27 @@ export const addNote = (note: Note): void => {
 };
 export const getNotesByBatch = (batchId: string): Note[] => {
   return getNotes().filter(n => n.batchId === batchId);
+};
+export const updateNote = (noteId: string, updates: Partial<Note>): void => {
+  const notes = getNotes();
+  const index = notes.findIndex(n => n.id === noteId);
+  if (index !== -1) {
+    const updatedNote = { ...notes[index], ...updates };
+    notes[index] = updatedNote;
+    saveToStorage(STORAGE_KEYS.NOTES, notes);
+    void writeItemToRealtime(DB_PATHS.NOTES, noteId, updatedNote);
+  }
+};
+export const deleteNote = (noteId: string): boolean => {
+  try {
+    const notes = getNotes();
+    saveToStorage(STORAGE_KEYS.NOTES, notes.filter(n => n.id !== noteId));
+    void removeItemFromRealtime(DB_PATHS.NOTES, noteId);
+    return true;
+  } catch (error) {
+    console.error('Error deleting note:', error);
+    return false;
+  }
 };
 
 // Attendance
