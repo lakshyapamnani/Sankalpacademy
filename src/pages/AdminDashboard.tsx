@@ -185,6 +185,7 @@ const AdminDashboard = () => {
   const [selectedTest, setSelectedTest] = useState<Test | null>(null);
   const selectedTestIdRef = useRef<string | null>(null);
   const [testResults, setTestResults] = useState<TestResult[]>([]);
+  const [localMarks, setLocalMarks] = useState<Record<string, string>>({});
   const [absentMessage, setAbsentMessage] = useState<string>("Hello parent, your child {name} was absent today {date}.");
   const [birthdayMessage, setBirthdayMessage] = useState<string>("Happy Birthday {name}! 🎂 Wishing you a fantastic day ahead! 🎉");
   const [testMarksMessage, setTestMarksMessage] = useState<string>(
@@ -203,6 +204,16 @@ const AdminDashboard = () => {
   useEffect(() => {
     localStorage.setItem('smartclass_test_absent_wa_template', testAbsentMessage);
   }, [testAbsentMessage]);
+
+  useEffect(() => {
+    const marks: Record<string, string> = {};
+    testResults.forEach(r => {
+      if (r.testId === selectedTest?.id) {
+        marks[r.studentId] = r.isAbsent ? '' : String(r.marksObtained);
+      }
+    });
+    setLocalMarks(marks);
+  }, [testResults, selectedTest]);
 
   // MCQ Creation State
   const [mcqQuestions, setMcqQuestions] = useState<MCQQuestion[]>([]);
@@ -3059,8 +3070,11 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                                             type="number" 
                                             className="w-20 text-right text-sm" 
                                             placeholder="—"
-                                            key={existingResult ? String(existingResult.marksObtained) : 'empty'}
-                                            defaultValue={existingResult?.marksObtained}
+                                            value={localMarks[student.id] || ''}
+                                            onChange={(e) => {
+                                              const val = e.target.value;
+                                              setLocalMarks(prev => ({ ...prev, [student.id]: val }));
+                                            }}
                                             onBlur={(e) => handleSaveMarks(student.id, e.target.value)}
                                           />
                                         )}
@@ -3236,8 +3250,11 @@ Thank you! - ${instituteSettings.name || 'RC Tutorials'}`;
                                                 type="number" 
                                                 className="w-20 text-right text-sm" 
                                                 placeholder="—"
-                                                key={existingResult ? String(existingResult.marksObtained) : 'empty'}
-                                                defaultValue={existingResult?.marksObtained}
+                                                value={localMarks[student.id] || ''}
+                                                onChange={(e) => {
+                                                  const val = e.target.value;
+                                                  setLocalMarks(prev => ({ ...prev, [student.id]: val }));
+                                                }}
                                                 onBlur={(e) => handleSaveMarks(student.id, e.target.value)}
                                               />
                                             )}
