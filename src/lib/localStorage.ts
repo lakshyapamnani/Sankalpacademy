@@ -28,6 +28,16 @@ export interface Staff {
   firebaseUid?: string;
 }
 
+export interface Teacher {
+  id: string;
+  name: string;
+  email: string;
+  password: string;
+  assignedSubjects: string[];
+  assignedBatchIds?: string[];
+  firebaseUid?: string;
+}
+
 export interface FeePayment {
   id: string;
   date: string;
@@ -75,6 +85,8 @@ export interface Class {
   name: string;
   subject: string;
   batchId: string;
+  teacherId?: string;
+  teacherName?: string;
   schedule?: string;
   date: string;
   time: string;
@@ -112,6 +124,7 @@ export interface Note {
   title: string;
   subject: string;
   batchId: string;
+  batchIds?: string[];
   content: string;
   fileUrl?: string;
   createdAt: string;
@@ -207,6 +220,7 @@ const STORAGE_KEYS = {
   TESTS: 'smartclass_tests',
   TEST_RESULTS: 'smartclass_test_results',
   STAFF: 'smartclass_staff',
+  TEACHERS: 'smartclass_teachers',
   INSTITUTE_SETTINGS: 'smartclass_institute_settings',
   SUBJECTS: 'smartclass_subjects',
 };
@@ -225,6 +239,7 @@ const DB_PATHS = {
   TESTS: 'tests',
   TEST_RESULTS: 'testResults',
   STAFF: 'staff',
+  TEACHERS: 'teachers',
   INSTITUTE_SETTINGS: 'instituteSettings',
   SUBJECTS: 'subjects',
 };
@@ -275,6 +290,10 @@ const initializeDefaultData = () => {
   if (!localStorage.getItem(STORAGE_KEYS.SUBJECTS)) {
     localStorage.setItem(STORAGE_KEYS.SUBJECTS, JSON.stringify([]));
   }
+
+  if (!localStorage.getItem(STORAGE_KEYS.TEACHERS)) {
+    localStorage.setItem(STORAGE_KEYS.TEACHERS, JSON.stringify([]));
+  }
 };
 
 initializeDefaultData();
@@ -312,7 +331,7 @@ const fetchCollectionFromRealtime = async <T>(collection: string): Promise<T[] |
 };
 
 const syncRealtimeData = async () => {
-  const [students, classes, notes, attendance, batches, fees, tests, testResults, staffList, subjects] = await Promise.all([
+  const [students, classes, notes, attendance, batches, fees, tests, testResults, staffList, subjects, teachersList] = await Promise.all([
     fetchCollectionFromRealtime<Student>(DB_PATHS.STUDENTS),
     fetchCollectionFromRealtime<Class>(DB_PATHS.CLASSES),
     fetchCollectionFromRealtime<Note>(DB_PATHS.NOTES),
@@ -323,6 +342,7 @@ const syncRealtimeData = async () => {
     fetchCollectionFromRealtime<TestResult>(DB_PATHS.TEST_RESULTS),
     fetchCollectionFromRealtime<Staff>(DB_PATHS.STAFF),
     fetchCollectionFromRealtime<Subject>(DB_PATHS.SUBJECTS),
+    fetchCollectionFromRealtime<Teacher>(DB_PATHS.TEACHERS),
   ]);
 
   if (students) {
@@ -354,6 +374,9 @@ const syncRealtimeData = async () => {
   }
   if (subjects) {
     saveToStorage(STORAGE_KEYS.SUBJECTS, subjects);
+  }
+  if (teachersList) {
+    saveToStorage(STORAGE_KEYS.TEACHERS, teachersList);
   }
 };
 
@@ -469,6 +492,7 @@ export const subscribeToRealtimeUpdates = (onUpdate?: () => void): Unsubscribe =
     attachListener<TestResult>(DB_PATHS.TEST_RESULTS, STORAGE_KEYS.TEST_RESULTS, onUpdate),
     attachListener<Staff>(DB_PATHS.STAFF, STORAGE_KEYS.STAFF, onUpdate),
     attachListener<Subject>(DB_PATHS.SUBJECTS, STORAGE_KEYS.SUBJECTS, onUpdate),
+    attachListener<Teacher>(DB_PATHS.TEACHERS, STORAGE_KEYS.TEACHERS, onUpdate),
   ];
 
   if (!isElectron) {
@@ -612,6 +636,62 @@ export const deleteStaff = (staffId: string): boolean => {
   }
 };
 
+// Teachers
+export const getTeachers = (): Teacher[] => {
+  const teachers = getFromStorage<Teacher>(STORAGE_KEYS.TEACHERS);
+  const map = new Map<string, Teacher>();
+  teachers.forEach(t => {
+    if (t && t.id) {
+      // Deduplicate by ID and Email
+      const existingKey = t.id;
+      if (!map.has(existingKey)) {
+        map.set(existingKey, t);
+      }
+    }
+  });
+  return Array.from(map.values());
+};
+
+export const addTeacher = async (teacher: Teacher): Promise<void> => {
+  try {
+    let firebaseUid = `fallback-${Date.now()}`;
+    try {
+      firebaseUid = await createFirebaseAuthUser(teacher.email, teacher.password);
+    } catch (authError: any) {
+      console.warn("Firebase auth creation failed or email exists, using fallback UID:", authError);
+    }
+    const teacherRecord: Teacher = { ...teacher, firebaseUid };
+    const teachers = getTeachers();
+    const filtered = teachers.filter(t => t.id !== teacherRecord.id && t.email.toLowerCase() !== teacherRecord.email.toLowerCase());
+    saveToStorage(STORAGE_KEYS.TEACHERS, [...filtered, teacherRecord]);
+    await writeItemToRealtime(DB_PATHS.TEACHERS, teacherRecord.id, teacherRecord);
+  } catch (error) {
+    console.error("Error adding teacher:", error);
+    throw error;
+  }
+};
+export const updateTeacher = (teacherId: string, updates: Partial<Teacher>): void => {
+  const teachers = getTeachers();
+  const index = teachers.findIndex(t => t.id === teacherId);
+  if (index !== -1) {
+    const updatedTeacher = { ...teachers[index], ...updates };
+    teachers[index] = updatedTeacher;
+    saveToStorage(STORAGE_KEYS.TEACHERS, teachers);
+    void writeItemToRealtime(DB_PATHS.TEACHERS, teacherId, updatedTeacher);
+  }
+};
+export const deleteTeacher = (teacherId: string): boolean => {
+  try {
+    const teachers = getTeachers();
+    saveToStorage(STORAGE_KEYS.TEACHERS, teachers.filter(t => t.id !== teacherId));
+    void removeItemFromRealtime(DB_PATHS.TEACHERS, teacherId);
+    return true;
+  } catch (error) {
+    console.error('Error deleting teacher:', error);
+    return false;
+  }
+};
+
 // Classes
 export const getClasses = (): Class[] => getFromStorage<Class>(STORAGE_KEYS.CLASSES);
 export const addClass = async (classData: Class): Promise<void> => {
@@ -637,7 +717,7 @@ export const addNote = (note: Note): void => {
   void writeItemToRealtime(DB_PATHS.NOTES, note.id, note);
 };
 export const getNotesByBatch = (batchId: string): Note[] => {
-  return getNotes().filter(n => n.batchId === batchId);
+  return getNotes().filter(n => n.batchId === batchId || (n.batchIds && n.batchIds.includes(batchId)));
 };
 export const updateNote = (noteId: string, updates: Partial<Note>): void => {
   const notes = getNotes();
@@ -830,7 +910,7 @@ export const saveTestResult = (result: TestResult): void => {
 // Authentication helper
 export const authenticateUser = (email: string, password: string, role: string): { id: string; name: string } | null => {
   if (role === 'admin') {
-    if (email === 'admin@rctutorials.com' && password === 'admin123') {
+    if ((email === 'admin@sankalpacademy.com' || email === 'admin@rctutorials.com') && password === 'admin123') {
       return { id: 'admin', name: 'Administrator' };
     }
     return null;
@@ -846,8 +926,19 @@ export const authenticateUser = (email: string, password: string, role: string):
     if (staffMember) return { id: staffMember.id, name: staffMember.name };
     
     // Fallback for default staff
-    if (email === 'staff@rctutorials.com' && password === 'staff123') {
+    if ((email === 'staff@sankalpacademy.com' || email === 'staff@rctutorials.com') && password === 'staff123') {
       return { id: 'staff', name: 'Staff Member' };
+    }
+    return null;
+  }
+
+  if (role === 'teacher') {
+    const teacher = getTeachers().find(t => t.email === email && t.password === password);
+    if (teacher) return { id: teacher.id, name: teacher.name };
+
+    // Fallback default teacher
+    if ((email === 'teacher@sankalpacademy.com' || email === 'teacher@rctutorials.com') && password === 'teacher123') {
+      return { id: 'teacher', name: 'Teacher' };
     }
     return null;
   }
@@ -865,7 +956,7 @@ export const getInstituteSettings = (): InstituteSettings => {
       // fallback
     }
   }
-  return { name: 'RC Tutorials ERP', address: '', phone: '', email: '' };
+  return { name: 'Sankalp Academy ERP', address: '', phone: '', email: '' };
 };
 
 export const saveInstituteSettings = async (settings: InstituteSettings): Promise<void> => {

@@ -26,3 +26,10 @@ dist-ssr
 # Electron Build Output
 release/
 dist-electron/
+
+# Binaries & Scratch Files
+*.exe
+*.apk
+scratch/
+temp.js
+*.patch

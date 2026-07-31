@@ -8,7 +8,7 @@ import { GraduationCap, User, BookOpen, Shield } from "lucide-react";
 import { toast } from "sonner";
 import { clearCurrentUser, authenticateUser, getCurrentUser, setCurrentUser } from "@/lib/localStorage";
 
-type UserRole = "admin" | "student" | "staff";
+type UserRole = "admin" | "student" | "staff" | "teacher";
 
 interface LoginProps {
   defaultRole?: UserRole;
@@ -61,6 +61,13 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
       icon: GraduationCap,
       color: "from-cyan-500 to-cyan-600",
     },
+    {
+      id: "teacher" as UserRole,
+      title: "Teacher",
+      description: "Take class attendance and manage lectures",
+      icon: BookOpen,
+      color: "from-teal-500 to-emerald-600",
+    },
   ];
 
   const handleLogin = (e: React.FormEvent) => {
@@ -90,9 +97,9 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
           <div className="w-full max-w-5xl">
           <div className="text-center mb-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-4">
-              <img src="./icons/rctlogo.jpg" alt="RCT Logo" className="w-20 h-20 rounded-full object-cover border-4 border-primary/10 shadow-xl" />
+              <img src="./icons/sankalp_logo.jpeg" alt="Sankalp Academy Logo" className="w-20 h-20 rounded-full object-cover border-4 border-primary/10 shadow-xl" />
               <h1 className="text-5xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-                RC Tutorials ERP
+                Sankalp Academy ERP
               </h1>
             </div>
             <p className="text-xl text-muted-foreground">
@@ -191,7 +198,7 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
           </Button>
         </form>
 
-        {(selectedRole === 'staff' || selectedRole === 'student') && (
+        {(selectedRole === 'staff' || selectedRole === 'student' || selectedRole === 'teacher') && (
           <p className="text-center text-sm text-muted-foreground mt-6">
             Accounts are created in the Admin panel
           </p>

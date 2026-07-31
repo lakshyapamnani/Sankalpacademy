@@ -1,7 +1,7 @@
 {
-  "name": "RC Tutorials ERP",
-  "short_name": "RC ERP",
-  "description": "Student and staff dashboard for RC Tutorials ERP",
+  "name": "Sankalp Academy ERP",
+  "short_name": "Sankalp ERP",
+  "description": "Student and staff dashboard for Sankalp Academy ERP",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -10,7 +10,7 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/icons/rct.ico",
+      "src": "/icons/sankalp.ico",
       "sizes": "64x64 32x32 24x24 16x16",
       "type": "image/x-icon"
     },

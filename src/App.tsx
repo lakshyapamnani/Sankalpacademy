@@ -8,6 +8,7 @@ import Login from "./pages/Login";
 import AdminDashboard from "./pages/AdminDashboard";
 import StudentDashboard from "./pages/StudentDashboard";
 import StaffDashboard from "./pages/StaffDashboard";
+import TeacherDashboard from "./pages/TeacherDashboard";
 import BatchDetails from "./pages/BatchDetails";
 import NotFound from "./pages/NotFound";
 
@@ -32,11 +33,14 @@ const App = () => (
             <Route path="/teacher" element={<Login defaultRole="teacher" />} />
             <Route path="/rctstaff" element={<Login defaultRole="staff" forceRole={true} />} />
             <Route path="/rctstudent" element={<Login defaultRole="student" forceRole={true} />} />
+            <Route path="/sastaff" element={<Login defaultRole="staff" forceRole={true} />} />
+            <Route path="/sastudent" element={<Login defaultRole="student" forceRole={true} />} />
             <Route path="/login" element={<Login />} />
             <Route path="/admin-dashboard" element={<AdminDashboard />} />
             <Route path="/admin-dashboard/batches/:batchId" element={<BatchDetails />} />
             <Route path="/student-dashboard" element={<StudentDashboard />} />
             <Route path="/staff-dashboard" element={<StaffDashboard />} />
+            <Route path="/teacher-dashboard" element={<TeacherDashboard />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </HashRouter>
@@ -49,11 +53,14 @@ const App = () => (
             <Route path="/teacher" element={<Login defaultRole="teacher" />} />
             <Route path="/rctstaff" element={<Login defaultRole="staff" forceRole={true} />} />
             <Route path="/rctstudent" element={<Login defaultRole="student" forceRole={true} />} />
+            <Route path="/sastaff" element={<Login defaultRole="staff" forceRole={true} />} />
+            <Route path="/sastudent" element={<Login defaultRole="student" forceRole={true} />} />
             <Route path="/login" element={<Login />} />
             <Route path="/admin-dashboard" element={<AdminDashboard />} />
             <Route path="/admin-dashboard/batches/:batchId" element={<BatchDetails />} />
             <Route path="/student-dashboard" element={<StudentDashboard />} />
             <Route path="/staff-dashboard" element={<StaffDashboard />} />
+            <Route path="/teacher-dashboard" element={<TeacherDashboard />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

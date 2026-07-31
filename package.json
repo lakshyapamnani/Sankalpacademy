@@ -91,8 +91,8 @@
     "vite-plugin-electron-renderer": "^0.14.7"
   },
   "build": {
-    "appId": "com.smartclass.ai",
-    "productName": "RC Tutorials ERP",
+    "appId": "com.sankalpacademy.erp",
+    "productName": "Sankalp Academy ERP",
     "directories": {
       "output": "release/${version}"
     },
@@ -106,7 +106,7 @@
       "target": [
         "nsis"
       ],
-      "icon": "public/icons/rct.ico"
+      "icon": "public/icons/sankalp.ico"
     },
     "nsis": {
       "oneClick": false,
