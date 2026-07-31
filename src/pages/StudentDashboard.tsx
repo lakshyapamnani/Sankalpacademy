@@ -33,8 +33,9 @@ import {
 import { registerForPushNotifications } from "@/lib/messaging";
 import { sendPromptToGemini } from "@/lib/gemini";
 
-const tabOptions: { id: "home" | "notes" | "ai" | "tests" | "profile"; label: string; icon: LucideIcon }[] = [
+const tabOptions: { id: "home" | "attendance" | "notes" | "ai" | "tests" | "profile"; label: string; icon: LucideIcon }[] = [
   { id: "home", label: "Home", icon: Home },
+  { id: "attendance", label: "Attendance", icon: Calendar },
   { id: "notes", label: "Notes", icon: BookOpen },
   { id: "ai", label: "AI", icon: Bot },
   { id: "tests", label: "Tests", icon: CheckSquare },
@@ -60,7 +61,104 @@ const StudentDashboard = () => {
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, number>>({});
   const [testCompleted, setTestCompleted] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<"home" | "notes" | "ai" | "tests" | "profile">("home");
+  const [activeTab, setActiveTab] = useState<"home" | "attendance" | "notes" | "ai" | "tests" | "profile">("home");
+
+  const subjectAttendanceBreakdown = useMemo(() => {
+    const map: Record<string, { total: number; present: number; absent: number }> = {};
+    
+    attendance.forEach(record => {
+      const classItem = classLookup[record.classId];
+      const subject = classItem?.subject || "General / Batch Class";
+      if (!map[subject]) {
+        map[subject] = { total: 0, present: 0, absent: 0 };
+      }
+      map[subject].total += 1;
+      if (normalizeStatus(record.status) === 'present') {
+        map[subject].present += 1;
+      } else {
+        map[subject].absent += 1;
+      }
+    });
+
+    return map;
+  }, [attendance, classLookup]);
+
+  const renderAttendanceSection = () => {
+    const totalClassesCount = attendance.length;
+    const presentClassesCount = attendance.filter(r => normalizeStatus(r.status) === 'present').length;
+    const absentClassesCount = totalClassesCount - presentClassesCount;
+
+    return (
+      <Card className="p-6 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b pb-6 gap-4">
+          <div>
+            <h3 className="text-2xl font-black text-primary flex items-center gap-2">
+              <Calendar className="h-6 w-6 text-primary"/> Class-Wise Attendance
+            </h3>
+            <p className="text-sm text-muted-foreground mt-1">
+              Track your attendance percentage per conducted lecture
+            </p>
+          </div>
+          <div className="bg-primary/5 p-4 rounded-2xl border border-primary/20 flex items-center gap-4">
+            <div>
+              <span className={`text-4xl font-black ${attendancePercentage >= 75 ? 'text-green-600' : 'text-destructive'}`}>
+                {attendancePercentage}%
+              </span>
+              <p className="text-xs text-muted-foreground font-bold uppercase tracking-wider mt-0.5">Overall Percentage</p>
+            </div>
+            <div className="text-right text-xs border-l border-primary/20 pl-4 space-y-0.5 font-medium">
+              <p className="text-green-600 font-bold">{presentClassesCount} Attended</p>
+              <p className="text-destructive font-bold">{absentClassesCount} Absent</p>
+              <p className="text-muted-foreground">{totalClassesCount} Total Classes</p>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h4 className="text-sm font-black uppercase tracking-wider text-muted-foreground mb-4">
+            Subject-Wise Attendance Breakdown
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {Object.entries(subjectAttendanceBreakdown).map(([subject, stats]) => {
+              const pct = stats.total > 0 ? Math.round((stats.present / stats.total) * 100) : 0;
+              return (
+                <div key={subject} className="p-5 rounded-2xl border-2 border-primary/10 bg-card hover:border-primary/30 transition-all flex flex-col justify-between">
+                  <div>
+                    <div className="flex justify-between items-center mb-3">
+                      <h5 className="font-bold text-lg text-foreground">{subject}</h5>
+                      <span className={`px-3 py-1 rounded-full text-xs font-black ${
+                        pct >= 75 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                      }`}>
+                        {pct}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-muted h-2.5 rounded-full overflow-hidden mb-3">
+                      <div
+                        className={`h-full transition-all duration-500 ${pct >= 75 ? 'bg-green-600' : 'bg-destructive'}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-between text-xs text-muted-foreground font-medium pt-2 border-t">
+                    <span className="text-foreground font-semibold">{stats.present} / {stats.total} Classes</span>
+                    <span className={stats.absent > 0 ? "text-destructive font-semibold" : "text-green-600"}>
+                      {stats.absent} Missed
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+            {Object.keys(subjectAttendanceBreakdown).length === 0 && (
+              <div className="col-span-full py-12 text-center text-muted-foreground italic">
+                <Calendar className="h-12 w-12 mx-auto mb-3 opacity-20" />
+                No class attendance recorded yet.
+              </div>
+            )}
+          </div>
+        </div>
+      </Card>
+    );
+  };
   const [activeTest, setActiveTest] = useState<Test | null>(null);
   const [testAnswers, setTestAnswers] = useState<Record<string, string>>({});
   const seenNotificationIds = useRef<Set<string>>(new Set());
@@ -350,7 +448,7 @@ const StudentDashboard = () => {
     return (
       <div className="space-y-6">
         <Card className="p-6 bg-primary/5 border-primary/10">
-          <div className="flex items-center gap-4 mb-4">
+          <div className="flex items-center gap-4">
             <div className="h-16 w-16 rounded-full bg-primary/20 flex items-center justify-center">
               <UserCircle className="h-8 w-8 text-primary" />
             </div>
@@ -361,16 +459,8 @@ const StudentDashboard = () => {
             </div>
           </div>
         </Card>
- 
-        {/* Attendance Summary */}
-        <Card className="p-6">
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2"><Calendar className="h-5 w-5"/> Attendance Overview</h3>
-          <div className="flex items-center justify-between mb-3 border-b pb-4">
-            <span className="text-sm font-medium">Overall Attendance</span>
-            <span className={`text-2xl font-bold ${attendancePercentage > 75 ? 'text-green-500' : 'text-primary'}`}>{attendancePercentage}%</span>
-          </div>
-          <p className="text-xs text-muted-foreground">{attendance.length} Total days recorded.</p>
-        </Card>
+
+        {renderAttendanceSection()}
       </div>
     );
   };
@@ -378,6 +468,7 @@ const StudentDashboard = () => {
   const renderTabContent = () => {
     switch(activeTab) {
       case "home": return renderClassesCard();
+      case "attendance": return renderAttendanceSection();
       case "notes": return renderNotesCard();
       case "ai": return (
         <Card className="p-6">
