@@ -6,6 +6,7 @@ import electron from "vite-plugin-electron/simple";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
+  base: "./",
   server: {
     host: "::",
     port: 8080,
@@ -15,15 +16,7 @@ export default defineConfig(({ mode }) => ({
     mode === "development" && componentTagger(),
     electron({
       main: {
-        // Shortcut of `build.lib.entry`.
         entry: 'electron/main.ts',
-        vite: {
-          build: {
-            rollupOptions: {
-              external: ['sql.js'],
-            },
-          },
-        },
       },
       preload: {
         // Shortcut of `build.rollupOptions.input`.
