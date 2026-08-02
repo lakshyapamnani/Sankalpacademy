@@ -35,16 +35,48 @@ let win: BrowserWindow | null;
 let db: any = null;
 let dbPath: string;
 
+function getWasmPath(): string {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'sql-wasm.wasm');
+  }
+  const devPath = path.join(__dirname, '..', 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm');
+  if (fs.existsSync(devPath)) return devPath;
+  return path.join(process.cwd(), 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm');
+}
+
 async function initDatabase() {
   try {
-    dbPath = path.join(app.getPath('userData'), 'smartclass_fees.db');
+    dbPath = path.join(app.getPath('userData'), 'sankalpacademy_fees.db');
     console.log('Database path:', dbPath);
 
-    // sql.js needs the wasm file - locate it relative to this script
-    const wasmPath = path.join(__dirname, '..', 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm');
-    const SQL = await initSqlJs({ locateFile: () => wasmPath });
+    // Migrate from old DB names if the new one doesn't exist
+    if (!fs.existsSync(dbPath)) {
+      const oldNames = ['sankalp_fees.db', 'smartclass_fees.db'];
+      for (const oldName of oldNames) {
+        const oldPath = path.join(app.getPath('userData'), oldName);
+        if (fs.existsSync(oldPath)) {
+          try {
+            fs.copyFileSync(oldPath, dbPath);
+            console.log(`Migrated old database ${oldName} -> sankalpacademy_fees.db`);
+          } catch (e) {
+            console.error(`Failed to migrate ${oldName}:`, e);
+          }
+          break;
+        }
+      }
+    }
 
-    // Load existing DB from disk if it exists, otherwise create fresh
+    const wasmPath = getWasmPath();
+    console.log('Resolved WASM path:', wasmPath);
+
+    let SQL: any;
+    if (fs.existsSync(wasmPath)) {
+      const wasmBinary = fs.readFileSync(wasmPath);
+      SQL = await initSqlJs({ wasmBinary });
+    } else {
+      SQL = await initSqlJs();
+    }
+
     if (fs.existsSync(dbPath)) {
       const fileBuffer = fs.readFileSync(dbPath);
       db = new SQL.Database(fileBuffer);
@@ -126,8 +158,8 @@ ipcMain.handle('get-fee-record', (_, studentId: string) => {
 ipcMain.handle('update-fee-record', (_, feeRecord: any) => {
   if (!db) return false;
   try {
-    const { studentId, totalFees, emiMonths, payments } = feeRecord;
-    const paymentsStr = JSON.stringify(payments);
+    const { studentId, totalFees, emiMonths, payments } = feeRecord || {};
+    const paymentsStr = JSON.stringify(payments || []);
     db.run(`
       INSERT INTO fees (studentId, totalFees, emiMonths, payments)
       VALUES (?, ?, ?, ?)
@@ -135,12 +167,43 @@ ipcMain.handle('update-fee-record', (_, feeRecord: any) => {
         totalFees = excluded.totalFees,
         emiMonths = excluded.emiMonths,
         payments = excluded.payments
-    `, [studentId, totalFees, emiMonths, paymentsStr]);
+    `, [studentId, Number(totalFees) || 0, Number(emiMonths) || 1, paymentsStr]);
     saveDatabase();
     return true;
   } catch (err) {
     console.error('SQLite updateFeeRecord failed', err);
     return false;
+  }
+});
+
+// Search payments by receipt number across all students
+ipcMain.handle('search-fee-by-receipt', (_, receiptNo: string) => {
+  if (!db || !receiptNo) return null;
+  try {
+    const searchTerm = receiptNo.trim().toLowerCase();
+    const stmt = db.prepare('SELECT * FROM fees');
+    const results: any[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      const payments = JSON.parse((row.payments as string) || '[]');
+      for (const payment of payments) {
+        if (payment.receiptNo && payment.receiptNo.toLowerCase() === searchTerm) {
+          results.push({
+            studentId: row.studentId,
+            totalFees: row.totalFees,
+            emiMonths: row.emiMonths,
+            payments,
+            matchedPayment: payment
+          });
+          break;
+        }
+      }
+    }
+    stmt.free();
+    return results;
+  } catch (err) {
+    console.error('SQLite searchFeeByReceipt failed', err);
+    return null;
   }
 });
 
@@ -181,6 +244,10 @@ app.on('activate', () => {
 });
 
 app.whenReady().then(async () => {
-  await initDatabase();
+  try {
+    await initDatabase();
+  } catch (err) {
+    console.error('Startup database init error:', err);
+  }
   createWindow();
 });

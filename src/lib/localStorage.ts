@@ -42,6 +42,7 @@ export interface FeePayment {
   id: string;
   date: string;
   amount: number;
+  receiptNo?: string;
 }
 
 export interface FeeRecord {
@@ -784,7 +785,10 @@ export const clearCurrentUser = (): void => {
 export const getFeeRecords = async (): Promise<FeeRecord[]> => {
   if (isElectron) {
     try {
-      return await window.electronAPI.getFeeRecords();
+      const sqlRecords = await window.electronAPI.getFeeRecords();
+      if (sqlRecords && sqlRecords.length > 0) {
+        return sqlRecords;
+      }
     } catch (error) {
       console.error('SQLite getFeeRecords failed', error);
     }
@@ -795,26 +799,21 @@ export const getFeeRecords = async (): Promise<FeeRecord[]> => {
 export const getFeeRecordByStudent = async (studentId: string): Promise<FeeRecord | undefined> => {
   if (isElectron) {
     try {
-      return await window.electronAPI.getFeeRecord(studentId) || undefined;
+      const record = await window.electronAPI.getFeeRecord(studentId);
+      if (record) return record;
     } catch (error) {
       console.error('SQLite getFeeRecord failed', error);
     }
   }
-  return (await getFeeRecords()).find(f => f.studentId === studentId);
+  // Always fall through to localStorage as backup
+  const localRecords = getFromStorage<FeeRecord>(STORAGE_KEYS.FEES);
+  return localRecords.find(f => f.studentId === studentId);
 };
 
 export const updateFeeRecord = async (feeRecord: FeeRecord): Promise<void> => {
-  if (isElectron) {
-    try {
-      await window.electronAPI.updateFeeRecord(feeRecord);
-      return;
-    } catch (error) {
-      console.error('SQLite updateFeeRecord failed', error);
-    }
-  }
-  const records = await getFeeRecords();
+  // Always save to localStorage as backup
+  const records = getFromStorage<FeeRecord>(STORAGE_KEYS.FEES);
   const index = records.findIndex(f => f.studentId === feeRecord.studentId);
-  
   let newRecords;
   if (index >= 0) {
     newRecords = [...records];
@@ -822,19 +821,62 @@ export const updateFeeRecord = async (feeRecord: FeeRecord): Promise<void> => {
   } else {
     newRecords = [...records, feeRecord];
   }
-  
   saveToStorage(STORAGE_KEYS.FEES, newRecords);
+
+  // Also save to SQLite in Electron
+  if (isElectron) {
+    try {
+      await window.electronAPI.updateFeeRecord(feeRecord);
+    } catch (error) {
+      console.error('SQLite updateFeeRecord failed', error);
+    }
+  }
+
   void writeItemToRealtime(DB_PATHS.FEES, feeRecord.studentId, feeRecord);
 };
 
-export const addFeePayment = async (studentId: string, amount: number): Promise<FeeRecord | null> => {
-  const record = await getFeeRecordByStudent(studentId);
-  if (!record) return null;
+export const getNextAutoReceiptNo = async (studentId: string): Promise<string> => {
+  const records = await getFeeRecords();
   
+  // Build ordered list of all student IDs that have fee records
+  // The order determines the student sequence number
+  const studentIds = records.map(r => r.studentId);
+  
+  let studentSeq: number;
+  const existingIndex = studentIds.indexOf(studentId);
+  if (existingIndex >= 0) {
+    studentSeq = existingIndex + 1; // 1-based
+  } else {
+    studentSeq = studentIds.length + 1; // next available
+  }
+
+  const studentRecord = records.find(r => r.studentId === studentId);
+  const existingPayments = studentRecord?.payments || [];
+  const paymentCount = existingPayments.length;
+
+  // First payment for this student: just the sequence number (e.g. "1", "2", "3")
+  if (paymentCount === 0) {
+    return `${studentSeq}`;
+  }
+
+  // Subsequent payments: "S.N" where N = paymentCount + 1
+  // e.g. 2nd payment = "1.2", 3rd = "1.3", etc.
+  return `${studentSeq}.${paymentCount + 1}`;
+};
+
+export const addFeePayment = async (studentId: string, amount: number, customReceiptNo?: string): Promise<FeeRecord | null> => {
+  const record = await getFeeRecordByStudent(studentId);
+  if (!record) return null; // Fee structure must be created first
+  
+  const receiptNo = customReceiptNo && customReceiptNo.trim() !== "" 
+    ? customReceiptNo.trim() 
+    : await getNextAutoReceiptNo(studentId);
+
   const payment: FeePayment = {
     id: Date.now().toString(),
     date: new Date().toISOString(),
-    amount
+    amount,
+    receiptNo
   };
   
   const updatedRecord = {
@@ -844,6 +886,38 @@ export const addFeePayment = async (studentId: string, amount: number): Promise<
   
   await updateFeeRecord(updatedRecord);
   return updatedRecord;
+};
+
+export interface FeeSearchResult {
+  studentId: string;
+  totalFees: number;
+  emiMonths: number;
+  payments: FeePayment[];
+  matchedPayment: FeePayment;
+}
+
+export const searchFeeByReceiptNo = async (receiptNo: string): Promise<FeeSearchResult[]> => {
+  if (!receiptNo || !receiptNo.trim()) return [];
+  const searchTerm = receiptNo.trim().toLowerCase();
+
+  // Search all fee records (checks SQLite first, falls back to localStorage)
+  const records = await getFeeRecords();
+  const results: FeeSearchResult[] = [];
+  for (const record of records) {
+    for (const payment of (record.payments || [])) {
+      if (payment.receiptNo && payment.receiptNo.toLowerCase() === searchTerm) {
+        results.push({
+          studentId: record.studentId,
+          totalFees: record.totalFees,
+          emiMonths: record.emiMonths,
+          payments: record.payments,
+          matchedPayment: payment
+        });
+        break;
+      }
+    }
+  }
+  return results;
 };
 
 // Tests

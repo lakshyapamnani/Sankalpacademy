@@ -27,6 +27,8 @@ import {
   getFeeRecords,
   updateFeeRecord,
   addFeePayment,
+  getNextAutoReceiptNo,
+  searchFeeByReceiptNo,
   getTests,
   addTest,
   deleteTest,
@@ -56,6 +58,7 @@ import {
   Subject,
   FeeRecord,
   FeePayment,
+  FeeSearchResult,
   Test,
   TestResult,
   Staff,
@@ -184,9 +187,13 @@ const AdminDashboard = () => {
   const [selectedStudentForFees, setSelectedStudentForFees] = useState<Student | null>(null);
   const [feeRecord, setFeeRecord] = useState<FeeRecord | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<string>("");
+  const [receiptNoInput, setReceiptNoInput] = useState<string>("");
   const [selectedBatchForFees, setSelectedBatchForFees] = useState<string | null>(null);
   const [feesStudentSearch, setFeesStudentSearch] = useState<string>("");
   const [feesBatchSearch, setFeesBatchSearch] = useState<string>("");
+  const [receiptSearchQuery, setReceiptSearchQuery] = useState<string>("");
+  const [receiptSearchResults, setReceiptSearchResults] = useState<FeeSearchResult[]>([]);
+  const [isSearchingReceipt, setIsSearchingReceipt] = useState(false);
 
   // Tests State
   const [selectedTest, setSelectedTest] = useState<Test | null>(null);
@@ -322,6 +329,9 @@ const AdminDashboard = () => {
     setFeeRecord(record || null);
     setPaymentAmount("");
     
+    const autoReceipt = await getNextAutoReceiptNo(student.id);
+    setReceiptNoInput(autoReceipt);
+    
     const phone = student.parentWhatsApp || student.whatsappNo || student.phoneNo || "";
     setWaRecipientPhone(phone);
 
@@ -371,31 +381,49 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
       return;
     }
     
-    const updatedRecord = await addFeePayment(selectedStudentForFees.id, amount);
-    if (updatedRecord) {
-      setFeeRecord(updatedRecord);
-      setPaymentAmount("");
-      toast.success("Payment recorded successfully");
-      
-      // Prepare receipt data
-      if (updatedRecord.payments && updatedRecord.payments.length > 0) {
-        const lastPayment = updatedRecord.payments[updatedRecord.payments.length - 1];
-        setReceiptData({
-          student: selectedStudentForFees,
-          payment: lastPayment,
-          record: updatedRecord
-        });
+    // Build receipt number
+    const receiptNo = receiptNoInput && receiptNoInput.trim() !== ""
+      ? receiptNoInput.trim()
+      : await getNextAutoReceiptNo(selectedStudentForFees.id);
 
-        // Update customizable WhatsApp message for this new payment
-        const totalPaid = updatedRecord.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
-        const remaining = updatedRecord.totalFees - totalPaid;
-        const msg = `Dear Parent, we have received a fee payment of ₹${amount} for ${selectedStudentForFees.name}.
+    // Create payment entry
+    const payment: FeePayment = {
+      id: Date.now().toString(),
+      date: new Date().toISOString(),
+      amount,
+      receiptNo
+    };
+
+    // Build updated record from current state (don't re-fetch from DB)
+    const updatedRecord: FeeRecord = {
+      ...feeRecord,
+      payments: [...(feeRecord.payments || []), payment]
+    };
+
+    // Save to DB
+    await updateFeeRecord(updatedRecord);
+    setFeeRecord(updatedRecord);
+    setPaymentAmount("");
+    toast.success("Payment recorded successfully");
+    
+    const nextReceipt = await getNextAutoReceiptNo(selectedStudentForFees.id);
+    setReceiptNoInput(nextReceipt);
+    
+    // Prepare receipt data
+    setReceiptData({
+      student: selectedStudentForFees,
+      payment: payment,
+      record: updatedRecord
+    });
+
+    // Update customizable WhatsApp message for this new payment
+    const totalPaid = updatedRecord.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+    const remaining = updatedRecord.totalFees - totalPaid;
+    const msg = `Dear Parent, we have received a fee payment of ₹${amount} for ${selectedStudentForFees.name}.
 Total Paid: ₹${totalPaid}
 Remaining Balance: ₹${remaining}
 Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
-        setWaCustomMessage(msg);
-      }
-    }
+    setWaCustomMessage(msg);
   };
 
   const handlePrint = () => {
@@ -405,8 +433,8 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
   };
 
   const handleDownloadLatestPDF = async () => {
-    if (!receiptData) return;
-    const filename = `Receipt_${receiptData.student.name.replace(/\s+/g, '_')}_RCPT-${receiptData.payment.id.slice(-6).toUpperCase()}.pdf`;
+    const rcptCode = receiptData.payment.receiptNo || ('RCPT-' + receiptData.payment.id.slice(-6).toUpperCase());
+    const filename = `Receipt_${receiptData.student.name.replace(/\s+/g, '_')}_${rcptCode}.pdf`;
     try {
       if (window.electronAPI && typeof window.electronAPI.downloadReceiptPDF === 'function') {
         const success = await window.electronAPI.downloadReceiptPDF(filename);
@@ -523,7 +551,8 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
       record: feeRecord
     });
     setTimeout(async () => {
-      const filename = `Receipt_${selectedStudentForFees.name.replace(/\s+/g, '_')}_RCPT-${payment.id.slice(-6).toUpperCase()}.pdf`;
+      const rcptCode = payment.receiptNo || ('RCPT-' + payment.id.slice(-6).toUpperCase());
+      const filename = `Receipt_${selectedStudentForFees.name.replace(/\s+/g, '_')}_${rcptCode}.pdf`;
       try {
         if (window.electronAPI && typeof window.electronAPI.downloadReceiptPDF === 'function') {
           const success = await window.electronAPI.downloadReceiptPDF(filename);
@@ -2245,7 +2274,100 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
                         }
                       </p>
                     </div>
+                    {/* Receipt Search */}
+                    <div className="flex items-center gap-2">
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          type="text"
+                          placeholder="Search by Receipt No..."
+                          className="pl-8 h-10 w-56 bg-accent/30 border-accent focus:bg-background transition-all rounded-xl text-sm"
+                          value={receiptSearchQuery}
+                          onChange={(e) => setReceiptSearchQuery(e.target.value)}
+                          onKeyDown={async (e) => {
+                            if (e.key === 'Enter' && receiptSearchQuery.trim()) {
+                              setIsSearchingReceipt(true);
+                              const results = await searchFeeByReceiptNo(receiptSearchQuery.trim());
+                              setReceiptSearchResults(results);
+                              setIsSearchingReceipt(false);
+                            }
+                          }}
+                        />
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-10 rounded-xl"
+                        disabled={isSearchingReceipt || !receiptSearchQuery.trim()}
+                        onClick={async () => {
+                          setIsSearchingReceipt(true);
+                          const results = await searchFeeByReceiptNo(receiptSearchQuery.trim());
+                          setReceiptSearchResults(results);
+                          setIsSearchingReceipt(false);
+                        }}
+                      >
+                        {isSearchingReceipt ? "Searching..." : "Search"}
+                      </Button>
+                      {receiptSearchResults.length > 0 && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-10 rounded-xl text-xs"
+                          onClick={() => {
+                            setReceiptSearchQuery("");
+                            setReceiptSearchResults([]);
+                          }}
+                        >
+                          Clear
+                        </Button>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Receipt Search Results */}
+                  {receiptSearchResults.length > 0 && (
+                    <div className="mb-6 bg-accent/30 border border-primary/20 rounded-2xl p-4 space-y-3">
+                      <h4 className="font-semibold text-sm text-primary">Receipt Search Results ({receiptSearchResults.length})</h4>
+                      {receiptSearchResults.map((result, idx) => {
+                        const matchedStudent = students.find(s => s.id === result.studentId);
+                        return (
+                          <div
+                            key={idx}
+                            className="flex items-center justify-between bg-card border rounded-xl p-3 hover:shadow-sm transition-shadow cursor-pointer"
+                            onClick={() => {
+                              // Navigate to this student's fee view
+                              const student = matchedStudent;
+                              if (student) {
+                                // Find which batch this student belongs to
+                                const studentBatchId = student.batchId || 'unassigned';
+                                setSelectedBatchForFees(studentBatchId);
+                                handleSelectStudentForFees(student);
+                                // Clear search
+                                setReceiptSearchQuery("");
+                                setReceiptSearchResults([]);
+                              }
+                            }}
+                          >
+                            <div className="flex-1">
+                              <p className="font-semibold text-sm">
+                                {matchedStudent?.name || result.studentId}
+                                <span className="ml-2 text-primary font-mono text-xs">Receipt: {result.matchedPayment.receiptNo}</span>
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                ₹{result.matchedPayment.amount.toLocaleString('en-IN')} • {new Date(result.matchedPayment.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                              </p>
+                            </div>
+                            <span className="text-xs font-bold text-primary">View →</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {receiptSearchQuery.trim() && receiptSearchResults.length === 0 && !isSearchingReceipt && (
+                    <div className="mb-6 bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 text-center">
+                      <p className="text-sm text-amber-700 dark:text-amber-300">No receipts found matching "{receiptSearchQuery}"</p>
+                    </div>
+                  )}
 
                   {selectedBatchForFees === null ? (
                     // Batch Grid Selection View (State A)
@@ -2563,8 +2685,8 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
                                       </div>
 
                                       
-                                      <div className="bg-accent/40 p-4 rounded-xl flex items-end gap-4 max-w-lg">
-                                        <div className="flex-1">
+                                      <div className="bg-accent/40 p-4 rounded-xl flex flex-wrap items-end gap-4 max-w-xl">
+                                        <div className="flex-1 min-w-[140px]">
                                           <Label htmlFor="paymentAmount">Add Payment Amount</Label>
                                           <div className="relative">
                                             <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -2578,6 +2700,16 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
                                             />
                                           </div>
                                         </div>
+                                        <div className="w-36">
+                                          <Label htmlFor="receiptNoInput">Receipt No.</Label>
+                                          <Input 
+                                            id="receiptNoInput" 
+                                            type="text" 
+                                            placeholder="e.g. 1, 1.2" 
+                                            value={receiptNoInput}
+                                            onChange={(e) => setReceiptNoInput(e.target.value)}
+                                          />
+                                        </div>
                                         <Button onClick={handleAddPayment}>Record Payment</Button>
                                       </div>
 
@@ -2589,7 +2721,9 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
                                             feeRecord.payments.map((p, index) => (
                                               <div key={p.id} className="flex justify-between items-center bg-card border p-3 rounded-xl text-sm hover:shadow-sm transition-shadow">
                                                 <div className="flex-1">
-                                                  <p className="font-semibold">Payment #{index + 1}</p>
+                                                  <p className="font-semibold">
+                                                    Payment #{index + 1} • <span className="text-primary font-mono">Receipt: {p.receiptNo || ('RCPT-' + p.id.slice(-6).toUpperCase())}</span>
+                                                  </p>
                                                   <p className="text-xs text-muted-foreground">{new Date(p.date).toLocaleString()}</p>
                                                 </div>
                                                 <div className="flex items-center gap-2">
@@ -5009,7 +5143,7 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
                 <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Receipt Info</h3>
                 <table className="text-sm ml-auto">
                   <tbody>
-                    <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Receipt No:</td><td className="font-mono font-semibold">RCPT-{receiptData.payment.id.slice(-6).toUpperCase()}</td></tr>
+                    <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Receipt No:</td><td className="font-mono font-semibold">{receiptData.payment.receiptNo || ('RCPT-' + receiptData.payment.id.slice(-6).toUpperCase())}</td></tr>
                     <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Date:</td><td>{new Date(receiptData.payment.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td></tr>
                     <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Time:</td><td>{new Date(receiptData.payment.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</td></tr>
                   </tbody>
