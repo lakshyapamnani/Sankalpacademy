@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,18 +17,24 @@ interface LoginProps {
 
 const Login = ({ defaultRole, forceRole }: LoginProps) => {
   const navigate = useNavigate();
-  const [selectedRole, setSelectedRole] = useState<UserRole | null>(defaultRole || null);
+  const [searchParams] = useSearchParams();
+  const roleParam = searchParams.get("role") as UserRole | null;
+  const validRoles = ["admin", "student", "staff", "teacher"];
+  const effectiveDefaultRole = defaultRole || (roleParam && validRoles.includes(roleParam) ? roleParam : undefined);
+  const isForced = forceRole || !!(roleParam && validRoles.includes(roleParam));
+
+  const [selectedRole, setSelectedRole] = useState<UserRole | null>(effectiveDefaultRole || null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   useEffect(() => {
     const existing = getCurrentUser();
     
-    if (defaultRole) {
-      setSelectedRole(defaultRole);
-      if (existing && existing.role !== defaultRole) {
+    if (effectiveDefaultRole) {
+      setSelectedRole(effectiveDefaultRole);
+      if (existing && existing.role !== effectiveDefaultRole) {
         clearCurrentUser();
-      } else if (existing && existing.role === defaultRole) {
+      } else if (existing && existing.role === effectiveDefaultRole) {
         navigate(`/${existing.role}-dashboard`);
       }
     } else if (existing) {
@@ -37,7 +43,7 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
     }
     // run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [defaultRole]);
+  }, [effectiveDefaultRole]);
 
   const roles = [
     {
@@ -142,7 +148,7 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
     <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-accent/5 flex flex-col p-4">
       <div className="flex-1 flex items-center justify-center">
         <Card className="w-full max-w-md p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        {!forceRole && (
+        {!isForced && (
           <button
             onClick={() => setSelectedRole(null)}
             className="text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors"
