@@ -25,6 +25,7 @@ export interface ElectronAPI {
   getFeeRecord: (studentId: string) => Promise<FeeRecord | null>;
   updateFeeRecord: (feeRecord: FeeRecord) => Promise<boolean>;
   searchFeeByReceipt: (receiptNo: string) => Promise<FeeSearchResult[] | null>;
+  downloadReceiptPDF: (filename: string) => Promise<boolean>;
 }
 
 declare global {

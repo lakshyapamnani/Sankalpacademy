@@ -89,22 +89,50 @@ const StaffDashboard = () => {
     const today = currentDateStr || getLocalDateString();
     const timestamp = new Date().toLocaleTimeString();
     
-    // For every student in the batch, if not in dailyAttendance (isAbsent), mark as present
     const batchStudents = students.filter(s => s.batchId === selectedAttendanceBatch);
+    
+    // Find all classes for this batch scheduled on today's date
+    const todayClasses = classes.filter(
+      c => c.batchId === selectedAttendanceBatch && c.date === today
+    );
     
     batchStudents.forEach((student) => {
       const isAbsent = dailyAttendance[student.id] || false;
-      markAttendance({
-        id: `${student.id}_${today}`,
-        studentId: student.id,
-        classId: 'daily',
-        date: today,
-        status: isAbsent ? 'absent' : 'present',
-        markedBy: `${currentUser?.name || 'Staff'} at ${timestamp}`
-      });
+      const status = isAbsent ? 'absent' as const : 'present' as const;
+      const markedBy = `${currentUser?.name || 'Staff'} at ${timestamp}`;
+      
+      if (todayClasses.length > 0) {
+        // Mark attendance for every lecture scheduled today
+        todayClasses.forEach(classItem => {
+          markAttendance({
+            id: `${student.id}_${classItem.id}_${today}`,
+            studentId: student.id,
+            classId: classItem.id,
+            date: today,
+            status,
+            markedBy,
+          });
+        });
+      } else {
+        // No classes scheduled today — create a general day record
+        markAttendance({
+          id: `${student.id}_day_${today}`,
+          studentId: student.id,
+          classId: `day_${selectedAttendanceBatch}_${today}`,
+          date: today,
+          status,
+          markedBy,
+        });
+      }
     });
     
-    toast.success(`Attendance for ${batches.find(b => b.id === selectedAttendanceBatch)?.name} saved!`);
+    const classCount = todayClasses.length;
+    const batchName = batches.find(b => b.id === selectedAttendanceBatch)?.name;
+    toast.success(
+      classCount > 0
+        ? `Attendance marked for ${classCount} lecture${classCount > 1 ? 's' : ''} in ${batchName}!`
+        : `Day attendance for ${batchName} saved!`
+    );
     setSelectedAttendanceBatch(null);
     setDailyAttendance({});
     loadData();

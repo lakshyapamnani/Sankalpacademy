@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar, BookOpen, Brain, FileText, Home, Bot, UserCircle, MessageSquare, CheckSquare } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Calendar, BookOpen, Brain, FileText, Home, Bot, UserCircle, MessageSquare, CheckSquare, LogOut } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { toast } from "sonner";
@@ -9,6 +11,7 @@ import {
   getClasses,
   getClassesByBatch,
   getCurrentUser,
+  clearCurrentUser,
   getNotesByBatch,
   getStudentAttendance,
   getStudents,
@@ -33,6 +36,14 @@ import {
 import { registerForPushNotifications } from "@/lib/messaging";
 import { sendPromptToGemini } from "@/lib/gemini";
 
+const normalizeStatus = (status?: string): string => status?.trim().toLowerCase() ?? "";
+
+const calculateAttendancePercentage = (records: AttendanceRecord[]): number => {
+  if (!records.length) return 0;
+  const presentCount = records.filter(record => normalizeStatus(record.status) === "present").length;
+  return Math.round((presentCount / records.length) * 100);
+};
+
 const tabOptions: { id: "home" | "attendance" | "notes" | "ai" | "tests" | "profile"; label: string; icon: LucideIcon }[] = [
   { id: "home", label: "Home", icon: Home },
   { id: "attendance", label: "Attendance", icon: Calendar },
@@ -43,6 +54,14 @@ const tabOptions: { id: "home" | "attendance" | "notes" | "ai" | "tests" | "prof
 ];
 
 const StudentDashboard = () => {
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    clearCurrentUser();
+    toast.success("Logged out successfully");
+    navigate("/student");
+  };
+
   const [notes, setNotes] = useState<Note[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [attendancePercentage, setAttendancePercentage] = useState(0);
@@ -68,7 +87,9 @@ const StudentDashboard = () => {
     
     attendance.forEach(record => {
       const classItem = classLookup[record.classId];
-      const subject = classItem?.subject || "General / Batch Class";
+      // Skip orphaned records whose class no longer exists
+      if (!classItem) return;
+      const subject = classItem.subject || "General";
       if (!map[subject]) {
         map[subject] = { total: 0, present: 0, absent: 0 };
       }
@@ -84,8 +105,10 @@ const StudentDashboard = () => {
   }, [attendance, classLookup]);
 
   const renderAttendanceSection = () => {
-    const totalClassesCount = attendance.length;
-    const presentClassesCount = attendance.filter(r => normalizeStatus(r.status) === 'present').length;
+    // Only count attendance for classes that still exist
+    const validAttendance = attendance.filter(r => classLookup[r.classId]);
+    const totalClassesCount = validAttendance.length;
+    const presentClassesCount = validAttendance.filter(r => normalizeStatus(r.status) === 'present').length;
     const absentClassesCount = totalClassesCount - presentClassesCount;
 
     return (
@@ -192,13 +215,8 @@ const StudentDashboard = () => {
     }
   };
 
-  const normalizeStatus = (status?: string): string => status?.trim().toLowerCase() ?? "";
-
-  const calculateAttendancePercentage = (records: AttendanceRecord[]): number => {
-    if (!records.length) return 0;
-    const presentCount = records.filter(record => normalizeStatus(record.status) === "present").length;
-    return Math.round((presentCount / records.length) * 100);
-  };
+  // normalizeStatus and calculateAttendancePercentage are defined above the component
+  // to avoid temporal dead zone issues in production builds
 
   const resetData = () => {
     setCurrentStudent(null);
@@ -239,7 +257,9 @@ const StudentDashboard = () => {
 
     const studentAttendance = getStudentAttendance(student.id);
     setAttendance(studentAttendance);
-    setAttendancePercentage(calculateAttendancePercentage(studentAttendance));
+    // Only count attendance for classes that still exist
+    const validAttendance = studentAttendance.filter(r => lookup[r.classId]);
+    setAttendancePercentage(calculateAttendancePercentage(validAttendance));
 
     setBatches(getBatches());
     
@@ -707,29 +727,16 @@ const StudentDashboard = () => {
 
       {/* Instagram-style Bottom Nav for Mobile */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-card border-t border-border/40 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)] z-40 supports-[backdrop-filter]:bg-card/80 backdrop-blur-lg">
-        <div className="flex items-center justify-between px-6 py-2">
-          {tabOptions.map((tab) => {
+        <div className="flex items-center justify-around px-3 py-2">
+          {tabOptions.filter(tab => tab.id !== 'ai').map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
-            
-            // Special styling for the center 'AI' button
-            if (tab.id === 'ai') {
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className="flex flex-col items-center justify-center -mt-6 rounded-full w-14 h-14 bg-gradient-to-tr from-primary to-accent shadow-lg text-primary-foreground active:scale-95 transition-transform"
-                >
-                  <Icon className="h-6 w-6" />
-                </button>
-              )
-            }
 
             return (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className="flex flex-col items-center gap-1 p-2 min-w-[50px] transition-colors"
+                className="flex flex-col items-center gap-1 p-2 min-w-[45px] transition-colors"
               >
                 <div className={`p-1 rounded-xl transition-all duration-300 ${isActive ? 'bg-primary/10' : ''}`}>
                   <Icon 
@@ -737,7 +744,6 @@ const StudentDashboard = () => {
                     className={`h-[22px] w-[22px] ${isActive ? "text-primary" : "text-muted-foreground"}`} 
                   />
                 </div>
-                {/* Optional minimalistic dot instead of labels for peak Instagram aesthetics, but keeping minimal text usually preferred for edtech. Let's strictly use dots to be more like instagram! */}
                 <div className={`h-1 w-1 rounded-full transition-all duration-300 mt-0.5 ${isActive ? "bg-primary" : "bg-transparent"}`} />
               </button>
             );

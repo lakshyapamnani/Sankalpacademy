@@ -28,7 +28,13 @@ const DashboardLayout = ({ children, role, title, sidebarItems = [], activeSideb
 
   const handleLogout = () => {
     clearCurrentUser();
-    navigate("/login");
+    if (role === "student") {
+      navigate("/student");
+    } else if (role === "teacher" || role === "staff") {
+      navigate("/teacher");
+    } else {
+      navigate("/login");
+    }
   };
 
   return (
@@ -57,8 +63,9 @@ const DashboardLayout = ({ children, role, title, sidebarItems = [], activeSideb
               <Bell className="h-5 w-5" />
             </Button>
             {role !== "student" && (
-              <Button variant="ghost" onClick={handleLogout} aria-label="Logout">
+              <Button variant="ghost" onClick={handleLogout} aria-label="Logout" className="flex items-center gap-1">
                 <LogOut className="h-4 w-4" />
+                <span className="hidden sm:inline text-xs font-semibold">Logout</span>
               </Button>
             )}
           </div>
