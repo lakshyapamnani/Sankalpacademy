@@ -284,16 +284,16 @@ for tdir in [target_dir_1, target_dir_2]:
       <div class="card student">
         <div>
           <div class="icon-wrapper">🎓</div>
-          <span class="platform-badge">Android Mobile / Tablet</span>
+          <span class="platform-badge">Android & iOS / Web</span>
           <h2>Sankalp Student</h2>
           <p class="desc">Student dashboard for lecture schedules, attendance tracking, notes access, AI learning assistance, and online tests.</p>
         </div>
         <div class="btn-group">
-          <a href="Sankalp_Student.apk" class="btn btn-primary" download>
-            <span>Download Student APK</span>
+          <a href="https://sankalpacademy.vercel.app/student" class="btn btn-primary" target="_blank">
+            <span>📱 iOS & Web Access (Student Portal)</span>
           </a>
-          <a href="Sankalp_Student.aab" class="btn btn-secondary" download>
-            <span>Download Bundle (.aab)</span>
+          <a href="Sankalp_Student.apk" class="btn btn-secondary" download>
+            <span>Download Android APK</span>
           </a>
         </div>
       </div>
@@ -302,16 +302,16 @@ for tdir in [target_dir_1, target_dir_2]:
       <div class="card teacher">
         <div>
           <div class="icon-wrapper">👨‍🏫</div>
-          <span class="platform-badge">Android Mobile / Tablet</span>
+          <span class="platform-badge">Android & iOS / Web</span>
           <h2>Sankalp Teachers</h2>
           <p class="desc">Faculty portal for marking student attendance, uploading notes, conducting lectures, and creating MCQ tests.</p>
         </div>
         <div class="btn-group">
-          <a href="Sankalp_Teachers.apk" class="btn btn-primary" download>
-            <span>Download Teachers APK</span>
+          <a href="https://sankalpacademy.vercel.app/teacher" class="btn btn-primary" target="_blank">
+            <span>📱 iOS & Web Access (Teachers Portal)</span>
           </a>
-          <a href="Sankalp_Teachers.aab" class="btn btn-secondary" download>
-            <span>Download Bundle (.aab)</span>
+          <a href="Sankalp_Teachers.apk" class="btn btn-secondary" download>
+            <span>Download Android APK</span>
           </a>
         </div>
       </div>

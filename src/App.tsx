@@ -46,12 +46,13 @@ const App = () => (
           </Routes>
         </HashRouter>
       ) : (
-        <HashRouter>
+        <BrowserRouter>
           <Routes>
             <Route path="/" element={<Navigate to="/student" replace />} />
             <Route path="/student" element={<Login defaultRole="student" forceRole={true} />} />
             <Route path="/admin" element={<Login defaultRole="admin" />} />
             <Route path="/teacher" element={<Login defaultRole="teacher" forceRole={true} />} />
+            <Route path="/staff" element={<Login defaultRole="staff" forceRole={true} />} />
             <Route path="/rctstaff" element={<Login defaultRole="staff" forceRole={true} />} />
             <Route path="/rctstudent" element={<Login defaultRole="student" forceRole={true} />} />
             <Route path="/sastaff" element={<Login defaultRole="staff" forceRole={true} />} />
@@ -65,7 +66,7 @@ const App = () => (
             <Route path="/teacher-dashboard" element={<TeacherDashboard />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
-        </HashRouter>
+        </BrowserRouter>
       )}
     </TooltipProvider>
   </QueryClientProvider>
