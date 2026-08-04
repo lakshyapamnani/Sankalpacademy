@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LogIn } from "lucide-react";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { toast } from "sonner";
 import {
@@ -17,6 +18,7 @@ import {
   deleteStudent,
   changeStudentPassword,
   subscribeToRealtimeUpdates,
+  setCurrentUser,
   Batch,
   Student,
   Class,
@@ -161,9 +163,25 @@ const BatchDetails = () => {
                     <div>
                       <h3 className="font-semibold">{student.name}</h3>
                       <p className="text-sm text-muted-foreground">{student.email}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Password: <code className="bg-muted px-1.5 py-0.5 rounded text-[11px] font-mono text-cyan-700 dark:text-cyan-400">{student.password || 'student123'}</code>
+                      </p>
                       <p className="text-xs text-muted-foreground mt-1">Attendance: <span className="font-medium">{total > 0 ? `${percent}%` : 'No records'}</span></p>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 items-center">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="gap-1.5 text-cyan-700 bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-950/40 dark:text-cyan-300"
+                        onClick={() => {
+                          setCurrentUser({ id: student.id, role: 'student', name: student.name });
+                          toast.success(`Logged in as ${student.name}`);
+                          navigate('/student-dashboard');
+                        }}
+                      >
+                        <LogIn className="h-3.5 w-3.5" />
+                        Log In
+                      </Button>
                       <Dialog
                         open={passwordDialogStudent === student.id}
                         onOpenChange={(open) => setPasswordDialogStudent(open ? student.id : null)}

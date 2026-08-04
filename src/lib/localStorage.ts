@@ -28,6 +28,21 @@ export interface Staff {
   firebaseUid?: string;
 }
 
+export interface Lead {
+  id: string;
+  name: string;
+  email: string;
+  phoneNo?: string;
+  whatsappNo?: string;
+  course?: string;
+  collegeName?: string;
+  parentWhatsApp?: string;
+  status: 'new' | 'contacted' | 'followup' | 'converted' | 'dropped';
+  notes?: string;
+  createdAt: string;
+  convertedStudentId?: string;
+}
+
 export interface Teacher {
   id: string;
   name: string;
@@ -224,6 +239,7 @@ const STORAGE_KEYS = {
   TEACHERS: 'smartclass_teachers',
   INSTITUTE_SETTINGS: 'smartclass_institute_settings',
   SUBJECTS: 'smartclass_subjects',
+  LEADS: 'smartclass_leads',
 };
 
 const DB_PATHS = {
@@ -243,6 +259,7 @@ const DB_PATHS = {
   TEACHERS: 'teachers',
   INSTITUTE_SETTINGS: 'instituteSettings',
   SUBJECTS: 'subjects',
+  LEADS: 'leads',
 };
 
 // Initialize default data
@@ -295,6 +312,10 @@ const initializeDefaultData = () => {
   if (!localStorage.getItem(STORAGE_KEYS.TEACHERS)) {
     localStorage.setItem(STORAGE_KEYS.TEACHERS, JSON.stringify([]));
   }
+
+  if (!localStorage.getItem(STORAGE_KEYS.LEADS)) {
+    localStorage.setItem(STORAGE_KEYS.LEADS, JSON.stringify([]));
+  }
 };
 
 initializeDefaultData();
@@ -332,7 +353,7 @@ const fetchCollectionFromRealtime = async <T>(collection: string): Promise<T[] |
 };
 
 const syncRealtimeData = async () => {
-  const [students, classes, notes, attendance, batches, fees, tests, testResults, staffList, subjects, teachersList] = await Promise.all([
+  const [students, classes, notes, attendance, batches, fees, tests, testResults, staffList, subjects, teachersList, leadsList] = await Promise.all([
     fetchCollectionFromRealtime<Student>(DB_PATHS.STUDENTS),
     fetchCollectionFromRealtime<Class>(DB_PATHS.CLASSES),
     fetchCollectionFromRealtime<Note>(DB_PATHS.NOTES),
@@ -344,6 +365,7 @@ const syncRealtimeData = async () => {
     fetchCollectionFromRealtime<Staff>(DB_PATHS.STAFF),
     fetchCollectionFromRealtime<Subject>(DB_PATHS.SUBJECTS),
     fetchCollectionFromRealtime<Teacher>(DB_PATHS.TEACHERS),
+    fetchCollectionFromRealtime<Lead>(DB_PATHS.LEADS),
   ]);
 
   if (students) {
@@ -378,6 +400,9 @@ const syncRealtimeData = async () => {
   }
   if (teachersList) {
     saveToStorage(STORAGE_KEYS.TEACHERS, teachersList);
+  }
+  if (leadsList) {
+    saveToStorage(STORAGE_KEYS.LEADS, leadsList);
   }
 };
 
@@ -494,6 +519,7 @@ export const subscribeToRealtimeUpdates = (onUpdate?: () => void): Unsubscribe =
     attachListener<Staff>(DB_PATHS.STAFF, STORAGE_KEYS.STAFF, onUpdate),
     attachListener<Subject>(DB_PATHS.SUBJECTS, STORAGE_KEYS.SUBJECTS, onUpdate),
     attachListener<Teacher>(DB_PATHS.TEACHERS, STORAGE_KEYS.TEACHERS, onUpdate),
+    attachListener<Lead>(DB_PATHS.LEADS, STORAGE_KEYS.LEADS, onUpdate),
   ];
 
   if (!isElectron) {
@@ -754,7 +780,14 @@ export const markAttendance = (record: AttendanceRecord): void => {
   void writeItemToRealtime(DB_PATHS.ATTENDANCE, record.id, record);
 };
 export const getStudentAttendance = (studentId: string): AttendanceRecord[] => {
-  return getAttendance().filter(a => a.studentId === studentId);
+  const records = getAttendance().filter(a => a.studentId === studentId);
+  // Deduplicate by classId + date – keep the latest record per unique pair
+  const map = new Map<string, AttendanceRecord>();
+  records.forEach(record => {
+    const key = `${record.classId}_${record.date}`;
+    map.set(key, record);
+  });
+  return Array.from(map.values());
 };
 export const getAttendanceByClass = (classId: string, date: string): AttendanceRecord[] => {
   return getAttendance().filter(a => a.classId === classId && a.date === date);
@@ -1093,3 +1126,36 @@ export const deleteSubject = async (subjectId: string): Promise<boolean> => {
     return false;
   }
 };
+
+// Leads helpers
+export const getLeads = (): Lead[] => getFromStorage<Lead>(STORAGE_KEYS.LEADS);
+
+export const addLead = (lead: Lead): void => {
+  const leads = getLeads();
+  saveToStorage(STORAGE_KEYS.LEADS, [...leads, lead]);
+  void writeItemToRealtime(DB_PATHS.LEADS, lead.id, lead);
+};
+
+export const updateLead = (leadId: string, updates: Partial<Lead>): void => {
+  const leads = getLeads();
+  const index = leads.findIndex(l => l.id === leadId);
+  if (index !== -1) {
+    const updatedLead = { ...leads[index], ...updates };
+    leads[index] = updatedLead;
+    saveToStorage(STORAGE_KEYS.LEADS, leads);
+    void writeItemToRealtime(DB_PATHS.LEADS, leadId, updatedLead);
+  }
+};
+
+export const deleteLead = (leadId: string): boolean => {
+  try {
+    const leads = getLeads();
+    saveToStorage(STORAGE_KEYS.LEADS, leads.filter(l => l.id !== leadId));
+    void removeItemFromRealtime(DB_PATHS.LEADS, leadId);
+    return true;
+  } catch (error) {
+    console.error('Error deleting lead:', error);
+    return false;
+  }
+};
+

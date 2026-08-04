@@ -1,8 +1,11 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
-import initSqlJs from 'sql.js';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const initSqlJs = require('sql.js');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -204,6 +207,31 @@ ipcMain.handle('search-fee-by-receipt', (_, receiptNo: string) => {
   } catch (err) {
     console.error('SQLite searchFeeByReceipt failed', err);
     return null;
+  }
+});
+
+ipcMain.handle('download-receipt-pdf', async (_, filename: string) => {
+  if (!win) return false;
+  try {
+    const { filePath, canceled } = await dialog.showSaveDialog(win, {
+      title: 'Save Fee Receipt PDF',
+      defaultPath: filename || 'Receipt.pdf',
+      filters: [{ name: 'PDF Files (*.pdf)', extensions: ['pdf'] }]
+    });
+
+    if (canceled || !filePath) return false;
+
+    const pdfBuffer = await win.webContents.printToPDF({
+      printBackground: true,
+      pageSize: 'A4',
+      margins: { marginType: 'none' }
+    });
+
+    fs.writeFileSync(filePath, pdfBuffer);
+    return true;
+  } catch (err) {
+    console.error('download-receipt-pdf failed:', err);
+    return false;
   }
 });
 

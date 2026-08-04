@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rct-erp-v1';
+const CACHE_NAME = 'rct-erp-v2';
 const OFFLINE_URL = '/index.html';
 
 const FILES_TO_CACHE = [
@@ -23,23 +23,24 @@ self.addEventListener('activate', event => {
     caches.keys().then(keys => Promise.all(keys.map(key => {
       if (key !== CACHE_NAME) return caches.delete(key);
       return Promise.resolve();
-    }))));
+    }))).then(() => self.clients.claim()));
 });
 
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
 
+  // Network First for HTML/JS/CSS documents to ensure latest build is always loaded
   event.respondWith(
-    caches.match(event.request).then(response => {
-      if (response) return response;
-      return fetch(event.request).then(networkResponse => {
-        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
-          return networkResponse;
+    fetch(event.request)
+      .then(networkResponse => {
+        if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+          const respClone = networkResponse.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, respClone));
         }
-        const respClone = networkResponse.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, respClone));
         return networkResponse;
-      }).catch(() => caches.match(OFFLINE_URL));
-    })
+      })
+      .catch(() => {
+        return caches.match(event.request).then(cached => cached || caches.match(OFFLINE_URL));
+      })
   );
 });

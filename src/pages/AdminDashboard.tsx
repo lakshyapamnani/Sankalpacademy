@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit, ArrowLeft, Search, Download, MessageSquare, Eye, TrendingUp, FileText, Trash2, GraduationCap } from "lucide-react";
+import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit, ArrowLeft, Search, Download, MessageSquare, Eye, TrendingUp, FileText, Trash2, GraduationCap, LogIn, Key } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -67,6 +67,12 @@ import {
   InstituteSettings,
   getInstituteSettings,
   Note,
+  Lead,
+  getLeads,
+  addLead,
+  updateLead,
+  deleteLead,
+  setCurrentUser,
 } from "@/lib/localStorage";
 
 type StudentTestResult = TestResult & { test: Test };
@@ -153,7 +159,7 @@ const AdminDashboard = () => {
     return `${year}-${month}-${day}`;
   };
 
-  const [activeTab, setActiveTab] = useState<'batches' | 'students' | 'staff' | 'teachers' | 'classes' | 'fees' | 'tests' | 'attendance' | 'birthdays' | 'notes'>('students');
+  const [activeTab, setActiveTab] = useState<'batches' | 'students' | 'leads' | 'staff' | 'teachers' | 'classes' | 'fees' | 'tests' | 'attendance' | 'birthdays' | 'notes'>('students');
   const [currentDateStr, setCurrentDateStr] = useState<string>('');
 
   useEffect(() => {
@@ -171,6 +177,11 @@ const AdminDashboard = () => {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [teachers, setTeachersState] = useState<Teacher[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [leadSearch, setLeadSearch] = useState<string>('');
+  const [leadStatusFilter, setLeadStatusFilter] = useState<string>('all');
+  const [editingLead, setEditingLead] = useState<Lead | null>(null);
+  const [convertingLead, setConvertingLead] = useState<Lead | null>(null);
 
   // Notes state
   const [editingNote, setEditingNote] = useState<Note | null>(null);
@@ -308,6 +319,7 @@ const AdminDashboard = () => {
     setSubjects(getSubjects());
     setNotes(getNotes());
     setTeachersState(getTeachers());
+    setLeads(getLeads());
 
     if (selectedStudentForFees) {
       // Reload fee record if editing
@@ -433,17 +445,18 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
   };
 
   const handleDownloadLatestPDF = async () => {
+    if (!receiptData) return;
     const rcptCode = receiptData.payment.receiptNo || ('RCPT-' + receiptData.payment.id.slice(-6).toUpperCase());
     const filename = `Receipt_${receiptData.student.name.replace(/\s+/g, '_')}_${rcptCode}.pdf`;
     try {
       if (window.electronAPI && typeof window.electronAPI.downloadReceiptPDF === 'function') {
         const success = await window.electronAPI.downloadReceiptPDF(filename);
         if (success) {
-          toast.success("Receipt PDF downloaded successfully!");
+          toast.success("Receipt PDF downloaded & saved successfully!");
+          return;
         }
-      } else {
-        window.print();
       }
+      window.print();
     } catch (err) {
       console.error("Failed to download PDF:", err);
       toast.error("Failed to download PDF");
@@ -557,11 +570,11 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
         if (window.electronAPI && typeof window.electronAPI.downloadReceiptPDF === 'function') {
           const success = await window.electronAPI.downloadReceiptPDF(filename);
           if (success) {
-            toast.success("Receipt PDF downloaded successfully!");
+            toast.success("Receipt PDF downloaded & saved successfully!");
+            return;
           }
-        } else {
-          window.print();
         }
+        window.print();
       } catch (err) {
         console.error("Failed to download PDF:", err);
         toast.error("Failed to download PDF");
@@ -1376,8 +1389,105 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
     }
   };
 
+  const handleAddLead = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const lead: Lead = {
+      id: Date.now().toString(),
+      name: formData.get("name") as string,
+      email: formData.get("email") as string,
+      phoneNo: (formData.get("phoneNo") as string) || undefined,
+      whatsappNo: (formData.get("whatsappNo") as string) || undefined,
+      course: (formData.get("course") as string) || undefined,
+      collegeName: (formData.get("collegeName") as string) || undefined,
+      parentWhatsApp: (formData.get("parentWhatsApp") as string) || undefined,
+      status: (formData.get("status") as Lead['status']) || 'new',
+      notes: (formData.get("notes") as string) || undefined,
+      createdAt: new Date().toISOString(),
+    };
+    addLead(lead);
+    toast.success("Enquiry / Lead added successfully");
+    setOpenDialog(null);
+    loadData();
+  };
+
+  const handleEditLead = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingLead) return;
+    const formData = new FormData(e.currentTarget);
+    const updates: Partial<Lead> = {
+      name: formData.get("name") as string,
+      email: formData.get("email") as string,
+      phoneNo: (formData.get("phoneNo") as string) || undefined,
+      whatsappNo: (formData.get("whatsappNo") as string) || undefined,
+      course: (formData.get("course") as string) || undefined,
+      collegeName: (formData.get("collegeName") as string) || undefined,
+      parentWhatsApp: (formData.get("parentWhatsApp") as string) || undefined,
+      status: (formData.get("status") as Lead['status']) || editingLead.status,
+      notes: (formData.get("notes") as string) || undefined,
+    };
+    updateLead(editingLead.id, updates);
+    toast.success("Lead updated successfully");
+    setEditingLead(null);
+    loadData();
+  };
+
+  const handleDeleteLead = (leadId: string) => {
+    if (deleteLead(leadId)) {
+      toast.success("Lead deleted successfully");
+      loadData();
+    } else {
+      toast.error("Failed to delete lead");
+    }
+  };
+
+  const handleConvertLeadToStudent = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!convertingLead) return;
+    const formData = new FormData(e.currentTarget);
+    const password = formData.get("password") as string;
+    const batchId = formData.get("batchId") as string;
+
+    if (!password || !batchId) {
+      toast.error("Please select a batch and set a password");
+      return;
+    }
+
+    const student: Student = {
+      id: Date.now().toString(),
+      name: (formData.get("name") as string) || convertingLead.name,
+      email: (formData.get("email") as string) || convertingLead.email,
+      batchId: batchId,
+      password: password,
+      collegeName: (formData.get("collegeName") as string) || convertingLead.collegeName,
+      phoneNo: (formData.get("phoneNo") as string) || convertingLead.phoneNo,
+      whatsappNo: (formData.get("whatsappNo") as string) || convertingLead.whatsappNo,
+      studentClass: (formData.get("course") as string) || convertingLead.course,
+      parentWhatsApp: (formData.get("parentWhatsApp") as string) || convertingLead.parentWhatsApp,
+    };
+
+    try {
+      await addStudent(student);
+      updateLead(convertingLead.id, {
+        status: 'converted',
+        convertedStudentId: student.id,
+      });
+
+      toast.success(`Converted ${student.name} to Student! Password: ${password}`, {
+        duration: 8000,
+      });
+
+      setConvertingLead(null);
+      loadData();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to convert lead to student";
+      toast.error(formatFirebaseError(message));
+    }
+  };
+
   const sidebarItems: SidebarItem[] = [
     { id: 'students', label: 'Students', icon: Users, action: () => setActiveTab('students') },
+    { id: 'leads', label: 'Leads', icon: UserPlus, action: () => setActiveTab('leads') },
     { id: 'staff', label: 'Staff', icon: ClipboardCheck, action: () => setActiveTab('staff') },
     { id: 'teachers', label: 'Teachers', icon: GraduationCap, action: () => setActiveTab('teachers') },
     { id: 'classes', label: 'Classes', icon: Calendar, action: () => setActiveTab('classes') },
@@ -1569,6 +1679,12 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
                       const present = attendance.filter(a => String(a.status).toLowerCase() === 'present').length;
                       const percent = total > 0 ? Math.round((present / total) * 100) : 0;
 
+                      const handleLoginAsStudent = () => {
+                        setCurrentUser({ id: student.id, role: 'student', name: student.name });
+                        toast.success(`Logged in as ${student.name}`);
+                        navigate('/student-dashboard');
+                      };
+
                       return (
                         <div key={student.id} className="p-4 rounded-lg border bg-card text-sm flex flex-col justify-between hover:shadow-md transition-shadow">
                           <div>
@@ -1580,6 +1696,13 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
                                {student.whatsappNo && <p className="text-xs text-emerald-600">💬 {student.whatsappNo}</p>}
                               </div>
                               <div className="flex gap-1 items-center">
+                                <button
+                                  onClick={handleLoginAsStudent}
+                                  className="p-2 text-cyan-600 hover:bg-cyan-50 dark:hover:bg-cyan-950/40 rounded-md transition-colors"
+                                  title="Log In as Student"
+                                >
+                                  <LogIn className="h-4 w-4" />
+                                </button>
                                 <button onClick={() => { setSelectedStudentForReport(student); setReportSubjectFilter('all'); }} className="p-2 text-violet-600 hover:bg-violet-50 rounded-md transition-colors" title="View Report">
                                   <Eye className="h-4 w-4" />
                                 </button>
@@ -1604,20 +1727,32 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
                                 <p><span className="font-medium">Class:</span> {student.studentClass}</p>
                               )}
                               <p>
-                                <span className="font-medium">Batch:</span> {batch?.name || 'Unknown'}
+                                <span className="font-medium">Batch:</span> {batch?.name || 'Unassigned'}
                               </p>
-                              <p className="col-span-2 mt-1">
+                              <p className="col-span-2">
+                                <span className="font-medium">Password:</span> <code className="bg-muted px-1.5 py-0.5 rounded text-[11px] font-mono text-cyan-700 dark:text-cyan-400">{student.password || 'student123'}</code>
+                              </p>
+                              <p className="col-span-2 mt-0.5">
                                 <span className="font-medium">Attendance:</span> {percent}% ({present}/{total})
                               </p>
                             </div>
                           </div>
-                          <button 
-                            onClick={() => { setSelectedStudentForReport(student); setReportSubjectFilter('all'); }}
-                            className="mt-3 w-full py-2 text-xs font-bold rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 transition-colors flex items-center justify-center gap-1.5"
-                          >
-                            <FileText className="h-3.5 w-3.5" />
-                            View Report Card
-                          </button>
+                          <div className="mt-3 flex gap-2">
+                            <button 
+                              onClick={handleLoginAsStudent}
+                              className="flex-1 py-2 text-xs font-bold rounded-lg bg-cyan-50 text-cyan-700 hover:bg-cyan-100 dark:bg-cyan-950/40 dark:text-cyan-300 dark:hover:bg-cyan-900/60 transition-colors flex items-center justify-center gap-1.5"
+                            >
+                              <LogIn className="h-3.5 w-3.5" />
+                              Log In as Student
+                            </button>
+                            <button 
+                              onClick={() => { setSelectedStudentForReport(student); setReportSubjectFilter('all'); }}
+                              className="flex-1 py-2 text-xs font-bold rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-900/60 transition-colors flex items-center justify-center gap-1.5"
+                            >
+                              <FileText className="h-3.5 w-3.5" />
+                              Report Card
+                            </button>
+                          </div>
                         </div>
                       );
                     });
@@ -2257,6 +2392,379 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
 
                 </DialogContent>
               </Dialog>
+              </div>
+            )}
+
+            {activeTab === 'leads' && (
+              <div className="space-y-6">
+                {/* Header Card & Stats */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <Card className="p-4 flex items-center justify-between border-l-4 border-l-blue-500 bg-blue-50/20">
+                    <div>
+                      <p className="text-xs font-bold text-muted-foreground uppercase">Total Enquiries</p>
+                      <p className="text-2xl font-black text-blue-700">{leads.length}</p>
+                    </div>
+                    <Users className="h-8 w-8 text-blue-500 opacity-80" />
+                  </Card>
+                  <Card className="p-4 flex items-center justify-between border-l-4 border-l-sky-500 bg-sky-50/20">
+                    <div>
+                      <p className="text-xs font-bold text-muted-foreground uppercase">New Leads</p>
+                      <p className="text-2xl font-black text-sky-700">{leads.filter(l => l.status === 'new').length}</p>
+                    </div>
+                    <UserPlus className="h-8 w-8 text-sky-500 opacity-80" />
+                  </Card>
+                  <Card className="p-4 flex items-center justify-between border-l-4 border-l-amber-500 bg-amber-50/20">
+                    <div>
+                      <p className="text-xs font-bold text-muted-foreground uppercase">In Follow-Up</p>
+                      <p className="text-2xl font-black text-amber-700">{leads.filter(l => l.status === 'contacted' || l.status === 'followup').length}</p>
+                    </div>
+                    <MessageSquare className="h-8 w-8 text-amber-500 opacity-80" />
+                  </Card>
+                  <Card className="p-4 flex items-center justify-between border-l-4 border-l-emerald-500 bg-emerald-50/20">
+                    <div>
+                      <p className="text-xs font-bold text-muted-foreground uppercase">Converted Students</p>
+                      <p className="text-2xl font-black text-emerald-700">{leads.filter(l => l.status === 'converted').length}</p>
+                    </div>
+                    <GraduationCap className="h-8 w-8 text-emerald-500 opacity-80" />
+                  </Card>
+                </div>
+
+                <Card className="p-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+                    <div>
+                      <h3 className="text-xl font-semibold">Leads & Enquired Students</h3>
+                      <p className="text-sm text-muted-foreground">Manage lead inquiries and convert prospective students into enrolled students</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Input
+                        placeholder="Search lead by name, phone, course..."
+                        className="max-w-xs"
+                        value={leadSearch}
+                        onChange={(e) => setLeadSearch(e.target.value)}
+                      />
+                      <Select value={leadStatusFilter} onValueChange={setLeadStatusFilter}>
+                        <SelectTrigger className="w-[150px]">
+                          <SelectValue placeholder="All Statuses" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Statuses</SelectItem>
+                          <SelectItem value="new">New</SelectItem>
+                          <SelectItem value="contacted">Contacted</SelectItem>
+                          <SelectItem value="followup">Follow-up</SelectItem>
+                          <SelectItem value="converted">Converted</SelectItem>
+                          <SelectItem value="dropped">Dropped</SelectItem>
+                        </SelectContent>
+                      </Select>
+
+                      <Dialog open={openDialog === "lead"} onOpenChange={(open) => setOpenDialog(open ? "lead" : null)}>
+                        <DialogTrigger asChild>
+                          <Button className="flex items-center gap-2">
+                            <Plus className="h-4 w-4" />
+                            <span>Add Enquiry Lead</span>
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-h-[90vh] overflow-y-auto">
+                          <DialogHeader>
+                            <DialogTitle>Add New Lead Enquiry</DialogTitle>
+                          </DialogHeader>
+                          <form onSubmit={handleAddLead} className="space-y-4">
+                            <div>
+                              <Label htmlFor="lead-name">Student Full Name</Label>
+                              <Input id="lead-name" name="name" required placeholder="e.g. Rahul Sharma" />
+                            </div>
+                            <div>
+                              <Label htmlFor="lead-email">Email Address</Label>
+                              <Input id="lead-email" name="email" type="email" required placeholder="e.g. rahul@example.com" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <Label htmlFor="lead-phone">Student Phone</Label>
+                                <Input id="lead-phone" name="phoneNo" placeholder="Phone number" />
+                              </div>
+                              <div>
+                                <Label htmlFor="lead-whatsapp">WhatsApp Number</Label>
+                                <Input id="lead-whatsapp" name="whatsappNo" placeholder="WhatsApp number" />
+                              </div>
+                            </div>
+                            <div>
+                              <Label htmlFor="lead-course">Course / Class Interested In</Label>
+                              <Input id="lead-course" name="course" placeholder="e.g. 12th Physics & Maths / NEET batch" />
+                            </div>
+                            <div>
+                              <Label htmlFor="lead-college">College / School Name</Label>
+                              <Input id="lead-college" name="collegeName" placeholder="e.g. St. Xavier's College" />
+                            </div>
+                            <div>
+                              <Label htmlFor="lead-parent">Parent Phone / WhatsApp</Label>
+                              <Input id="lead-parent" name="parentWhatsApp" placeholder="Parent contact number" />
+                            </div>
+                            <div>
+                              <Label htmlFor="lead-status">Initial Status</Label>
+                              <Select name="status" defaultValue="new">
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="new">New Enquiry</SelectItem>
+                                  <SelectItem value="contacted">Contacted</SelectItem>
+                                  <SelectItem value="followup">Follow-Up Required</SelectItem>
+                                  <SelectItem value="converted">Converted</SelectItem>
+                                  <SelectItem value="dropped">Dropped</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div>
+                              <Label htmlFor="lead-notes">Notes / Remarks</Label>
+                              <Input id="lead-notes" name="notes" placeholder="e.g. Interested in morning batch, called on Monday" />
+                            </div>
+                            <Button type="submit" className="w-full">Save Lead Enquiry</Button>
+                          </form>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+                  </div>
+
+                  {/* Leads List Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {(() => {
+                      const filtered = leads.filter(l => {
+                        const sLower = leadSearch.toLowerCase();
+                        const matchesSearch =
+                          (l.name || '').toLowerCase().includes(sLower) ||
+                          (l.email || '').toLowerCase().includes(sLower) ||
+                          (l.phoneNo && l.phoneNo.includes(leadSearch)) ||
+                          (l.course && l.course.toLowerCase().includes(sLower)) ||
+                          (l.collegeName && l.collegeName.toLowerCase().includes(sLower));
+
+                        const matchesStatus = leadStatusFilter === 'all' || l.status === leadStatusFilter;
+                        return matchesSearch && matchesStatus;
+                      });
+
+                      if (filtered.length === 0) {
+                        return (
+                          <div className="col-span-full py-12 text-center text-muted-foreground bg-accent/50 rounded-lg border-2 border-dashed">
+                            {leads.length === 0
+                              ? "No lead enquiries found. Click 'Add Enquiry Lead' to record a new student enquiry."
+                              : `No leads match search query "${leadSearch}".`}
+                          </div>
+                        );
+                      }
+
+                      return filtered.map(lead => {
+                        const statusColors: Record<Lead['status'], string> = {
+                          new: 'bg-blue-100 text-blue-700 border-blue-200',
+                          contacted: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+                          followup: 'bg-amber-100 text-amber-700 border-amber-200',
+                          converted: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+                          dropped: 'bg-red-100 text-red-700 border-red-200',
+                        };
+
+                        const statusLabels: Record<Lead['status'], string> = {
+                          new: 'New Enquiry',
+                          contacted: 'Contacted',
+                          followup: 'Follow-Up',
+                          converted: 'Converted ✓',
+                          dropped: 'Dropped',
+                        };
+
+                        return (
+                          <div key={lead.id} className="p-4 rounded-xl border bg-card text-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+                            <div>
+                              <div className="flex justify-between items-start mb-2">
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <p className="font-bold text-base">{lead.name}</p>
+                                    <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${statusColors[lead.status]}`}>
+                                      {statusLabels[lead.status]}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground">{lead.email}</p>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <button onClick={() => setEditingLead(lead)} className="p-1.5 text-primary hover:bg-primary/10 rounded-md transition-colors" title="Edit Lead">
+                                    <Edit className="h-4 w-4" />
+                                  </button>
+                                  <DeleteDialog
+                                    title="Delete Lead Enquiry"
+                                    description={`Are you sure you want to delete lead enquiry for ${lead.name}?`}
+                                    onDelete={() => handleDeleteLead(lead.id)}
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="space-y-1 my-3 text-xs">
+                                {lead.course && <p><span className="font-semibold">Interested Course:</span> {lead.course}</p>}
+                                {lead.collegeName && <p><span className="font-semibold">College/School:</span> {lead.collegeName}</p>}
+                                {lead.phoneNo && <p><span className="font-semibold">Phone:</span> 📞 {lead.phoneNo}</p>}
+                                {lead.parentWhatsApp && <p><span className="font-semibold">Parent Contact:</span> 💬 {lead.parentWhatsApp}</p>}
+                                {lead.notes && <p className="text-muted-foreground italic bg-muted/30 p-2 rounded-md border mt-2">"{lead.notes}"</p>}
+                              </div>
+                            </div>
+
+                            <div className="pt-3 border-t flex items-center justify-between mt-2">
+                              <span className="text-[10px] text-muted-foreground">
+                                Enquired: {new Date(lead.createdAt).toLocaleDateString()}
+                              </span>
+                              {lead.status === 'converted' ? (
+                                <span className="text-xs font-black text-emerald-600 flex items-center gap-1">
+                                  Student Created ✓
+                                </span>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-8 text-xs gap-1 rounded-lg"
+                                  onClick={() => setConvertingLead(lead)}
+                                >
+                                  <UserPlus className="h-3.5 w-3.5" />
+                                  Convert to Student
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </Card>
+
+                {/* Edit Lead Dialog */}
+                <Dialog open={!!editingLead} onOpenChange={(open) => !open && setEditingLead(null)}>
+                  <DialogContent className="max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                      <DialogTitle>Edit Lead Enquiry</DialogTitle>
+                    </DialogHeader>
+                    {editingLead && (
+                      <form onSubmit={handleEditLead} className="space-y-4">
+                        <div>
+                          <Label htmlFor="edit-lead-name">Student Full Name</Label>
+                          <Input id="edit-lead-name" name="name" defaultValue={editingLead.name} required />
+                        </div>
+                        <div>
+                          <Label htmlFor="edit-lead-email">Email Address</Label>
+                          <Input id="edit-lead-email" name="email" type="email" defaultValue={editingLead.email} required />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label htmlFor="edit-lead-phone">Student Phone</Label>
+                            <Input id="edit-lead-phone" name="phoneNo" defaultValue={editingLead.phoneNo} />
+                          </div>
+                          <div>
+                            <Label htmlFor="edit-lead-whatsapp">WhatsApp Number</Label>
+                            <Input id="edit-lead-whatsapp" name="whatsappNo" defaultValue={editingLead.whatsappNo} />
+                          </div>
+                        </div>
+                        <div>
+                          <Label htmlFor="edit-lead-course">Course / Class Interested In</Label>
+                          <Input id="edit-lead-course" name="course" defaultValue={editingLead.course} />
+                        </div>
+                        <div>
+                          <Label htmlFor="edit-lead-college">College / School Name</Label>
+                          <Input id="edit-lead-college" name="collegeName" defaultValue={editingLead.collegeName} />
+                        </div>
+                        <div>
+                          <Label htmlFor="edit-lead-parent">Parent Phone / WhatsApp</Label>
+                          <Input id="edit-lead-parent" name="parentWhatsApp" defaultValue={editingLead.parentWhatsApp} />
+                        </div>
+                        <div>
+                          <Label htmlFor="edit-lead-status">Lead Status</Label>
+                          <Select name="status" defaultValue={editingLead.status}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="new">New Enquiry</SelectItem>
+                              <SelectItem value="contacted">Contacted</SelectItem>
+                              <SelectItem value="followup">Follow-Up Required</SelectItem>
+                              <SelectItem value="converted">Converted</SelectItem>
+                              <SelectItem value="dropped">Dropped</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label htmlFor="edit-lead-notes">Notes / Remarks</Label>
+                          <Input id="edit-lead-notes" name="notes" defaultValue={editingLead.notes} />
+                        </div>
+                        <Button type="submit" className="w-full">Save Changes</Button>
+                      </form>
+                    )}
+                  </DialogContent>
+                </Dialog>
+
+                {/* Convert Lead to Student Modal */}
+                <Dialog open={!!convertingLead} onOpenChange={(open) => !open && setConvertingLead(null)}>
+                  <DialogContent className="max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2 text-emerald-700">
+                        <GraduationCap className="h-6 w-6" />
+                        Convert Lead into Enrolled Student
+                      </DialogTitle>
+                    </DialogHeader>
+                    {convertingLead && (
+                      <form onSubmit={handleConvertLeadToStudent} className="space-y-4">
+                        <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-lg text-xs text-emerald-800">
+                          This will create a new Student account for <strong>{convertingLead.name}</strong>, assign a batch, set a password for student portal login, and update lead status to Converted.
+                        </div>
+
+                        <div>
+                          <Label htmlFor="convert-name">Full Name</Label>
+                          <Input id="convert-name" name="name" defaultValue={convertingLead.name} required />
+                        </div>
+                        <div>
+                          <Label htmlFor="convert-email">Email (Username for login)</Label>
+                          <Input id="convert-email" name="email" type="email" defaultValue={convertingLead.email} required />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label htmlFor="convert-phoneNo">Student Phone</Label>
+                            <Input id="convert-phoneNo" name="phoneNo" defaultValue={convertingLead.phoneNo} />
+                          </div>
+                          <div>
+                            <Label htmlFor="convert-parentWhatsApp">Parent Contact Number</Label>
+                            <Input id="convert-parentWhatsApp" name="parentWhatsApp" defaultValue={convertingLead.parentWhatsApp} />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label htmlFor="convert-collegeName">College / School Name</Label>
+                            <Input id="convert-collegeName" name="collegeName" defaultValue={convertingLead.collegeName} />
+                          </div>
+                          <div>
+                            <Label htmlFor="convert-course">Course / Class</Label>
+                            <Input id="convert-course" name="course" defaultValue={convertingLead.course} />
+                          </div>
+                        </div>
+
+                        <div>
+                          <Label htmlFor="convert-batchId" className="font-bold text-primary">Assign Batch *</Label>
+                          <Select name="batchId" required>
+                            <SelectTrigger className="border-primary/40">
+                              <SelectValue placeholder="Select batch for student..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {batches.map((batch) => (
+                                <SelectItem key={batch.id} value={batch.id}>
+                                  {batch.name} ({batch.year})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div>
+                          <Label htmlFor="convert-password" className="font-bold text-primary">Set Student Login Password *</Label>
+                          <Input id="convert-password" name="password" defaultValue="student123" required placeholder="Set password e.g. student123" />
+                          <p className="text-[11px] text-muted-foreground mt-1">This password will be used by the student to log into the Student Portal.</p>
+                        </div>
+
+                        <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-11 text-base">
+                          Confirm & Convert to Student
+                        </Button>
+                      </form>
+                    )}
+                  </DialogContent>
+                </Dialog>
               </div>
             )}
 
