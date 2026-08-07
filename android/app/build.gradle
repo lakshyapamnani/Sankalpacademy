@@ -1,20 +1,20 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "com.dronatech.student"
+    namespace = "com.sankalpacademy.student"
     compileSdk = rootProject.ext.compileSdkVersion
 
     signingConfigs {
         release {
             storeFile file('release.keystore')
-            storePassword 'dronapassword123'
-            keyAlias 'drona-key-alias'
-            keyPassword 'dronapassword123'
+            storePassword 'sankalp@academy'
+            keyAlias 'sankalp-key-alias'
+            keyPassword 'sankalp@academy'
         }
     }
 
     defaultConfig {
-        applicationId "com.dronatech.student"
+        applicationId "com.sankalpacademy.student"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

@@ -4,13 +4,14 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit, ArrowLeft, Search, Download, MessageSquare, Eye, TrendingUp, FileText, Trash2, GraduationCap, LogIn, Key } from "lucide-react";
+import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit, ArrowLeft, Search, Download, MessageSquare, Eye, TrendingUp, FileText, Trash2, GraduationCap, LogIn, Key, Upload, FileSpreadsheet, AlertCircle, CheckCircle2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import DashboardLayout, { SidebarItem } from "@/components/DashboardLayout";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
+import { parseStudentCSV, downloadStudentCSVTemplate, ParsedCSVStudent } from "@/lib/csvUtils";
 import {
   getStudents,
   getClasses,
@@ -277,6 +278,12 @@ const AdminDashboard = () => {
   const [studentSearch, setStudentSearch] = useState('');
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [editingTest, setEditingTest] = useState<Test | null>(null);
+
+  // CSV Import State
+  const [addStudentTab, setAddStudentTab] = useState<'single' | 'csv'>('single');
+  const [csvParsedStudents, setCsvParsedStudents] = useState<ParsedCSVStudent[]>([]);
+  const [csvFileName, setCsvFileName] = useState<string>('');
+  const [isImportingCSV, setIsImportingCSV] = useState<boolean>(false);
   const [editTestSubject, setEditTestSubject] = useState<string>('');
   const [testSearch, setTestSearch] = useState('');
 
@@ -898,6 +905,113 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to add student";
       toast.error(formatFirebaseError(message));
+    }
+  };
+
+  const handleCSVFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCsvFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const text = evt.target?.result as string;
+      if (text) {
+        const parsed = parseStudentCSV(text);
+        setCsvParsedStudents(parsed);
+        if (parsed.length === 0) {
+          toast.error("No student records found in CSV file");
+        } else {
+          toast.success(`Parsed ${parsed.length} student records from CSV`);
+        }
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleBulkImportCSV = async () => {
+    const validStudents = csvParsedStudents.filter(s => s.isValid);
+    if (validStudents.length === 0) {
+      toast.error("No valid student records to import");
+      return;
+    }
+
+    setIsImportingCSV(true);
+    try {
+      // Collect unique batch names from CSV
+      const uniqueBatchNames = Array.from(new Set(validStudents.map(s => s.batchName.trim())));
+      const currentBatches = getBatches();
+      const batchNameToIdMap: Record<string, string> = {};
+      let batchesCreatedCount = 0;
+
+      // Map existing batches or create missing ones
+      for (const batchName of uniqueBatchNames) {
+        const existing = currentBatches.find(
+          b => b.name.toLowerCase().trim() === batchName.toLowerCase().trim() || b.id === batchName
+        );
+        if (existing) {
+          batchNameToIdMap[batchName] = existing.id;
+        } else {
+          // Auto-create batch
+          const newBatchId = `batch_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+          const newBatch: Batch = {
+            id: newBatchId,
+            name: batchName,
+            year: new Date().getFullYear().toString(),
+          };
+          addBatch(newBatch);
+          batchNameToIdMap[batchName] = newBatchId;
+          batchesCreatedCount++;
+        }
+      }
+
+      // Process students sequentially so firebase auth calls don't get throttled
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const st of validStudents) {
+        const targetBatchId = batchNameToIdMap[st.batchName];
+        const student: Student = {
+          id: `std_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          name: st.name,
+          email: st.email,
+          batchId: targetBatchId,
+          password: st.password || 'student123',
+          collegeName: st.collegeName,
+          phoneNo: st.phoneNo,
+          whatsappNo: st.whatsappNo,
+          studentClass: st.studentClass,
+          parentWhatsApp: st.parentWhatsApp,
+          dob: st.dob,
+        };
+
+        try {
+          await addStudent(student);
+          successCount++;
+        } catch (err) {
+          console.error(`Failed to import student ${st.email}:`, err);
+          failCount++;
+        }
+      }
+
+      let summary = `Imported ${successCount} student${successCount !== 1 ? 's' : ''} successfully!`;
+      if (batchesCreatedCount > 0) {
+        summary += ` Created ${batchesCreatedCount} new batch${batchesCreatedCount !== 1 ? 'es' : ''}.`;
+      }
+      if (failCount > 0) {
+        summary += ` (${failCount} failed)`;
+      }
+
+      toast.success(summary, { duration: 6000 });
+      setOpenDialog(null);
+      setCsvParsedStudents([]);
+      setCsvFileName('');
+      setAddStudentTab('single');
+      loadData();
+    } catch (err: any) {
+      console.error("CSV bulk import error:", err);
+      toast.error("Error during CSV import: " + (err.message || "Unknown error"));
+    } finally {
+      setIsImportingCSV(false);
     }
   };
 
@@ -1526,67 +1640,244 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
                       value={studentSearch}
                       onChange={(e) => setStudentSearch(e.target.value)}
                     />
-                    <Dialog open={openDialog === "student"} onOpenChange={(open) => setOpenDialog(open ? "student" : null)}>
+                    <Dialog open={openDialog === "student"} onOpenChange={(open) => {
+                      setOpenDialog(open ? "student" : null);
+                      if (!open) {
+                        setCsvParsedStudents([]);
+                        setCsvFileName('');
+                        setAddStudentTab('single');
+                      }
+                    }}>
                       <DialogTrigger asChild>
                         <Button className="flex items-center gap-2">
                           <UserPlus className="h-4 w-4" />
                           <span>Add Student</span>
                         </Button>
                       </DialogTrigger>
-                    <DialogContent className="max-h-[90vh] overflow-y-auto">
+                    <DialogContent className="max-h-[90vh] sm:max-w-xl overflow-y-auto">
                       <DialogHeader>
-                        <DialogTitle>Add New Student</DialogTitle>
+                        <DialogTitle>Add New Students</DialogTitle>
                       </DialogHeader>
-                      <form onSubmit={handleAddStudent} className="space-y-4">
-                        <div>
-                          <Label htmlFor="student-name">Full Name</Label>
-                          <Input id="student-name" name="name" required />
+
+                      {/* Tab Switcher */}
+                      <div className="flex bg-muted p-1 rounded-xl mb-4 border">
+                        <button
+                          type="button"
+                          className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${addStudentTab === 'single' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                          onClick={() => setAddStudentTab('single')}
+                        >
+                          <UserPlus className="h-3.5 w-3.5" />
+                          <span>Single Student Form</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${addStudentTab === 'csv' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                          onClick={() => setAddStudentTab('csv')}
+                        >
+                          <FileSpreadsheet className="h-3.5 w-3.5" />
+                          <span>Import via CSV</span>
+                        </button>
+                      </div>
+
+                      {addStudentTab === 'single' ? (
+                        <form onSubmit={handleAddStudent} className="space-y-4">
+                          <div>
+                            <Label htmlFor="student-name">Full Name</Label>
+                            <Input id="student-name" name="name" required />
+                          </div>
+                          <div>
+                            <Label htmlFor="student-email">Email</Label>
+                            <Input id="student-email" name="email" type="email" required />
+                          </div>
+                          <div>
+                            <Label htmlFor="student-phoneNo">Phone Number</Label>
+                            <Input id="student-phoneNo" name="phoneNo" />
+                          </div>
+                          <div>
+                            <Label htmlFor="student-parentWhatsApp">Parent WhatsApp Number</Label>
+                            <Input id="student-parentWhatsApp" name="parentWhatsApp" placeholder="Include country code e.g. 91..." />
+                          </div>
+                          <div>
+                            <Label htmlFor="student-collegeName">College Name</Label>
+                            <Input id="student-collegeName" name="collegeName" />
+                          </div>
+                          <div>
+                            <Label htmlFor="student-class">Class/Grade</Label>
+                            <Input id="student-class" name="studentClass" />
+                          </div>
+                          <div>
+                            <Label htmlFor="student-batch">Batch</Label>
+                            <Select name="batchId" required>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select batch" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {batches.map((batch) => (
+                                  <SelectItem key={batch.id} value={batch.id}>
+                                    {batch.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label htmlFor="student-dob">Date of Birth</Label>
+                            <Input id="student-dob" name="dob" type="date" />
+                          </div>
+                          <div>
+                            <Label htmlFor="student-password">Password</Label>
+                            <Input id="student-password" name="password" type="password" required />
+                          </div>
+                          <Button type="submit" className="w-full">Add Student</Button>
+                        </form>
+                      ) : (
+                        <div className="space-y-5">
+                          {/* Format download button */}
+                          <div className="p-4 rounded-xl border bg-accent/30 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <h4 className="font-semibold text-sm">Need the CSV Format?</h4>
+                                <p className="text-xs text-muted-foreground">Download the sample template with pre-formatted headers</p>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={downloadStudentCSVTemplate}
+                                className="flex items-center gap-1.5 text-xs bg-background shadow-sm"
+                              >
+                                <Download className="h-3.5 w-3.5 text-primary" />
+                                <span>Download CSV Template</span>
+                              </Button>
+                            </div>
+                            <div className="text-[11px] text-muted-foreground bg-background/80 p-2.5 rounded-lg border font-mono space-y-1">
+                              <p className="font-bold text-foreground font-sans">Supported Headers:</p>
+                              <p>Full Name, Email, Batch Name, Password, Phone Number, Parent WhatsApp, College Name, Class/Grade, WhatsApp Number, Date of Birth</p>
+                              <p className="text-emerald-600 dark:text-emerald-400 font-sans italic pt-1">
+                                💡 Tip: If a batch specified in the CSV does not exist, it will be created automatically!
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* File upload area */}
+                          <div>
+                            <Label className="block mb-2 font-semibold">Upload CSV File</Label>
+                            <div className="border-2 border-dashed border-primary/30 rounded-xl p-6 text-center hover:border-primary/60 transition-colors bg-accent/10">
+                              <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                              <p className="text-xs text-muted-foreground mb-2">
+                                {csvFileName ? <span className="font-semibold text-primary">{csvFileName}</span> : "Select or drag & drop a .csv file"}
+                              </p>
+                              <label className="cursor-pointer inline-flex items-center justify-center px-4 py-2 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+                                <span>Browse File</span>
+                                <input
+                                  type="file"
+                                  accept=".csv"
+                                  className="hidden"
+                                  onChange={handleCSVFileChange}
+                                />
+                              </label>
+                            </div>
+                          </div>
+
+                          {/* CSV Preview and batch detection summary */}
+                          {csvParsedStudents.length > 0 && (
+                            <div className="space-y-3 pt-2">
+                              <div className="flex items-center justify-between border-b pb-2">
+                                <h4 className="font-bold text-sm">
+                                  Preview ({csvParsedStudents.filter(s => s.isValid).length} Valid / {csvParsedStudents.length} Total)
+                                </h4>
+                                {(() => {
+                                  const validOnly = csvParsedStudents.filter(s => s.isValid);
+                                  const uniqueBatches = Array.from(new Set(validOnly.map(s => s.batchName.trim())));
+                                  const newBatches = uniqueBatches.filter(bn => 
+                                    !batches.some(b => b.name.toLowerCase().trim() === bn.toLowerCase().trim() || b.id === bn)
+                                  );
+                                  return (
+                                    <div className="flex items-center gap-2 text-xs">
+                                      <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 font-semibold">
+                                        {uniqueBatches.length} Batch{uniqueBatches.length !== 1 ? 'es' : ''}
+                                      </span>
+                                      {newBatches.length > 0 && (
+                                        <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 font-semibold">
+                                          +{newBatches.length} New Batch{newBatches.length !== 1 ? 'es' : ''} to Create
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
+                              </div>
+
+                              {/* Batch breakdown list */}
+                              <div className="bg-muted/40 p-3 rounded-lg text-xs space-y-1.5 border">
+                                <p className="font-semibold text-muted-foreground">Detected Batches:</p>
+                                {Array.from(new Set(csvParsedStudents.filter(s => s.isValid).map(s => s.batchName.trim()))).map(bName => {
+                                  const exists = batches.some(b => b.name.toLowerCase().trim() === bName.toLowerCase().trim() || b.id === bName);
+                                  const count = csvParsedStudents.filter(s => s.isValid && s.batchName.trim().toLowerCase() === bName.toLowerCase()).length;
+                                  return (
+                                    <div key={bName} className="flex items-center justify-between bg-background p-2 rounded border">
+                                      <span className="font-medium">{bName} ({count} student{count !== 1 ? 's' : ''})</span>
+                                      {exists ? (
+                                        <span className="text-emerald-600 dark:text-emerald-400 font-bold text-[11px] flex items-center gap-1">
+                                          <CheckCircle2 className="h-3 w-3" /> Existing Batch
+                                        </span>
+                                      ) : (
+                                        <span className="text-amber-600 dark:text-amber-400 font-bold text-[11px] flex items-center gap-1">
+                                          <Plus className="h-3 w-3" /> Will be Auto-Created
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Parsed Rows Table Preview */}
+                              <div className="max-h-48 overflow-y-auto rounded-lg border text-xs">
+                                <table className="w-full text-left">
+                                  <thead className="bg-muted text-[11px] sticky top-0">
+                                    <tr>
+                                      <th className="p-2">Name</th>
+                                      <th className="p-2">Email</th>
+                                      <th className="p-2">Batch</th>
+                                      <th className="p-2">Status</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y">
+                                    {csvParsedStudents.map((st, idx) => (
+                                      <tr key={idx} className={st.isValid ? "" : "bg-red-50/50 dark:bg-red-950/20"}>
+                                        <td className="p-2 font-medium">{st.name || "—"}</td>
+                                        <td className="p-2 text-muted-foreground">{st.email || "—"}</td>
+                                        <td className="p-2">{st.batchName || "—"}</td>
+                                        <td className="p-2">
+                                          {st.isValid ? (
+                                            <span className="text-emerald-600 font-bold flex items-center gap-1">
+                                              <CheckCircle2 className="h-3 w-3" /> Ready
+                                            </span>
+                                          ) : (
+                                            <span className="text-red-600 font-bold flex items-center gap-1" title={st.errorReason}>
+                                              <AlertCircle className="h-3 w-3" /> {st.errorReason}
+                                            </span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              <Button
+                                type="button"
+                                disabled={isImportingCSV || csvParsedStudents.filter(s => s.isValid).length === 0}
+                                onClick={handleBulkImportCSV}
+                                className="w-full mt-2 font-bold"
+                              >
+                                {isImportingCSV
+                                  ? "Importing & Registering Auth..."
+                                  : `Import ${csvParsedStudents.filter(s => s.isValid).length} Student${csvParsedStudents.filter(s => s.isValid).length !== 1 ? 's' : ''}`}
+                              </Button>
+                            </div>
+                          )}
                         </div>
-                        <div>
-                          <Label htmlFor="student-email">Email</Label>
-                          <Input id="student-email" name="email" type="email" required />
-                        </div>
-                        <div>
-                          <Label htmlFor="student-phoneNo">Phone Number</Label>
-                          <Input id="student-phoneNo" name="phoneNo" />
-                        </div>
-                        <div>
-                          <Label htmlFor="student-parentWhatsApp">Parent WhatsApp Number</Label>
-                          <Input id="student-parentWhatsApp" name="parentWhatsApp" placeholder="Include country code e.g. 91..." />
-                        </div>
-                        <div>
-                          <Label htmlFor="student-collegeName">College Name</Label>
-                          <Input id="student-collegeName" name="collegeName" />
-                        </div>
-                        <div>
-                          <Label htmlFor="student-class">Class/Grade</Label>
-                          <Input id="student-class" name="studentClass" />
-                        </div>
-                        <div>
-                          <Label htmlFor="student-batch">Batch</Label>
-                          <Select name="batchId" required>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select batch" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {batches.map((batch) => (
-                                <SelectItem key={batch.id} value={batch.id}>
-                                  {batch.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div>
-                          <Label htmlFor="student-dob">Date of Birth</Label>
-                          <Input id="student-dob" name="dob" type="date" />
-                        </div>
-                        <div>
-                          <Label htmlFor="student-password">Password</Label>
-                          <Input id="student-password" name="password" type="password" required />
-                        </div>
-                        <Button type="submit" className="w-full">Add Student</Button>
-                      </form>
+                      )}
                     </DialogContent>
                   </Dialog>
 
