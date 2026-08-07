@@ -1,4 +1,4 @@
-package com.dronatech.student;
+package com.sankalpacademy.student;
 
 import com.getcapacitor.BridgeActivity;
 
