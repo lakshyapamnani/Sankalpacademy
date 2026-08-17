@@ -507,23 +507,9 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleDownloadLatestPDF = async () => {
+  const handleDownloadLatestPDF = () => {
     if (!receiptData) return;
-    const rcptCode = receiptData.payment.receiptNo || ('RCPT-' + receiptData.payment.id.slice(-6).toUpperCase());
-    const filename = `Receipt_${receiptData.student.name.replace(/\s+/g, '_')}_${rcptCode}.pdf`;
-    try {
-      if (window.electronAPI && typeof window.electronAPI.downloadReceiptPDF === 'function') {
-        const success = await window.electronAPI.downloadReceiptPDF(filename);
-        if (success) {
-          toast.success("Receipt PDF downloaded & saved successfully!");
-          return;
-        }
-      }
-      window.print();
-    } catch (err) {
-      console.error("Failed to download PDF:", err);
-      toast.error("Failed to download PDF");
-    }
+    window.print();
   };
 
   const handleExportFeesCSV = async (batchStudents: Student[], batchName: string) => {
@@ -646,22 +632,8 @@ const AdminDashboard = () => {
       payment: payment,
       record: feeRecord
     });
-    setTimeout(async () => {
-      const rcptCode = payment.receiptNo || ('RCPT-' + payment.id.slice(-6).toUpperCase());
-      const filename = `Receipt_${selectedStudentForFees.name.replace(/\s+/g, '_')}_${rcptCode}.pdf`;
-      try {
-        if (window.electronAPI && typeof window.electronAPI.downloadReceiptPDF === 'function') {
-          const success = await window.electronAPI.downloadReceiptPDF(filename);
-          if (success) {
-            toast.success("Receipt PDF downloaded & saved successfully!");
-            return;
-          }
-        }
-        window.print();
-      } catch (err) {
-        console.error("Failed to download PDF:", err);
-        toast.error("Failed to download PDF");
-      }
+    setTimeout(() => {
+      window.print();
     }, 100);
   };
 
@@ -862,27 +834,8 @@ const AdminDashboard = () => {
     setPrintingSchedule(true);
   };
 
-  const handleDownloadSchedulePDF = async () => {
-    if (!selectedStudentForFees || !feeRecord) return;
-    const filename = `Fee_Schedule_${selectedStudentForFees.name.replace(/\s+/g, '_')}_${new Date().toLocaleDateString().replace(/\//g, '-')}.pdf`;
-    try {
-      if (window.electronAPI && typeof window.electronAPI.downloadReceiptPDF === 'function') {
-        setIsInstallmentModalOpen(false);
-        setPrintingSchedule(true);
-        await new Promise(r => setTimeout(r, 150));
-        const success = await window.electronAPI.downloadReceiptPDF(filename);
-        setPrintingSchedule(false);
-        if (success) {
-          toast.success("Installment statement PDF downloaded successfully!");
-          return;
-        }
-      }
-      handlePrintSchedule();
-    } catch (err) {
-      console.error("Failed to download schedule PDF:", err);
-      setPrintingSchedule(false);
-      handlePrintSchedule();
-    }
+  const handleDownloadSchedulePDF = () => {
+    handlePrintSchedule();
   };
 
   const handlePrintMomReport = () => {

@@ -2,8 +2,6 @@
 import { child, get, onValue, ref, remove, set, type Unsubscribe } from "firebase/database";
 import { createFirebaseAuthUser, database } from "./firebase";
 
-const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
-
 export interface Student {
   id: string;
   name: string;
