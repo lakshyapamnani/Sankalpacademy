@@ -3,6 +3,10 @@ export interface FeePayment {
   date: string;
   amount: number;
   receiptNo?: string;
+  paymentMode?: 'cash' | 'upi' | 'card' | 'cheque';
+  transactionId?: string;
+  chequeNo?: string;
+  chequeDate?: string;
 }
 
 export interface FeeRecord {
@@ -10,6 +14,9 @@ export interface FeeRecord {
   totalFees: number;
   emiMonths: number;
   payments: FeePayment[];
+  downPayment?: number;
+  firstEmiDate?: string;
+  paymentFrequency?: 'monthly' | 'custom';
 }
 
 export interface FeeSearchResult {
@@ -21,10 +28,6 @@ export interface FeeSearchResult {
 }
 
 export interface ElectronAPI {
-  getFeeRecords: () => Promise<FeeRecord[]>;
-  getFeeRecord: (studentId: string) => Promise<FeeRecord | null>;
-  updateFeeRecord: (feeRecord: FeeRecord) => Promise<boolean>;
-  searchFeeByReceipt: (receiptNo: string) => Promise<FeeSearchResult[] | null>;
   downloadReceiptPDF: (filename: string) => Promise<boolean>;
 }
 

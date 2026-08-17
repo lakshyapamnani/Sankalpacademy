@@ -207,6 +207,26 @@ const AdminDashboard = () => {
   const [receiptSearchResults, setReceiptSearchResults] = useState<FeeSearchResult[]>([]);
   const [isSearchingReceipt, setIsSearchingReceipt] = useState(false);
 
+  // Fee Structure Form State
+  const [feeFormTotalFees, setFeeFormTotalFees] = useState<string>("");
+  const [feeFormDownPayment, setFeeFormDownPayment] = useState<string>("0");
+  const [feeFormEmiMonths, setFeeFormEmiMonths] = useState<string>("");
+  const [feeFormFirstEmiDate, setFeeFormFirstEmiDate] = useState<string>(
+    new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  );
+  const [feeFormFrequency, setFeeFormFrequency] = useState<'monthly' | 'custom'>('monthly');
+
+  // Payment Mode State
+  const [paymentMode, setPaymentMode] = useState<'cash' | 'upi' | 'card' | 'cheque'>('cash');
+  const [paymentTransactionId, setPaymentTransactionId] = useState<string>("");
+  const [paymentChequeNo, setPaymentChequeNo] = useState<string>("");
+  const [paymentChequeDate, setPaymentChequeDate] = useState<string>("");
+  const [isInstallmentModalOpen, setIsInstallmentModalOpen] = useState(false);
+  const [printingSchedule, setPrintingSchedule] = useState<boolean>(false);
+  const [printingMomReport, setPrintingMomReport] = useState<boolean>(false);
+  const [isMomModalOpen, setIsMomModalOpen] = useState<boolean>(false);
+  const [selectedFeeReportMonth, setSelectedFeeReportMonth] = useState<string>('all');
+
   // Tests State
   const [selectedTest, setSelectedTest] = useState<Test | null>(null);
   const selectedTestIdRef = useRef<string | null>(null);
@@ -256,6 +276,7 @@ const AdminDashboard = () => {
   // WhatsApp Fees State
   const [waRecipientPhone, setWaRecipientPhone] = useState<string>("");
   const [waCustomMessage, setWaCustomMessage] = useState<string>("");
+  const [waMsgType, setWaMsgType] = useState<'received' | 'due'>('received');
 
   // Institute Settings State
   const [instituteSettings, setInstituteSettingsState] = useState<InstituteSettings>(getInstituteSettings());
@@ -355,13 +376,11 @@ const AdminDashboard = () => {
     setWaRecipientPhone(phone);
 
     if (record) {
-      const totalPaid = record.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
-      const remaining = record.totalFees - totalPaid;
-      const msg = `Dear Parent, fee payment received for ${student.name}.
-Total Paid: ₹${totalPaid}
-Remaining Balance: ₹${remaining}
-Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
-      setWaCustomMessage(msg);
+      if (waMsgType === 'due') {
+        setWaCustomMessage(getDueMessage(student, record));
+      } else {
+        setWaCustomMessage(getReceivedMessage(student, record));
+      }
     } else {
       setWaCustomMessage("");
     }
@@ -377,18 +396,51 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
   const handleSaveFeeStructure = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!selectedStudentForFees) return;
-    const formData = new FormData(e.currentTarget);
-    const totalFees = Number(formData.get("totalFees"));
-    const emiMonths = Number(formData.get("emiMonths"));
+    const totalFees = Number(feeFormTotalFees);
+    const downPayment = Number(feeFormDownPayment || 0);
+    const emiMonths = Number(feeFormEmiMonths);
+    const firstEmiDate = feeFormFirstEmiDate;
+    const paymentFrequency = feeFormFrequency;
+
+    // Validation
+    if (!totalFees || totalFees <= 0) {
+      toast.error("Total Course Fees must be greater than 0");
+      return;
+    }
+    if (downPayment < 0) {
+      toast.error("Down Payment cannot be negative");
+      return;
+    }
+    if (downPayment > totalFees) {
+      toast.error("Down Payment cannot exceed Total Course Fees");
+      return;
+    }
+    if (!emiMonths || emiMonths < 1) {
+      toast.error("EMI Months must be at least 1");
+      return;
+    }
+    if (!firstEmiDate) {
+      toast.error("Please select a valid First EMI Due Date");
+      return;
+    }
 
     const newRecord: FeeRecord = {
       studentId: selectedStudentForFees.id,
       totalFees,
       emiMonths,
       payments: feeRecord?.payments || [],
+      downPayment,
+      firstEmiDate,
+      paymentFrequency,
     };
     await updateFeeRecord(newRecord);
     setFeeRecord(newRecord);
+    // Reset form state
+    setFeeFormTotalFees("");
+    setFeeFormDownPayment("0");
+    setFeeFormEmiMonths("");
+    setFeeFormFirstEmiDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+    setFeeFormFrequency('monthly');
     toast.success("Fee structure saved successfully");
   };
 
@@ -410,7 +462,11 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
       id: Date.now().toString(),
       date: new Date().toISOString(),
       amount,
-      receiptNo
+      receiptNo,
+      paymentMode,
+      ...((paymentMode === 'upi' || paymentMode === 'card') && paymentTransactionId.trim() ? { transactionId: paymentTransactionId.trim() } : {}),
+      ...(paymentMode === 'cheque' && paymentChequeNo.trim() ? { chequeNo: paymentChequeNo.trim() } : {}),
+      ...(paymentMode === 'cheque' && paymentChequeDate ? { chequeDate: paymentChequeDate } : {}),
     };
 
     // Build updated record from current state (don't re-fetch from DB)
@@ -423,6 +479,10 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
     await updateFeeRecord(updatedRecord);
     setFeeRecord(updatedRecord);
     setPaymentAmount("");
+    setPaymentMode('cash');
+    setPaymentTransactionId("");
+    setPaymentChequeNo("");
+    setPaymentChequeDate("");
     toast.success("Payment recorded successfully");
     
     const nextReceipt = await getNextAutoReceiptNo(selectedStudentForFees.id);
@@ -436,13 +496,9 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
     });
 
     // Update customizable WhatsApp message for this new payment
-    const totalPaid = updatedRecord.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
-    const remaining = updatedRecord.totalFees - totalPaid;
-    const msg = `Dear Parent, we have received a fee payment of ₹${amount} for ${selectedStudentForFees.name}.
-Total Paid: ₹${totalPaid}
-Remaining Balance: ₹${remaining}
-Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
+    const msg = getReceivedMessage(selectedStudentForFees, updatedRecord, amount);
     setWaCustomMessage(msg);
+    setWaMsgType('received');
   };
 
   const handlePrint = () => {
@@ -492,15 +548,23 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
         "Student Name",
         "Email",
         "Phone Number",
-        "Total Fees (₹)",
+        "Total Course Fees (₹)",
+        "Down Payment (₹)",
         "EMI Months",
         "Total Paid (₹)",
         "Remaining Balance (₹)"
       ];
 
-      // Add dynamic installment headers
+      // Add dynamic installment payment headers with full details
       for (let i = 1; i <= maxPayments; i++) {
-        headers.push(`Instalment ${i} Date`, `Instalment ${i} Amount (₹)`);
+        headers.push(
+          `Payment ${i} Date`,
+          `Payment ${i} Amount (₹)`,
+          `Payment ${i} Mode`,
+          `Payment ${i} Receipt No`,
+          `Payment ${i} Txn / Cheque No`,
+          `Payment ${i} Cheque Date`
+        );
       }
 
       // Build CSV rows
@@ -514,19 +578,31 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
           `"${student.email.replace(/"/g, '""')}"`,
           `"${(student.phoneNo || "").replace(/"/g, '""')}"`,
           record ? record.totalFees : 0,
+          record?.downPayment || 0,
           record ? record.emiMonths : 0,
           totalPaid,
           remaining
         ];
 
-        // Add payment data
+        // Add detailed payment data
         for (let i = 0; i < maxPayments; i++) {
           if (record?.payments && record.payments[i]) {
             const p = record.payments[i];
-            const pDate = new Date(p.date).toLocaleDateString();
-            row.push(`"${pDate}"`, p.amount);
+            const pDate = new Date(p.date).toLocaleDateString('en-IN');
+            const mode = (p.paymentMode || 'cash').toUpperCase();
+            const receipt = p.receiptNo || ('RCPT-' + p.id.slice(-6).toUpperCase());
+            const refNo = p.transactionId || p.chequeNo || '-';
+            const chequeDt = p.chequeDate ? new Date(p.chequeDate + 'T00:00:00').toLocaleDateString('en-IN') : '-';
+            row.push(
+              `"${pDate}"`,
+              p.amount,
+              `"${mode}"`,
+              `"${receipt.replace(/"/g, '""')}"`,
+              `"${refNo.replace(/"/g, '""')}"`,
+              `"${chequeDt}"`
+            );
           } else {
-            row.push('""', '""');
+            row.push('""', '""', '""', '""', '""', '""');
           }
         }
 
@@ -588,6 +664,437 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
       }
     }, 100);
   };
+
+  const getStudentInstallmentSchedule = (record: FeeRecord) => {
+    const total = record.totalFees || 0;
+    const downPayment = record.downPayment || 0;
+    const remaining = Math.max(0, total - downPayment);
+    const months = Math.max(1, record.emiMonths || 1);
+    const baseEmi = Math.floor(remaining / months);
+    const lastEmi = remaining - baseEmi * (months - 1);
+
+    const startDateStr = record.firstEmiDate || (record.payments && record.payments[0] ? record.payments[0].date.split('T')[0] : new Date().toISOString().split('T')[0]);
+    const startDate = new Date(startDateStr + 'T00:00:00');
+
+    const totalPaid = record.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+    let runningCredit = totalPaid;
+    const installments = [];
+    for (let i = 0; i < months; i++) {
+      const dt = new Date(startDate);
+      dt.setMonth(dt.getMonth() + i);
+      const amount = i === months - 1 ? lastEmi : baseEmi;
+      
+      let status: 'paid' | 'partial' | 'pending' = 'pending';
+      let paidAmount = 0;
+      if (runningCredit >= amount) {
+        status = 'paid';
+        paidAmount = amount;
+        runningCredit -= amount;
+      } else if (runningCredit > 0) {
+        status = 'partial';
+        paidAmount = runningCredit;
+        runningCredit = 0;
+      }
+
+      installments.push({
+        num: i + 1,
+        date: dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+        amount,
+        paidAmount,
+        status
+      });
+    }
+
+    return {
+      total,
+      downPayment,
+      remaining,
+      months,
+      totalPaid,
+      remainingBalance: Math.max(0, total - totalPaid),
+      frequency: record.paymentFrequency || 'monthly',
+      firstEmiDate: startDateStr,
+      installments
+    };
+  };
+
+  const getBatchMomFeeData = (batchStudents: Student[]) => {
+    let allFeeRecords: FeeRecord[] = [];
+    try {
+      allFeeRecords = JSON.parse(localStorage.getItem('smartclass_fees') || '[]');
+    } catch {
+      allFeeRecords = [];
+    }
+    const batchRecords = allFeeRecords.filter(r => batchStudents.some(s => s.id === r.studentId));
+
+    const monthMap: Record<string, {
+      monthKey: string;
+      monthLabel: string;
+      totalCollected: number;
+      paymentCount: number;
+      cashAmount: number;
+      upiAmount: number;
+      cardAmount: number;
+      chequeAmount: number;
+      payments: {
+        studentName: string;
+        studentPhone: string;
+        receiptNo: string;
+        date: string;
+        amount: number;
+        mode: string;
+        refNo: string;
+      }[];
+    }> = {};
+
+    for (const student of batchStudents) {
+      const record = batchRecords.find(r => r.studentId === student.id);
+      if (!record || !record.payments) continue;
+
+      for (const p of record.payments) {
+        if (!p.date || !p.amount) continue;
+        const d = new Date(p.date);
+        const year = d.getFullYear();
+        const monthNum = String(d.getMonth() + 1).padStart(2, '0');
+        const monthKey = `${year}-${monthNum}`;
+        const monthLabel = d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+
+        if (!monthMap[monthKey]) {
+          monthMap[monthKey] = {
+            monthKey,
+            monthLabel,
+            totalCollected: 0,
+            paymentCount: 0,
+            cashAmount: 0,
+            upiAmount: 0,
+            cardAmount: 0,
+            chequeAmount: 0,
+            payments: []
+          };
+        }
+
+        const m = monthMap[monthKey];
+        m.totalCollected += p.amount;
+        m.paymentCount += 1;
+        const mode = p.paymentMode || 'cash';
+        if (mode === 'cash') m.cashAmount += p.amount;
+        else if (mode === 'upi') m.upiAmount += p.amount;
+        else if (mode === 'card') m.cardAmount += p.amount;
+        else if (mode === 'cheque') m.chequeAmount += p.amount;
+
+        m.payments.push({
+          studentName: student.name,
+          studentPhone: student.phoneNo || '',
+          receiptNo: p.receiptNo || ('RCPT-' + p.id.slice(-6).toUpperCase()),
+          date: d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+          amount: p.amount,
+          mode: mode.toUpperCase(),
+          refNo: p.transactionId || p.chequeNo || '-'
+        });
+      }
+    }
+
+    const sortedKeys = Object.keys(monthMap).sort();
+    let totalCash = 0;
+    let totalUpi = 0;
+    let totalCard = 0;
+    let totalCheque = 0;
+    let grandTotal = 0;
+    let totalTxns = 0;
+
+    const months = sortedKeys.map((key, idx) => {
+      const item = monthMap[key];
+      totalCash += item.cashAmount;
+      totalUpi += item.upiAmount;
+      totalCard += item.cardAmount;
+      totalCheque += item.chequeAmount;
+      grandTotal += item.totalCollected;
+      totalTxns += item.paymentCount;
+
+      let growthPercent: number | null = null;
+      if (idx > 0) {
+        const prev = monthMap[sortedKeys[idx - 1]].totalCollected;
+        if (prev > 0) {
+          growthPercent = Math.round(((item.totalCollected - prev) / prev) * 100);
+        } else {
+          growthPercent = 100;
+        }
+      }
+
+      return {
+        ...item,
+        growthPercent
+      };
+    });
+
+    return {
+      months,
+      totalCash,
+      totalUpi,
+      totalCard,
+      totalCheque,
+      grandTotal,
+      totalTxns
+    };
+  };
+
+  const getDueMessage = (student: Student, record: FeeRecord) => {
+    const totalPaid = record.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+    const remaining = Math.max(0, record.totalFees - totalPaid);
+    const sched = getStudentInstallmentSchedule(record);
+    const nextPending = sched.installments.find(i => i.status === 'pending' || i.status === 'partial');
+    let dueDetails = `Total Outstanding Balance: ₹${remaining.toLocaleString('en-IN')}`;
+    if (nextPending) {
+      const nextAmt = nextPending.amount - nextPending.paidAmount;
+      dueDetails = `Next Installment Due: ₹${nextAmt.toLocaleString('en-IN')} (Due Date: ${nextPending.date})\nTotal Outstanding Balance: ₹${remaining.toLocaleString('en-IN')}`;
+    }
+    return `Dear Parent, this is a gentle fee payment reminder from ${instituteSettings.name || 'Sankalp Academy'} for ${student.name}.\n${dueDetails}\nKindly clear the dues at your earliest convenience.\nThank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
+  };
+
+  const getReceivedMessage = (student: Student, record: FeeRecord, lastPaidAmount?: number) => {
+    const totalPaid = record.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+    const remaining = Math.max(0, record.totalFees - totalPaid);
+    return `Dear Parent, fee payment ${lastPaidAmount ? `of ₹${lastPaidAmount.toLocaleString('en-IN')}` : ''} received for ${student.name}.\nTotal Paid: ₹${totalPaid.toLocaleString('en-IN')}\nRemaining Balance: ₹${remaining.toLocaleString('en-IN')}\nThank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
+  };
+
+  const handlePrintSchedule = () => {
+    setIsInstallmentModalOpen(false);
+    setPrintingSchedule(true);
+  };
+
+  const handleDownloadSchedulePDF = async () => {
+    if (!selectedStudentForFees || !feeRecord) return;
+    const filename = `Fee_Schedule_${selectedStudentForFees.name.replace(/\s+/g, '_')}_${new Date().toLocaleDateString().replace(/\//g, '-')}.pdf`;
+    try {
+      if (window.electronAPI && typeof window.electronAPI.downloadReceiptPDF === 'function') {
+        setIsInstallmentModalOpen(false);
+        setPrintingSchedule(true);
+        await new Promise(r => setTimeout(r, 150));
+        const success = await window.electronAPI.downloadReceiptPDF(filename);
+        setPrintingSchedule(false);
+        if (success) {
+          toast.success("Installment statement PDF downloaded successfully!");
+          return;
+        }
+      }
+      handlePrintSchedule();
+    } catch (err) {
+      console.error("Failed to download schedule PDF:", err);
+      setPrintingSchedule(false);
+      handlePrintSchedule();
+    }
+  };
+
+  const handlePrintMomReport = () => {
+    setIsMomModalOpen(false);
+    setPrintingMomReport(true);
+  };
+
+  const handleExportMonthlyBatchCSV = (batchName: string, batchStudents: Student[]) => {
+    try {
+      const momData = getBatchMomFeeData(batchStudents);
+      const headers = [
+        "Month",
+        "Month Total Collection (₹)",
+        "Cash (₹)",
+        "UPI (₹)",
+        "Card (₹)",
+        "Cheque (₹)",
+        "Payment Date",
+        "Student Name",
+        "Student Phone",
+        "Receipt No",
+        "Payment Mode",
+        "Txn / Cheque Ref",
+        "Payment Amount (₹)"
+      ];
+
+      const rows: string[] = [];
+      for (const m of momData.months) {
+        for (const p of m.payments) {
+          rows.push([
+            `"${m.monthLabel}"`,
+            m.totalCollected,
+            m.cashAmount,
+            m.upiAmount,
+            m.cardAmount,
+            m.chequeAmount,
+            `"${p.date}"`,
+            `"${p.studentName.replace(/"/g, '""')}"`,
+            `"${p.studentPhone.replace(/"/g, '""')}"`,
+            `"${p.receiptNo.replace(/"/g, '""')}"`,
+            `"${p.mode}"`,
+            `"${p.refNo.replace(/"/g, '""')}"`,
+            p.amount
+          ].join(","));
+        }
+      }
+
+      if (rows.length === 0) {
+        toast.error("No fee collections recorded for this batch yet.");
+        return;
+      }
+
+      const csvContent = [headers.join(","), ...rows].join("\n");
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `MoM_Fees_Report_${batchName.replace(/\s+/g, '_')}_${new Date().toLocaleDateString().replace(/\//g, '-')}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success("Month-on-Month CSV report downloaded successfully");
+    } catch (err) {
+      console.error("Export MoM CSV failed", err);
+      toast.error("Failed to export MoM CSV");
+    }
+  };
+
+  const handleExportSingleMonthCSV = (batchName: string, batchStudents: Student[], monthKey: string) => {
+    try {
+      let allFeeRecords: FeeRecord[] = [];
+      try {
+        allFeeRecords = JSON.parse(localStorage.getItem('smartclass_fees') || '[]');
+      } catch {
+        allFeeRecords = [];
+      }
+      const batchRecords = allFeeRecords.filter(r => batchStudents.some(s => s.id === r.studentId));
+
+      if (monthKey === 'all') {
+        handleExportMonthlyBatchCSV(batchName, batchStudents);
+        return;
+      }
+
+      let monthLabel = monthKey;
+      if (monthKey.includes('-')) {
+        const [y, m] = monthKey.split('-');
+        const d = new Date(parseInt(y), parseInt(m) - 1, 1);
+        monthLabel = d.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+      }
+
+      const headers = [
+        "Student Name",
+        "Email",
+        "Phone Number",
+        "Payment Date",
+        "Month",
+        "Payment Amount (₹)",
+        "Payment Mode",
+        "Receipt No",
+        "Txn / Cheque No",
+        "Cheque Date",
+        "Total Course Fees (₹)",
+        "Overall Paid (₹)",
+        "Overall Remaining (₹)"
+      ];
+
+      const rows: string[] = [];
+
+      for (const student of batchStudents) {
+        const record = batchRecords.find(r => r.studentId === student.id);
+        if (!record || !record.payments) continue;
+
+        const totalPaidOverall = record.payments.reduce((sum, p) => sum + p.amount, 0);
+        const remainingOverall = record.totalFees - totalPaidOverall;
+
+        for (const p of record.payments) {
+          if (!p.date || !p.amount) continue;
+          const d = new Date(p.date);
+          const pYear = d.getFullYear();
+          const pMonthNum = String(d.getMonth() + 1).padStart(2, '0');
+          const pMonthKey = `${pYear}-${pMonthNum}`;
+
+          if (pMonthKey !== monthKey) {
+            continue;
+          }
+
+          const pDate = d.toLocaleDateString('en-IN');
+          const pMonthName = d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+          const mode = (p.paymentMode || 'cash').toUpperCase();
+          const receipt = p.receiptNo || ('RCPT-' + p.id.slice(-6).toUpperCase());
+          const refNo = p.transactionId || p.chequeNo || '-';
+          const chequeDt = p.chequeDate ? new Date(p.chequeDate + 'T00:00:00').toLocaleDateString('en-IN') : '-';
+
+          rows.push([
+            `"${student.name.replace(/"/g, '""')}"`,
+            `"${student.email.replace(/"/g, '""')}"`,
+            `"${(student.phoneNo || "").replace(/"/g, '""')}"`,
+            `"${pDate}"`,
+            `"${pMonthName}"`,
+            p.amount,
+            `"${mode}"`,
+            `"${receipt.replace(/"/g, '""')}"`,
+            `"${refNo.replace(/"/g, '""')}"`,
+            `"${chequeDt}"`,
+            record.totalFees,
+            totalPaidOverall,
+            remainingOverall
+          ].join(","));
+        }
+      }
+
+      if (rows.length === 0) {
+        toast.error(`No payments found for ${monthLabel} in this batch.`);
+        return;
+      }
+
+      const csvContent = [headers.join(","), ...rows].join("\n");
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      const safeMonthLabel = monthLabel.replace(/\s+/g, '_');
+      link.setAttribute("download", `Fees_Report_${safeMonthLabel}_${batchName.replace(/\s+/g, '_')}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success(`${monthLabel} CSV report downloaded successfully`);
+    } catch (err) {
+      console.error("Export monthly CSV failed", err);
+      toast.error("Failed to export monthly CSV");
+    }
+  };
+
+  useEffect(() => {
+    if (!printingSchedule) return;
+
+    const handleAfterPrint = () => {
+      setPrintingSchedule(false);
+    };
+
+    window.addEventListener('afterprint', handleAfterPrint);
+    const timer = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.print();
+      });
+    });
+
+    return () => {
+      window.removeEventListener('afterprint', handleAfterPrint);
+      cancelAnimationFrame(timer);
+    };
+  }, [printingSchedule]);
+
+  useEffect(() => {
+    if (!printingMomReport) return;
+
+    const handleAfterPrint = () => {
+      setPrintingMomReport(false);
+    };
+
+    window.addEventListener('afterprint', handleAfterPrint);
+    const timer = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.print();
+      });
+    });
+
+    return () => {
+      window.removeEventListener('afterprint', handleAfterPrint);
+      cancelAnimationFrame(timer);
+    };
+  }, [printingMomReport]);
 
   useEffect(() => {
     if (!printingReport) return;
@@ -3318,15 +3825,51 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
                                 <p className="text-xs text-muted-foreground">Select a student from the batch list to view and manage their fees</p>
                               </div>
                             </div>
-                            <Button 
-                              onClick={() => handleExportFeesCSV(batchStudents, batchName)} 
-                              variant="outline" 
-                              className="gap-2 shrink-0 self-start sm:self-center rounded-xl h-10 hover:bg-accent border border-border"
-                              disabled={batchStudents.length === 0}
-                            >
-                              <Download className="h-4 w-4 text-muted-foreground" />
-                              <span className="font-semibold text-xs text-foreground">Export Batch Report</span>
-                            </Button>
+                            <div className="flex flex-wrap items-center gap-2">
+                              {/* Month Selector for quick export */}
+                              <select
+                                value={selectedFeeReportMonth}
+                                onChange={(e) => setSelectedFeeReportMonth(e.target.value)}
+                                className="h-10 text-xs rounded-xl border border-input bg-background px-3 py-2 font-medium"
+                                title="Select month to filter or export"
+                              >
+                                <option value="all">All Months</option>
+                                {(() => {
+                                  const mom = getBatchMomFeeData(batchStudents);
+                                  return mom.months.map(m => (
+                                    <option key={m.monthKey} value={m.monthKey}>{m.monthLabel}</option>
+                                  ));
+                                })()}
+                              </select>
+                              <Button 
+                                onClick={() => {
+                                  if (selectedFeeReportMonth === 'all') {
+                                    handleExportFeesCSV(batchStudents, batchName);
+                                  } else {
+                                    handleExportSingleMonthCSV(batchName, batchStudents, selectedFeeReportMonth);
+                                  }
+                                }} 
+                                variant="outline" 
+                                className="gap-2 shrink-0 self-start sm:self-center rounded-xl h-10 hover:bg-accent border border-border"
+                                disabled={batchStudents.length === 0}
+                              >
+                                <Download className="h-4 w-4 text-muted-foreground" />
+                                <span className="font-semibold text-xs text-foreground">
+                                  {selectedFeeReportMonth === 'all' 
+                                    ? 'Export Batch Report' 
+                                    : `Export ${selectedFeeReportMonth.includes('-') ? new Date(parseInt(selectedFeeReportMonth.split('-')[0]), parseInt(selectedFeeReportMonth.split('-')[1]) - 1, 1).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : selectedFeeReportMonth} CSV`}
+                                </span>
+                              </Button>
+                              <Button 
+                                onClick={() => setIsMomModalOpen(true)} 
+                                variant="outline" 
+                                className="gap-2 shrink-0 self-start sm:self-center rounded-xl h-10 hover:bg-accent border border-primary/30 text-primary hover:bg-primary/10"
+                                disabled={batchStudents.length === 0}
+                              >
+                                <TrendingUp className="h-4 w-4" />
+                                <span className="font-semibold text-xs">MoM Report</span>
+                              </Button>
+                            </div>
                           </div>
 
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -3414,38 +3957,157 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
                                   <p className="font-medium">No student selected</p>
                                   <p className="text-xs text-muted-foreground/80 mt-0.5">Choose a student from the sidebar list to manage fees.</p>
                                 </div>
-                              ) : (
-                                <div className="space-y-6">
-                                  <div className="flex justify-between items-start border-b pb-4">
-                                    <div>
-                                      <h3 className="text-2xl font-bold">{selectedStudentForFees.name}</h3>
-                                      <p className="text-sm text-muted-foreground">{selectedStudentForFees.collegeName || "No College specified"} • {selectedStudentForFees.studentClass || "No Class specified"}</p>
-                                    </div>
-                                    
-                                    {receiptData && receiptData.student.id === selectedStudentForFees.id && (
-                                      <div className="flex gap-2">
-                                        <Button onClick={handlePrint} variant="outline" className="gap-2 shrink-0">
-                                          <Printer className="h-4 w-4" /> Print Latest Receipt
-                                        </Button>
-                                        <Button onClick={handleDownloadLatestPDF} variant="default" className="gap-2 shrink-0">
-                                          <Download className="h-4 w-4" /> Download Latest Receipt
-                                        </Button>
+                                  ) : (
+                                    <div className="space-y-6">
+                                      <div className="flex justify-between items-start border-b pb-4">
+                                        <div>
+                                          <h3 className="text-2xl font-bold">{selectedStudentForFees.name}</h3>
+                                          <p className="text-sm text-muted-foreground">{selectedStudentForFees.collegeName || "No College specified"} • {selectedStudentForFees.studentClass || "No Class specified"}</p>
+                                        </div>
+                                        
+                                        {feeRecord && (
+                                          <div className="flex flex-wrap gap-2 items-center">
+                                            <Button 
+                                              onClick={() => setIsInstallmentModalOpen(true)} 
+                                              variant="outline" 
+                                              className="gap-2 shrink-0 border-primary/30 text-primary hover:bg-primary/10"
+                                            >
+                                              <Calendar className="h-4 w-4" /> Installment Schedule
+                                            </Button>
+                                            {receiptData && receiptData.student.id === selectedStudentForFees.id && (
+                                              <>
+                                                <Button onClick={handlePrint} variant="outline" className="gap-2 shrink-0">
+                                                  <Printer className="h-4 w-4" /> Print Latest Receipt
+                                                </Button>
+                                                <Button onClick={handleDownloadLatestPDF} variant="default" className="gap-2 shrink-0">
+                                                  <Download className="h-4 w-4" /> Download Latest Receipt
+                                                </Button>
+                                              </>
+                                            )}
+                                          </div>
+                                        )}
                                       </div>
-                                    )}
-                                  </div>
 
                                   {!feeRecord ? (
                                     <div className="bg-accent/40 p-6 rounded-2xl border">
                                       <h4 className="font-semibold mb-2">Create Fee Structure</h4>
-                                      <form onSubmit={handleSaveFeeStructure} className="space-y-4 max-w-sm">
+                                      <form onSubmit={handleSaveFeeStructure} className="space-y-4 max-w-md">
                                         <div>
-                                          <Label htmlFor="totalFees">Total Fees</Label>
-                                          <Input id="totalFees" name="totalFees" type="number" placeholder="e.g. 24000" required />
+                                          <Label htmlFor="feeFormTotalFees">Total Course Fees</Label>
+                                          <div className="relative">
+                                            <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                            <Input id="feeFormTotalFees" type="number" className="pl-8" placeholder="e.g. 36000" required min="1"
+                                              value={feeFormTotalFees}
+                                              onChange={(e) => setFeeFormTotalFees(e.target.value)}
+                                            />
+                                          </div>
                                         </div>
                                         <div>
-                                          <Label htmlFor="emiMonths">EMI Months</Label>
-                                          <Input id="emiMonths" name="emiMonths" type="number" placeholder="e.g. 3" required />
+                                          <Label htmlFor="feeFormDownPayment">Down Payment</Label>
+                                          <div className="relative">
+                                            <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                            <Input id="feeFormDownPayment" type="number" className="pl-8" placeholder="e.g. 12000" min="0"
+                                              value={feeFormDownPayment}
+                                              onChange={(e) => setFeeFormDownPayment(e.target.value)}
+                                            />
+                                          </div>
                                         </div>
+                                        <div>
+                                          <Label>Remaining Amount</Label>
+                                          <div className="relative">
+                                            <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                            <Input className="pl-8 bg-muted" readOnly
+                                              value={Math.max(0, Number(feeFormTotalFees || 0) - Number(feeFormDownPayment || 0)).toLocaleString('en-IN')}
+                                            />
+                                          </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                          <div>
+                                            <Label htmlFor="feeFormEmiMonths">EMI Months</Label>
+                                            <Input id="feeFormEmiMonths" type="number" placeholder="e.g. 3" required min="1"
+                                              value={feeFormEmiMonths}
+                                              onChange={(e) => setFeeFormEmiMonths(e.target.value)}
+                                            />
+                                          </div>
+                                          <div>
+                                            <Label>Monthly EMI</Label>
+                                            <div className="relative">
+                                              <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                              <Input className="pl-8 bg-muted font-semibold text-primary" readOnly
+                                                value={(() => {
+                                                  const m = Number(feeFormEmiMonths || 0);
+                                                  if (m <= 0) return '—';
+                                                  const remaining = Math.max(0, Number(feeFormTotalFees || 0) - Number(feeFormDownPayment || 0));
+                                                  return Math.ceil(remaining / m).toLocaleString('en-IN');
+                                                })()}
+                                              />
+                                            </div>
+                                          </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                          <div>
+                                            <Label htmlFor="feeFormFirstEmiDate">First EMI Due Date</Label>
+                                            <Input id="feeFormFirstEmiDate" type="date" required
+                                              value={feeFormFirstEmiDate}
+                                              onChange={(e) => setFeeFormFirstEmiDate(e.target.value)}
+                                            />
+                                          </div>
+                                          <div>
+                                            <Label htmlFor="feeFormFrequency">Payment Frequency</Label>
+                                            <select id="feeFormFrequency"
+                                              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                              value={feeFormFrequency}
+                                              onChange={(e) => setFeeFormFrequency(e.target.value as 'monthly' | 'custom')}
+                                            >
+                                              <option value="monthly">Monthly</option>
+                                              <option value="custom">Custom</option>
+                                            </select>
+                                          </div>
+                                        </div>
+
+                                        {/* Installment Schedule Preview */}
+                                        {(() => {
+                                          const t = Number(feeFormTotalFees || 0);
+                                          const d = Number(feeFormDownPayment || 0);
+                                          const m = Number(feeFormEmiMonths || 0);
+                                          const remaining = Math.max(0, t - d);
+                                          if (m <= 0 || remaining <= 0 || !feeFormFirstEmiDate) return null;
+
+                                          const baseEmi = Math.floor(remaining / m);
+                                          const lastEmi = remaining - baseEmi * (m - 1);
+                                          const startDate = new Date(feeFormFirstEmiDate + 'T00:00:00');
+
+                                          const installments: { num: number; amount: number; date: string }[] = [];
+                                          for (let i = 0; i < m; i++) {
+                                            const dt = new Date(startDate);
+                                            dt.setMonth(dt.getMonth() + i);
+                                            installments.push({
+                                              num: i + 1,
+                                              amount: i === m - 1 ? lastEmi : baseEmi,
+                                              date: dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+                                            });
+                                          }
+
+                                          return (
+                                            <div className="bg-card border rounded-lg p-4 space-y-2">
+                                              <p className="text-sm font-semibold text-muted-foreground">Installment Schedule Preview</p>
+                                              <div className="divide-y">
+                                                {installments.map((inst) => (
+                                                  <div key={inst.num} className="flex items-center justify-between py-1.5 text-sm">
+                                                    <span className="text-muted-foreground">Installment {inst.num}</span>
+                                                    <span className="font-medium">₹{inst.amount.toLocaleString('en-IN')}</span>
+                                                    <span className="text-muted-foreground text-xs">{inst.date}</span>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                              <div className="flex justify-between pt-2 border-t text-sm font-semibold">
+                                                <span>Total</span>
+                                                <span>₹{remaining.toLocaleString('en-IN')}</span>
+                                              </div>
+                                            </div>
+                                          );
+                                        })()}
+
                                         <Button type="submit">Save Structure</Button>
                                       </form>
                                     </div>
@@ -3484,30 +4146,86 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
                                       </div>
 
                                       
-                                      <div className="bg-accent/40 p-4 rounded-xl flex flex-wrap items-end gap-4 max-w-xl">
-                                        <div className="flex-1 min-w-[140px]">
-                                          <Label htmlFor="paymentAmount">Add Payment Amount</Label>
-                                          <div className="relative">
-                                            <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                      <div className="bg-accent/40 p-4 rounded-xl space-y-3 max-w-xl">
+                                        <div className="flex flex-wrap items-end gap-4">
+                                          <div className="flex-1 min-w-[140px]">
+                                            <Label htmlFor="paymentAmount">Add Payment Amount</Label>
+                                            <div className="relative">
+                                              <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                              <Input 
+                                                id="paymentAmount" 
+                                                type="number" 
+                                                className="pl-8" 
+                                                placeholder="Amount" 
+                                                value={paymentAmount}
+                                                onChange={(e) => setPaymentAmount(e.target.value)}
+                                              />
+                                            </div>
+                                          </div>
+                                          <div className="w-36">
+                                            <Label htmlFor="receiptNoInput">Receipt No.</Label>
                                             <Input 
-                                              id="paymentAmount" 
-                                              type="number" 
-                                              className="pl-8" 
-                                              placeholder="Amount" 
-                                              value={paymentAmount}
-                                              onChange={(e) => setPaymentAmount(e.target.value)}
+                                              id="receiptNoInput" 
+                                              type="text" 
+                                              placeholder="e.g. 1, 1.2" 
+                                              value={receiptNoInput}
+                                              onChange={(e) => setReceiptNoInput(e.target.value)}
                                             />
                                           </div>
                                         </div>
-                                        <div className="w-36">
-                                          <Label htmlFor="receiptNoInput">Receipt No.</Label>
-                                          <Input 
-                                            id="receiptNoInput" 
-                                            type="text" 
-                                            placeholder="e.g. 1, 1.2" 
-                                            value={receiptNoInput}
-                                            onChange={(e) => setReceiptNoInput(e.target.value)}
-                                          />
+                                        <div className="flex flex-wrap items-end gap-4">
+                                          <div className="min-w-[140px]">
+                                            <Label htmlFor="paymentMode">Payment Mode</Label>
+                                            <select
+                                              id="paymentMode"
+                                              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                              value={paymentMode}
+                                              onChange={(e) => setPaymentMode(e.target.value as 'cash' | 'upi' | 'card' | 'cheque')}
+                                            >
+                                              <option value="cash">Cash</option>
+                                              <option value="upi">UPI</option>
+                                              <option value="card">Card</option>
+                                              <option value="cheque">Cheque</option>
+                                            </select>
+                                          </div>
+                                          {(paymentMode === 'upi' || paymentMode === 'card') && (
+                                            <div className="flex-1 min-w-[140px]">
+                                              <Label htmlFor="paymentTransactionId">
+                                                {paymentMode === 'card' ? 'Card / Txn ID' : 'Transaction ID'}{' '}
+                                                <span className="text-muted-foreground text-xs">(optional)</span>
+                                              </Label>
+                                              <Input
+                                                id="paymentTransactionId"
+                                                type="text"
+                                                placeholder={paymentMode === 'card' ? 'e.g. CARD-REF-1234' : 'e.g. TXN123456'}
+                                                value={paymentTransactionId}
+                                                onChange={(e) => setPaymentTransactionId(e.target.value)}
+                                              />
+                                            </div>
+                                          )}
+                                          {paymentMode === 'cheque' && (
+                                            <>
+                                              <div className="flex-1 min-w-[120px]">
+                                                <Label htmlFor="paymentChequeNo">Cheque No. <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                                                <Input
+                                                  id="paymentChequeNo"
+                                                  type="text"
+                                                  placeholder="e.g. 000123"
+                                                  value={paymentChequeNo}
+                                                  onChange={(e) => setPaymentChequeNo(e.target.value)}
+                                                />
+                                              </div>
+                                              <div className="min-w-[140px]">
+                                                <Label htmlFor="paymentChequeDate">Cheque Date <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                                                <Input
+                                                  id="paymentChequeDate"
+                                                  type="date"
+                                                  value={paymentChequeDate}
+                                                  onChange={(e) => setPaymentChequeDate(e.target.value)}
+                                                />
+                                              </div>
+                                            </>
+                                          )}
                                         </div>
                                         <Button onClick={handleAddPayment}>Record Payment</Button>
                                       </div>
@@ -3522,8 +4240,21 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
                                                 <div className="flex-1">
                                                   <p className="font-semibold">
                                                     Payment #{index + 1} • <span className="text-primary font-mono">Receipt: {p.receiptNo || ('RCPT-' + p.id.slice(-6).toUpperCase())}</span>
+                                                    {p.paymentMode && (
+                                                      <span className={`ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium uppercase ${
+                                                        p.paymentMode === 'cash' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                                                        p.paymentMode === 'upi' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
+                                                        p.paymentMode === 'card' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' :
+                                                        'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                                                      }`}>{p.paymentMode}</span>
+                                                    )}
                                                   </p>
-                                                  <p className="text-xs text-muted-foreground">{new Date(p.date).toLocaleString()}</p>
+                                                  <p className="text-xs text-muted-foreground">
+                                                    {new Date(p.date).toLocaleString()}
+                                                    {p.transactionId && <span> • TXN: {p.transactionId}</span>}
+                                                    {p.chequeNo && <span> • Cheque: {p.chequeNo}</span>}
+                                                    {p.chequeDate && <span> • Dt: {new Date(p.chequeDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>}
+                                                  </p>
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                   <div className="font-bold text-green-600 mr-1">+₹{p.amount}</div>
@@ -3555,10 +4286,49 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
                                       </div>
                                       
                                       <div className="border-t pt-5 mt-5 space-y-4">
-                                        <div className="flex items-center gap-2">
-                                          <div className="h-2 w-2 rounded-full bg-[#25D366] animate-pulse" />
-                                          <h4 className="font-semibold text-sm">Send WhatsApp Fees Status</h4>
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                          <div className="flex items-center gap-2">
+                                            <div className="h-2.5 w-2.5 rounded-full bg-[#25D366] animate-pulse" />
+                                            <h4 className="font-semibold text-sm">Send WhatsApp Fees Notification</h4>
+                                          </div>
+                                          
+                                          {/* Template Selector Pills */}
+                                          <div className="flex items-center gap-1.5 bg-muted/60 p-1 rounded-xl border">
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setWaMsgType('received');
+                                                if (selectedStudentForFees && feeRecord) {
+                                                  setWaCustomMessage(getReceivedMessage(selectedStudentForFees, feeRecord));
+                                                }
+                                              }}
+                                              className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all ${
+                                                waMsgType === 'received' 
+                                                  ? 'bg-primary text-primary-foreground shadow-sm' 
+                                                  : 'text-muted-foreground hover:text-foreground'
+                                              }`}
+                                            >
+                                              Payment Received
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setWaMsgType('due');
+                                                if (selectedStudentForFees && feeRecord) {
+                                                  setWaCustomMessage(getDueMessage(selectedStudentForFees, feeRecord));
+                                                }
+                                              }}
+                                              className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all ${
+                                                waMsgType === 'due' 
+                                                  ? 'bg-amber-600 text-white shadow-sm' 
+                                                  : 'text-muted-foreground hover:text-foreground'
+                                              }`}
+                                            >
+                                              Fee Due Reminder
+                                            </button>
+                                          </div>
                                         </div>
+
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-accent/10 p-4 rounded-2xl border">
                                           <div className="md:col-span-1 space-y-1.5">
                                             <Label htmlFor="waPhone" className="text-xs font-semibold">WhatsApp Number</Label>
@@ -3573,12 +4343,17 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
                                             <p className="text-[10px] text-muted-foreground leading-tight">Prefilled from Parents WhatsApp &gt; Student WhatsApp &gt; Student Phone</p>
                                           </div>
                                           <div className="md:col-span-2 space-y-1.5">
-                                            <Label htmlFor="waMsg" className="text-xs font-semibold">Customizable Message Template</Label>
+                                            <div className="flex justify-between items-center">
+                                              <Label htmlFor="waMsg" className="text-xs font-semibold">
+                                                {waMsgType === 'due' ? 'Fee Due Reminder Message' : 'Payment Confirmation Message'}
+                                              </Label>
+                                              <span className="text-[10px] text-muted-foreground">Editable before sending</span>
+                                            </div>
                                             <div className="flex gap-2">
                                               <textarea
                                                 id="waMsg"
                                                 rows={3}
-                                                className="flex min-h-[80px] w-full rounded-xl border border-input bg-transparent px-3 py-2 text-xs shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-y"
+                                                className="flex min-h-[85px] w-full rounded-xl border border-input bg-transparent px-3 py-2 text-xs shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-y"
                                                 value={waCustomMessage}
                                                 onChange={(e) => setWaCustomMessage(e.target.value)}
                                               />
@@ -3591,7 +4366,7 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
                                                   const cleanedPhone = waRecipientPhone.split('+').join('').split(' ').join('');
                                                   const waUrl = `https://wa.me/${cleanedPhone}?text=${encodeURIComponent(waCustomMessage)}`;
                                                   window.open(waUrl, '_blank');
-                                                  toast.success("Opening WhatsApp...");
+                                                  toast.success(waMsgType === 'due' ? "Opening WhatsApp with Due Reminder..." : "Opening WhatsApp with Payment Confirmation...");
                                                 }}
                                                 className="bg-[#25D366] hover:bg-[#128C7E] text-white self-end gap-2 h-10 rounded-xl font-semibold shrink-0"
                                               >
@@ -5898,11 +6673,368 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
               </div>
             )}
           </div>
+        {/* Installment Schedule Popup Dialog */}
+        <Dialog open={isInstallmentModalOpen} onOpenChange={setIsInstallmentModalOpen}>
+          <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+            <DialogHeader className="flex flex-row items-center justify-between gap-4">
+              <div>
+                <DialogTitle className="flex items-center gap-2 text-lg font-bold">
+                  <Calendar className="h-5 w-5 text-primary" /> Installment Schedule & Due Dates
+                </DialogTitle>
+                {selectedStudentForFees && (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {selectedStudentForFees.name} • {selectedStudentForFees.studentClass || "Student"} • {selectedStudentForFees.collegeName || "Sankalp Academy"}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button onClick={handleDownloadSchedulePDF} size="sm" variant="default" className="gap-1.5 h-8 text-xs shrink-0">
+                  <Download className="h-3.5 w-3.5" /> Download PDF
+                </Button>
+                <Button onClick={handlePrintSchedule} size="sm" variant="outline" className="gap-1.5 h-8 text-xs border-primary/40 text-primary hover:bg-primary/10 shrink-0">
+                  <Printer className="h-3.5 w-3.5" /> Print Statement
+                </Button>
+              </div>
+            </DialogHeader>
+
+            {feeRecord && (() => {
+              const total = feeRecord.totalFees || 0;
+              const downPayment = feeRecord.downPayment || 0;
+              const remaining = Math.max(0, total - downPayment);
+              const months = Math.max(1, feeRecord.emiMonths || 1);
+              const baseEmi = Math.floor(remaining / months);
+              const lastEmi = remaining - baseEmi * (months - 1);
+              const totalPaid = feeRecord.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+              const remainingBalance = Math.max(0, total - totalPaid);
+
+              const startDateStr = feeRecord.firstEmiDate || (feeRecord.payments && feeRecord.payments[0] ? feeRecord.payments[0].date.split('T')[0] : new Date().toISOString().split('T')[0]);
+              const startDate = new Date(startDateStr + 'T00:00:00');
+
+              let runningCredit = totalPaid;
+              const installments = [];
+              for (let i = 0; i < months; i++) {
+                const dt = new Date(startDate);
+                dt.setMonth(dt.getMonth() + i);
+                const amount = i === months - 1 ? lastEmi : baseEmi;
+                
+                let status: 'paid' | 'partial' | 'pending' = 'pending';
+                let paidAmount = 0;
+                if (runningCredit >= amount) {
+                  status = 'paid';
+                  paidAmount = amount;
+                  runningCredit -= amount;
+                } else if (runningCredit > 0) {
+                  status = 'partial';
+                  paidAmount = runningCredit;
+                  runningCredit = 0;
+                }
+
+                installments.push({
+                  num: i + 1,
+                  date: dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+                  amount,
+                  paidAmount,
+                  status
+                });
+              }
+
+              return (
+                <div className="space-y-4 pt-1">
+                  {/* Summary Overview Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="bg-accent/40 border rounded-xl p-2.5 text-center">
+                      <p className="text-[10px] text-muted-foreground uppercase font-semibold">Total Fees</p>
+                      <p className="text-base font-bold text-foreground">₹{total.toLocaleString('en-IN')}</p>
+                    </div>
+                    <div className="bg-accent/40 border rounded-xl p-2.5 text-center">
+                      <p className="text-[10px] text-muted-foreground uppercase font-semibold">Down Payment</p>
+                      <p className="text-base font-bold text-foreground">₹{downPayment.toLocaleString('en-IN')}</p>
+                    </div>
+                    <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-2.5 text-center">
+                      <p className="text-[10px] text-green-700 dark:text-green-400 uppercase font-semibold">Total Paid</p>
+                      <p className="text-base font-bold text-green-600 dark:text-green-400">₹{totalPaid.toLocaleString('en-IN')}</p>
+                    </div>
+                    <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-2.5 text-center">
+                      <p className="text-[10px] text-red-700 dark:text-red-400 uppercase font-semibold">Balance Due</p>
+                      <p className="text-base font-bold text-red-600 dark:text-red-400">₹{remainingBalance.toLocaleString('en-IN')}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs text-muted-foreground px-1 pt-1">
+                    <span>Payment Frequency: <strong className="text-foreground capitalize">{feeRecord.paymentFrequency || 'Monthly'}</strong></span>
+                    <span>EMI Duration: <strong className="text-foreground">{months} Month{months > 1 ? 's' : ''}</strong></span>
+                  </div>
+
+                  {/* Installments Table / Card List */}
+                  <div className="border rounded-xl overflow-hidden divide-y bg-card">
+                    <div className="bg-muted/60 px-4 py-2.5 grid grid-cols-12 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      <span className="col-span-2">No.</span>
+                      <span className="col-span-4">Due Date</span>
+                      <span className="col-span-3 text-right">Amount</span>
+                      <span className="col-span-3 text-right">Status</span>
+                    </div>
+                    {installments.map((inst) => (
+                      <div key={inst.num} className="px-4 py-3 grid grid-cols-12 items-center text-sm hover:bg-accent/30 transition-colors">
+                        <span className="col-span-2 font-medium text-foreground">
+                          #{inst.num}
+                        </span>
+                        <span className="col-span-4 text-muted-foreground flex items-center gap-1.5 text-xs">
+                          <Calendar className="h-3.5 w-3.5 text-primary/70" />
+                          {inst.date}
+                        </span>
+                        <span className="col-span-3 text-right font-semibold text-foreground">
+                          ₹{inst.amount.toLocaleString('en-IN')}
+                        </span>
+                        <div className="col-span-3 flex justify-end">
+                          {inst.status === 'paid' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">
+                              <CheckCircle2 className="h-3 w-3" /> Paid
+                            </span>
+                          )}
+                          {inst.status === 'partial' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                              ₹{inst.paidAmount.toLocaleString('en-IN')}
+                            </span>
+                          )}
+                          {inst.status === 'pending' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                              Due
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex justify-between items-center bg-accent/30 p-3 rounded-xl border text-sm font-semibold">
+                    <span className="text-muted-foreground">Total EMI Scheduled</span>
+                    <span className="text-primary font-bold">₹{remaining.toLocaleString('en-IN')}</span>
+                  </div>
+                </div>
+              );
+            })()}
+          </DialogContent>
+        </Dialog>
+
+        {/* Month-on-Month Batch Fee Report Dialog */}
+        <Dialog open={isMomModalOpen} onOpenChange={setIsMomModalOpen}>
+          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader className="flex flex-row items-center justify-between gap-4">
+              <div>
+                <DialogTitle className="flex items-center gap-2 text-lg font-bold">
+                  <TrendingUp className="h-5 w-5 text-primary" /> Month-on-Month Fee Collection
+                </DialogTitle>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {selectedBatchForFees ? batches.find(b => b.id === selectedBatchForFees)?.name : "Batch"} • MoM Revenue & Monthly Reports
+                </p>
+              </div>
+              {selectedBatchForFees && (() => {
+                const batchStudents = students.filter(s => s.batchId === selectedBatchForFees);
+                const batchName = batches.find(b => b.id === selectedBatchForFees)?.name || 'Batch';
+                const momData = getBatchMomFeeData(batchStudents);
+                const currentMonthObj = momData.months.find(m => m.monthKey === selectedFeeReportMonth);
+                const currentMonthLabel = currentMonthObj ? currentMonthObj.monthLabel : selectedFeeReportMonth;
+
+                return (
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <select
+                      value={selectedFeeReportMonth}
+                      onChange={(e) => setSelectedFeeReportMonth(e.target.value)}
+                      className="h-8 text-xs rounded-lg border border-input bg-background px-2 py-1 font-medium"
+                      title="Filter Month"
+                    >
+                      <option value="all">All Months</option>
+                      {momData.months.map(m => (
+                        <option key={m.monthKey} value={m.monthKey}>{m.monthLabel}</option>
+                      ))}
+                    </select>
+                    <Button 
+                      onClick={() => {
+                        if (selectedFeeReportMonth === 'all') {
+                          handleExportMonthlyBatchCSV(batchName, batchStudents);
+                        } else {
+                          handleExportSingleMonthCSV(batchName, batchStudents, selectedFeeReportMonth);
+                        }
+                      }} 
+                      size="sm" 
+                      variant="outline" 
+                      className="gap-1.5 h-8 text-xs hover:bg-accent border border-border"
+                      disabled={batchStudents.length === 0}
+                    >
+                      <Download className="h-3.5 w-3.5" /> {selectedFeeReportMonth === 'all' ? 'Export MoM CSV' : `Export ${currentMonthLabel} CSV`}
+                    </Button>
+                    <Button 
+                      onClick={handlePrintMomReport} 
+                      size="sm" 
+                      variant="default" 
+                      className="gap-1.5 h-8 text-xs"
+                      disabled={batchStudents.length === 0}
+                    >
+                      <Printer className="h-3.5 w-3.5" /> Print MoM Report
+                    </Button>
+                  </div>
+                );
+              })()}
+            </DialogHeader>
+
+            {selectedBatchForFees && (() => {
+              const batchStudents = students.filter(s => s.batchId === selectedBatchForFees);
+              const batchName = batches.find(b => b.id === selectedBatchForFees)?.name || 'Batch';
+              const momData = getBatchMomFeeData(batchStudents);
+
+              if (momData.months.length === 0) {
+                return (
+                  <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-xl bg-accent/20 my-4">
+                    <TrendingUp className="h-10 w-10 mx-auto mb-2 opacity-30 text-primary" />
+                    <p className="font-semibold text-sm">No fee collection records found for this batch.</p>
+                    <p className="text-xs text-muted-foreground mt-1">Payments recorded for students in this batch will automatically appear in this month-on-month summary.</p>
+                  </div>
+                );
+              }
+
+              const displayedMonths = selectedFeeReportMonth === 'all' 
+                ? momData.months 
+                : momData.months.filter(m => m.monthKey === selectedFeeReportMonth);
+
+              return (
+                <div className="space-y-5 pt-2">
+                  {/* Key Metrics Cards */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    <div className="bg-accent/40 border rounded-xl p-3 text-center">
+                      <p className="text-[10px] text-muted-foreground uppercase font-semibold">Total Revenue</p>
+                      <p className="text-lg font-bold text-green-600 dark:text-green-400">
+                        ₹{(selectedFeeReportMonth === 'all' 
+                          ? momData.grandTotal 
+                          : (displayedMonths[0]?.totalCollected || 0)
+                        ).toLocaleString('en-IN')}
+                      </p>
+                    </div>
+                    <div className="bg-accent/40 border rounded-xl p-3 text-center">
+                      <p className="text-[10px] text-muted-foreground uppercase font-semibold">Total Payments</p>
+                      <p className="text-lg font-bold text-foreground">
+                        {(selectedFeeReportMonth === 'all' 
+                          ? momData.totalTxns 
+                          : (displayedMonths[0]?.paymentCount || 0)
+                        )} Txns
+                      </p>
+                    </div>
+                    <div className="bg-accent/40 border rounded-xl p-3 text-center">
+                      <p className="text-[10px] text-muted-foreground uppercase font-semibold">Digital (UPI/Card)</p>
+                      <p className="text-lg font-bold text-blue-600 dark:text-blue-400">
+                        ₹{(selectedFeeReportMonth === 'all' 
+                          ? (momData.totalUpi + momData.totalCard)
+                          : ((displayedMonths[0]?.upiAmount || 0) + (displayedMonths[0]?.cardAmount || 0))
+                        ).toLocaleString('en-IN')}
+                      </p>
+                    </div>
+                    <div className="bg-accent/40 border rounded-xl p-3 text-center">
+                      <p className="text-[10px] text-muted-foreground uppercase font-semibold">Cash / Cheque</p>
+                      <p className="text-lg font-bold text-amber-600 dark:text-amber-400">
+                        ₹{(selectedFeeReportMonth === 'all' 
+                          ? (momData.totalCash + momData.totalCheque)
+                          : ((displayedMonths[0]?.cashAmount || 0) + (displayedMonths[0]?.chequeAmount || 0))
+                        ).toLocaleString('en-IN')}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* MoM Performance Table */}
+                  <div className="border rounded-xl overflow-hidden divide-y bg-card">
+                    <div className="bg-muted/60 px-4 py-2.5 grid grid-cols-12 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      <span className="col-span-3">Month</span>
+                      <span className="col-span-3 text-right">Collection</span>
+                      <span className="col-span-3 text-right">Breakdown</span>
+                      <span className="col-span-3 text-right">Actions / Growth</span>
+                    </div>
+                    {displayedMonths.map((m) => (
+                      <div key={m.monthKey} className="px-4 py-3.5 grid grid-cols-12 items-center text-sm hover:bg-accent/30 transition-colors">
+                        <div className="col-span-3">
+                          <p className="font-semibold text-foreground">{m.monthLabel}</p>
+                          <p className="text-[11px] text-muted-foreground">{m.paymentCount} payments</p>
+                        </div>
+                        <div className="col-span-3 text-right">
+                          <p className="font-bold text-foreground">₹{m.totalCollected.toLocaleString('en-IN')}</p>
+                        </div>
+                        <div className="col-span-3 text-right text-xs text-muted-foreground space-y-0.5">
+                          {m.cashAmount > 0 && <div>Cash: <strong className="text-foreground">₹{m.cashAmount.toLocaleString('en-IN')}</strong></div>}
+                          {m.upiAmount > 0 && <div>UPI: <strong className="text-blue-600 dark:text-blue-400">₹{m.upiAmount.toLocaleString('en-IN')}</strong></div>}
+                          {m.cardAmount > 0 && <div>Card: <strong className="text-purple-600 dark:text-purple-400">₹{m.cardAmount.toLocaleString('en-IN')}</strong></div>}
+                          {m.chequeAmount > 0 && <div>Cheque: <strong className="text-amber-600 dark:text-amber-400">₹{m.chequeAmount.toLocaleString('en-IN')}</strong></div>}
+                        </div>
+                        <div className="col-span-3 flex items-center justify-end gap-2">
+                          <Button
+                            onClick={() => handleExportSingleMonthCSV(batchName, batchStudents, m.monthKey)}
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-xs text-primary hover:bg-primary/10 gap-1 rounded-lg"
+                            title={`Download ${m.monthLabel} CSV`}
+                          >
+                            <Download className="h-3.5 w-3.5" /> CSV
+                          </Button>
+                          {m.growthPercent !== null ? (
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                              m.growthPercent >= 0 
+                                ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' 
+                                : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                            }`}>
+                              {m.growthPercent >= 0 ? `+${m.growthPercent}%` : `${m.growthPercent}%`}
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-muted-foreground">Base</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Itemized Recent Payments per Month */}
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <h4 className="font-semibold text-xs text-muted-foreground uppercase tracking-wider">
+                        {selectedFeeReportMonth === 'all' ? 'All Payment Records by Month' : `Payments for ${displayedMonths[0]?.monthLabel || 'Selected Month'}`}
+                      </h4>
+                      {selectedFeeReportMonth !== 'all' && (
+                        <button
+                          onClick={() => setSelectedFeeReportMonth('all')}
+                          className="text-xs text-primary hover:underline font-medium"
+                        >
+                          View All Months
+                        </button>
+                      )}
+                    </div>
+                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                      {displayedMonths.map(m => (
+                        <div key={m.monthKey} className="border rounded-xl p-3 bg-muted/20 space-y-2 text-xs">
+                          <div className="flex justify-between items-center font-semibold text-sm">
+                            <span>{m.monthLabel}</span>
+                            <span className="text-green-600 dark:text-green-400">₹{m.totalCollected.toLocaleString('en-IN')}</span>
+                          </div>
+                          <div className="divide-y divide-border/50">
+                            {m.payments.map((p, pIdx) => (
+                              <div key={pIdx} className="py-1.5 flex justify-between items-center">
+                                <div>
+                                  <span className="font-medium text-foreground">{p.studentName}</span>
+                                  <span className="text-muted-foreground ml-2">({p.date}) • {p.mode}</span>
+                                  {p.refNo && p.refNo !== '-' && <span className="text-muted-foreground ml-1 font-mono text-[10px]">[{p.refNo}]</span>}
+                                </div>
+                                <span className="font-semibold text-foreground">+₹{p.amount.toLocaleString('en-IN')}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </DialogContent>
+        </Dialog>
         </DashboardLayout>
       </div>
 
-      
-      {receiptData && !printingReport && (
+      {/* Printable Fee Receipt */}
+      {!printingReport && !printingSchedule && !printingMomReport && receiptData && (
         <div className="hidden print:block absolute top-0 left-0 w-full bg-white text-black min-h-screen" style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
           <div className="max-w-[210mm] mx-auto px-10 py-8">
             
@@ -6027,6 +7159,352 @@ Thank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
           </div>
         </div>
       )}
+
+      {/* Printable Fee Installment Schedule & Statement */}
+      {printingSchedule && selectedStudentForFees && feeRecord && (() => {
+        const student = selectedStudentForFees;
+        const scheduleData = getStudentInstallmentSchedule(feeRecord);
+        const totalPaid = feeRecord.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+        const balanceDue = Math.max(0, feeRecord.totalFees - totalPaid);
+
+        return (
+          <div className="hidden print:block absolute top-0 left-0 w-full bg-white text-black min-h-screen" style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
+            <div className="max-w-[210mm] mx-auto px-10 py-8">
+              
+              {/* Header */}
+              <div className="border-b-2 border-gray-800 pb-5 mb-6">
+                <div className="text-center">
+                  <h1 className="text-2xl font-bold uppercase tracking-widest text-gray-900">{instituteSettings.name || 'Sankalp Academy ERP'}</h1>
+                  {instituteSettings.address && (
+                    <p className="text-sm text-gray-600 mt-1">{instituteSettings.address}</p>
+                  )}
+                  <div className="flex items-center justify-center gap-6 mt-1 text-xs text-gray-500">
+                    {instituteSettings.phone && <span>Phone: {instituteSettings.phone}</span>}
+                    {instituteSettings.email && <span>Email: {instituteSettings.email}</span>}
+                  </div>
+                </div>
+                <div className="mt-4 text-center">
+                  <span className="inline-block bg-gray-900 text-white text-xs font-bold uppercase tracking-widest px-4 py-1 rounded-sm">
+                    Fee Installment Schedule & Statement
+                  </span>
+                </div>
+              </div>
+
+              {/* Student & Schedule Meta */}
+              <div className="grid grid-cols-2 gap-8 mb-6 text-sm">
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Student Information</h3>
+                  <table className="text-sm">
+                    <tbody>
+                      <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Name:</td><td className="font-semibold">{student.name}</td></tr>
+                      <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Phone:</td><td>{student.phoneNo || 'N/A'}</td></tr>
+                      <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Email:</td><td>{student.email || 'N/A'}</td></tr>
+                      <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">College/Class:</td><td>{student.collegeName || 'N/A'} {student.studentClass ? `(${student.studentClass})` : ''}</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div className="text-right">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Structure Details</h3>
+                  <table className="text-sm ml-auto">
+                    <tbody>
+                      <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Statement Date:</td><td className="font-semibold">{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td></tr>
+                      <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">EMI Tenure:</td><td className="font-semibold">{feeRecord.emiMonths} Month(s)</td></tr>
+                      <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Frequency:</td><td className="font-semibold capitalize">{feeRecord.paymentFrequency || 'Monthly'}</td></tr>
+                      <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">First Due Date:</td><td>{feeRecord.firstEmiDate ? new Date(feeRecord.firstEmiDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Structure Overview Box */}
+              <div className="grid grid-cols-4 gap-3 mb-6 p-3 bg-gray-50 border border-gray-300 rounded text-center text-sm">
+                <div>
+                  <p className="text-xs text-gray-500 uppercase">Total Course Fees</p>
+                  <p className="text-base font-bold text-gray-900">₹{feeRecord.totalFees.toLocaleString('en-IN')}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase">Down Payment</p>
+                  <p className="text-base font-bold text-gray-900">₹{(feeRecord.downPayment || 0).toLocaleString('en-IN')}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase">Total Paid</p>
+                  <p className="text-base font-bold text-green-700">₹{totalPaid.toLocaleString('en-IN')}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase">Balance Due</p>
+                  <p className="text-base font-bold text-red-600">₹{balanceDue.toLocaleString('en-IN')}</p>
+                </div>
+              </div>
+
+              {/* Installment Schedule Table */}
+              <div className="mb-6">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-600 mb-2">Installment Timeline & Payment Status</h3>
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr className="bg-gray-100">
+                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">#</th>
+                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Scheduled Due Date</th>
+                      <th className="border border-gray-300 px-3 py-2 text-right font-semibold text-gray-700">Installment Amount (₹)</th>
+                      <th className="border border-gray-300 px-3 py-2 text-right font-semibold text-gray-700">Paid Amount (₹)</th>
+                      <th className="border border-gray-300 px-3 py-2 text-center font-semibold text-gray-700">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {scheduleData.installments.map(inst => (
+                      <tr key={inst.num}>
+                        <td className="border border-gray-300 px-3 py-2 text-gray-600 font-medium">Installment {inst.num}</td>
+                        <td className="border border-gray-300 px-3 py-2 font-medium">{inst.date}</td>
+                        <td className="border border-gray-300 px-3 py-2 text-right font-bold">₹{inst.amount.toLocaleString('en-IN')}</td>
+                        <td className="border border-gray-300 px-3 py-2 text-right text-green-700 font-semibold">
+                          {inst.paidAmount > 0 ? `₹${inst.paidAmount.toLocaleString('en-IN')}` : '-'}
+                        </td>
+                        <td className="border border-gray-300 px-3 py-2 text-center">
+                          <span className={`inline-block px-2 py-0.5 text-xs font-bold uppercase rounded ${
+                            inst.status === 'paid' ? 'bg-green-100 text-green-800' :
+                            inst.status === 'partial' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-gray-100 text-gray-700'
+                          }`}>
+                            {inst.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-gray-100 font-bold">
+                      <td colSpan={2} className="border border-gray-300 px-3 py-2 text-right uppercase text-xs">Total Scheduled EMI</td>
+                      <td className="border border-gray-300 px-3 py-2 text-right font-bold text-gray-900">₹{scheduleData.remaining.toLocaleString('en-IN')}</td>
+                      <td className="border border-gray-300 px-3 py-2 text-right text-green-700">₹{totalPaid.toLocaleString('en-IN')}</td>
+                      <td className="border border-gray-300 px-3 py-2 text-center text-xs">
+                        {balanceDue === 0 ? 'ALL CLEARED' : `₹${balanceDue.toLocaleString('en-IN')} PENDING`}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Recorded Payments History if any */}
+              {feeRecord.payments && feeRecord.payments.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-gray-600 mb-2">Payment Receipts Recorded</h3>
+                  <table className="w-full border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-gray-50">
+                        <th className="border border-gray-200 px-2.5 py-1.5 text-left font-semibold text-gray-600">Receipt #</th>
+                        <th className="border border-gray-200 px-2.5 py-1.5 text-left font-semibold text-gray-600">Date</th>
+                        <th className="border border-gray-200 px-2.5 py-1.5 text-left font-semibold text-gray-600">Mode</th>
+                        <th className="border border-gray-200 px-2.5 py-1.5 text-left font-semibold text-gray-600">Reference / Cheque</th>
+                        <th className="border border-gray-200 px-2.5 py-1.5 text-right font-semibold text-gray-600">Amount (₹)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {feeRecord.payments.map((p) => (
+                        <tr key={p.id}>
+                          <td className="border border-gray-200 px-2.5 py-1.5 font-mono">{p.receiptNo || ('RCPT-' + p.id.slice(-6).toUpperCase())}</td>
+                          <td className="border border-gray-200 px-2.5 py-1.5">{new Date(p.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                          <td className="border border-gray-200 px-2.5 py-1.5 uppercase font-medium">{p.paymentMode || 'CASH'}</td>
+                          <td className="border border-gray-200 px-2.5 py-1.5">{p.transactionId || p.chequeNo || '-'}</td>
+                          <td className="border border-gray-200 px-2.5 py-1.5 text-right font-bold text-green-700">₹{p.amount.toLocaleString('en-IN')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Terms */}
+              <div className="mb-10 text-xs text-gray-400 border-t border-gray-200 pt-3">
+                <p className="font-semibold text-gray-500 mb-1">Important Notice:</p>
+                <ol className="list-decimal list-inside space-y-0.5">
+                  <li>Installments must be remitted on or prior to the stipulated due dates.</li>
+                  <li>Fees once deposited are strictly non-refundable and non-transferable.</li>
+                  <li>This official fee schedule is generated by {instituteSettings.name || 'Sankalp Academy ERP'}.</li>
+                </ol>
+              </div>
+
+              {/* Signatures */}
+              <div className="flex justify-between items-end mt-8">
+                <div className="text-center">
+                  <div className="w-40 border-b-2 border-gray-400 mb-1"></div>
+                  <p className="text-xs text-gray-500">Student / Parent Signature</p>
+                </div>
+                <div className="text-center">
+                  <div className="w-40 border-b-2 border-gray-400 mb-1"></div>
+                  <p className="text-xs text-gray-500">Authorized Accounts Officer</p>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="mt-8 text-center text-[10px] text-gray-400 border-t pt-3">
+                Official Fee Document • {instituteSettings.name || 'Sankalp Academy ERP'} • Page 1 of 1
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Printable Month-on-Month Batch Fee Report */}
+      {printingMomReport && selectedBatchForFees && (() => {
+        const batch = batches.find(b => b.id === selectedBatchForFees);
+        const batchStudents = students.filter(s => s.batchId === selectedBatchForFees);
+        const momData = getBatchMomFeeData(batchStudents);
+
+        return (
+          <div className="hidden print:block absolute top-0 left-0 w-full bg-white text-black min-h-screen" style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
+            <div className="max-w-[210mm] mx-auto px-8 py-8">
+              
+              {/* Header */}
+              <div className="border-b-2 border-gray-800 pb-4 mb-6">
+                <div className="text-center">
+                  <h1 className="text-2xl font-bold uppercase tracking-widest text-gray-900">{instituteSettings.name || 'Sankalp Academy ERP'}</h1>
+                  {instituteSettings.address && (
+                    <p className="text-sm text-gray-600 mt-0.5">{instituteSettings.address}</p>
+                  )}
+                  <div className="flex items-center justify-center gap-6 mt-1 text-xs text-gray-500">
+                    {instituteSettings.phone && <span>Phone: {instituteSettings.phone}</span>}
+                    {instituteSettings.email && <span>Email: {instituteSettings.email}</span>}
+                  </div>
+                </div>
+                <div className="mt-3 text-center">
+                  <span className="inline-block bg-gray-900 text-white text-xs font-bold uppercase tracking-widest px-4 py-1 rounded-sm">
+                    Month-on-Month Batch Fee Collection Report
+                  </span>
+                </div>
+              </div>
+
+              {/* Batch Meta */}
+              <div className="flex justify-between items-center bg-gray-50 border border-gray-300 p-3 rounded mb-6 text-sm">
+                <div>
+                  <span className="text-gray-500">Batch: </span>
+                  <strong className="text-base text-gray-900">{batch?.name || 'Batch'}</strong>
+                  {batch?.year && <span className="ml-2 text-xs bg-gray-200 px-2 py-0.5 rounded font-semibold">{batch.year}</span>}
+                </div>
+                <div>
+                  <span className="text-gray-500">Total Enrolled: </span>
+                  <strong>{batchStudents.length} Students</strong>
+                </div>
+                <div>
+                  <span className="text-gray-500">Total Collected: </span>
+                  <strong className="text-green-700 text-base">₹{momData.grandTotal.toLocaleString('en-IN')}</strong>
+                </div>
+                <div>
+                  <span className="text-gray-500">Report Date: </span>
+                  <strong>{new Date().toLocaleDateString('en-IN')}</strong>
+                </div>
+              </div>
+
+              {/* MoM Monthly Summary Table */}
+              <div className="mb-6">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-600 mb-2">Monthly Collection Summary</h3>
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr className="bg-gray-100 text-xs uppercase text-gray-700">
+                      <th className="border border-gray-300 px-3 py-2 text-left">Month</th>
+                      <th className="border border-gray-300 px-3 py-2 text-right">Cash (₹)</th>
+                      <th className="border border-gray-300 px-3 py-2 text-right">UPI (₹)</th>
+                      <th className="border border-gray-300 px-3 py-2 text-right">Card (₹)</th>
+                      <th className="border border-gray-300 px-3 py-2 text-right">Cheque (₹)</th>
+                      <th className="border border-gray-300 px-3 py-2 text-right">Total (₹)</th>
+                      <th className="border border-gray-300 px-3 py-2 text-center">Txns</th>
+                      <th className="border border-gray-300 px-3 py-2 text-right">MoM Growth</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {momData.months.map((m, idx) => (
+                      <tr key={m.monthKey}>
+                        <td className="border border-gray-300 px-3 py-2 font-semibold text-gray-900">{m.monthLabel}</td>
+                        <td className="border border-gray-300 px-3 py-2 text-right text-gray-600">₹{m.cashAmount.toLocaleString('en-IN')}</td>
+                        <td className="border border-gray-300 px-3 py-2 text-right text-gray-600">₹{m.upiAmount.toLocaleString('en-IN')}</td>
+                        <td className="border border-gray-300 px-3 py-2 text-right text-gray-600">₹{m.cardAmount.toLocaleString('en-IN')}</td>
+                        <td className="border border-gray-300 px-3 py-2 text-right text-gray-600">₹{m.chequeAmount.toLocaleString('en-IN')}</td>
+                        <td className="border border-gray-300 px-3 py-2 text-right font-bold text-gray-900">₹{m.totalCollected.toLocaleString('en-IN')}</td>
+                        <td className="border border-gray-300 px-3 py-2 text-center text-xs font-semibold">{m.paymentCount}</td>
+                        <td className="border border-gray-300 px-3 py-2 text-right text-xs font-bold">
+                          {idx === 0 ? (
+                            <span className="text-gray-400">-</span>
+                          ) : m.growthPercent !== null ? (
+                            <span className={m.growthPercent >= 0 ? 'text-green-700' : 'text-red-600'}>
+                              {m.growthPercent >= 0 ? `+${m.growthPercent}%` : `${m.growthPercent}%`}
+                            </span>
+                          ) : '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-gray-100 font-bold text-sm">
+                      <td className="border border-gray-300 px-3 py-2 uppercase text-xs">Total Collection</td>
+                      <td className="border border-gray-300 px-3 py-2 text-right">₹{momData.totalCash.toLocaleString('en-IN')}</td>
+                      <td className="border border-gray-300 px-3 py-2 text-right">₹{momData.totalUpi.toLocaleString('en-IN')}</td>
+                      <td className="border border-gray-300 px-3 py-2 text-right">₹{momData.totalCard.toLocaleString('en-IN')}</td>
+                      <td className="border border-gray-300 px-3 py-2 text-right">₹{momData.totalCheque.toLocaleString('en-IN')}</td>
+                      <td className="border border-gray-300 px-3 py-2 text-right text-green-700 text-base">₹{momData.grandTotal.toLocaleString('en-IN')}</td>
+                      <td className="border border-gray-300 px-3 py-2 text-center">{momData.totalTxns}</td>
+                      <td className="border border-gray-300 px-3 py-2 text-center text-xs text-gray-500">100%</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Itemized Transactions per Month */}
+              <div className="mb-6">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-600 mb-2">Itemized Payments by Month</h3>
+                {momData.months.map(m => (
+                  <div key={m.monthKey} className="mb-4">
+                    <div className="bg-gray-100 px-3 py-1.5 border border-gray-300 font-bold text-xs flex justify-between">
+                      <span>{m.monthLabel}</span>
+                      <span>{m.payments.length} Payments • Total: ₹{m.totalCollected.toLocaleString('en-IN')}</span>
+                    </div>
+                    <table className="w-full border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-gray-50 text-gray-600">
+                          <th className="border border-gray-200 px-2 py-1 text-left">Date</th>
+                          <th className="border border-gray-200 px-2 py-1 text-left">Student Name</th>
+                          <th className="border border-gray-200 px-2 py-1 text-left">Receipt No</th>
+                          <th className="border border-gray-200 px-2 py-1 text-left">Mode</th>
+                          <th className="border border-gray-200 px-2 py-1 text-left">Ref / Cheque No</th>
+                          <th className="border border-gray-200 px-2 py-1 text-right">Amount (₹)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {m.payments.map((p, pIdx) => (
+                          <tr key={pIdx}>
+                            <td className="border border-gray-200 px-2 py-1">{p.date}</td>
+                            <td className="border border-gray-200 px-2 py-1 font-medium">{p.studentName}</td>
+                            <td className="border border-gray-200 px-2 py-1 font-mono">{p.receiptNo}</td>
+                            <td className="border border-gray-200 px-2 py-1 uppercase">{p.mode}</td>
+                            <td className="border border-gray-200 px-2 py-1">{p.refNo}</td>
+                            <td className="border border-gray-200 px-2 py-1 text-right font-bold text-green-700">₹{p.amount.toLocaleString('en-IN')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+              </div>
+
+              {/* Signatures */}
+              <div className="flex justify-between items-end mt-12">
+                <div className="text-center">
+                  <div className="w-40 border-b-2 border-gray-400 mb-1"></div>
+                  <p className="text-xs text-gray-500">Prepared By</p>
+                </div>
+                <div className="text-center">
+                  <div className="w-40 border-b-2 border-gray-400 mb-1"></div>
+                  <p className="text-xs text-gray-500">Director / Authorized Signatory</p>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="mt-8 text-center text-[10px] text-gray-400 border-t pt-3">
+                Official Batch Performance Document • {instituteSettings.name || 'Sankalp Academy ERP'}
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Printable Student Report */}
       {printingReport && selectedStudentForReport && (() => {
