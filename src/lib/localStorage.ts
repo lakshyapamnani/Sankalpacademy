@@ -188,6 +188,12 @@ export const deleteStudent = (studentId: string): boolean => {
     const filteredAttendance = attendance.filter(a => a.studentId !== studentId);
     saveToStorage(STORAGE_KEYS.ATTENDANCE, filteredAttendance);
     attendanceToRemove.forEach(record => void removeItemFromRealtime(DB_PATHS.ATTENDANCE, record.id));
+
+    // Delete related fee record
+    const fees = getFromStorage<FeeRecord>(STORAGE_KEYS.FEES);
+    const filteredFees = fees.filter(f => f.studentId !== studentId);
+    saveToStorage(STORAGE_KEYS.FEES, filteredFees);
+    void removeItemFromRealtime(DB_PATHS.FEES, studentId);
     
     return true;
   } catch (error) {
@@ -843,6 +849,19 @@ export const updateFeeRecord = async (feeRecord: FeeRecord): Promise<void> => {
 
   // Sync with Firebase Realtime Database
   void writeItemToRealtime(DB_PATHS.FEES, feeRecord.studentId, feeRecord);
+};
+
+export const deleteFeeRecord = async (studentId: string): Promise<boolean> => {
+  try {
+    const records = getFromStorage<FeeRecord>(STORAGE_KEYS.FEES);
+    const filtered = records.filter(r => r.studentId !== studentId);
+    saveToStorage(STORAGE_KEYS.FEES, filtered);
+    void removeItemFromRealtime(DB_PATHS.FEES, studentId);
+    return true;
+  } catch (error) {
+    console.error('Error deleting fee record:', error);
+    return false;
+  }
 };
 
 export const getNextAutoReceiptNo = async (studentId: string): Promise<string> => {
