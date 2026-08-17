@@ -58,6 +58,10 @@ export interface FeePayment {
   date: string;
   amount: number;
   receiptNo?: string;
+  paymentMode?: 'cash' | 'upi' | 'card' | 'cheque';
+  transactionId?: string;
+  chequeNo?: string;
+  chequeDate?: string;
 }
 
 export interface FeeRecord {
@@ -65,6 +69,9 @@ export interface FeeRecord {
   totalFees: number;
   emiMonths: number;
   payments: FeePayment[];
+  downPayment?: number;
+  firstEmiDate?: string;
+  paymentFrequency?: 'monthly' | 'custom';
 }
 
 export interface MCQQuestion {
@@ -181,6 +188,12 @@ export const deleteStudent = (studentId: string): boolean => {
     const filteredAttendance = attendance.filter(a => a.studentId !== studentId);
     saveToStorage(STORAGE_KEYS.ATTENDANCE, filteredAttendance);
     attendanceToRemove.forEach(record => void removeItemFromRealtime(DB_PATHS.ATTENDANCE, record.id));
+
+    // Delete related fee record
+    const fees = getFromStorage<FeeRecord>(STORAGE_KEYS.FEES);
+    const filteredFees = fees.filter(f => f.studentId !== studentId);
+    saveToStorage(STORAGE_KEYS.FEES, filteredFees);
+    void removeItemFromRealtime(DB_PATHS.FEES, studentId);
     
     return true;
   } catch (error) {
@@ -359,7 +372,7 @@ const syncRealtimeData = async () => {
     fetchCollectionFromRealtime<Note>(DB_PATHS.NOTES),
     fetchCollectionFromRealtime<AttendanceRecord>(DB_PATHS.ATTENDANCE),
     fetchCollectionFromRealtime<Batch>(DB_PATHS.BATCHES),
-    !isElectron ? fetchCollectionFromRealtime<FeeRecord>(DB_PATHS.FEES) : Promise.resolve(null),
+    fetchCollectionFromRealtime<FeeRecord>(DB_PATHS.FEES),
     fetchCollectionFromRealtime<Test>(DB_PATHS.TESTS),
     fetchCollectionFromRealtime<TestResult>(DB_PATHS.TEST_RESULTS),
     fetchCollectionFromRealtime<Staff>(DB_PATHS.STAFF),
@@ -520,11 +533,8 @@ export const subscribeToRealtimeUpdates = (onUpdate?: () => void): Unsubscribe =
     attachListener<Subject>(DB_PATHS.SUBJECTS, STORAGE_KEYS.SUBJECTS, onUpdate),
     attachListener<Teacher>(DB_PATHS.TEACHERS, STORAGE_KEYS.TEACHERS, onUpdate),
     attachListener<Lead>(DB_PATHS.LEADS, STORAGE_KEYS.LEADS, onUpdate),
+    attachListener<FeeRecord>(DB_PATHS.FEES, STORAGE_KEYS.FEES, onUpdate),
   ];
-
-  if (!isElectron) {
-    unsubscribes.push(attachListener<FeeRecord>(DB_PATHS.FEES, STORAGE_KEYS.FEES, onUpdate));
-  }
 
   return () => unsubscribes.forEach(u => u());
 };
@@ -816,35 +826,16 @@ export const clearCurrentUser = (): void => {
 // Fees
 
 export const getFeeRecords = async (): Promise<FeeRecord[]> => {
-  if (isElectron) {
-    try {
-      const sqlRecords = await window.electronAPI.getFeeRecords();
-      if (sqlRecords && sqlRecords.length > 0) {
-        return sqlRecords;
-      }
-    } catch (error) {
-      console.error('SQLite getFeeRecords failed', error);
-    }
-  }
   return getFromStorage<FeeRecord>(STORAGE_KEYS.FEES);
 };
 
 export const getFeeRecordByStudent = async (studentId: string): Promise<FeeRecord | undefined> => {
-  if (isElectron) {
-    try {
-      const record = await window.electronAPI.getFeeRecord(studentId);
-      if (record) return record;
-    } catch (error) {
-      console.error('SQLite getFeeRecord failed', error);
-    }
-  }
-  // Always fall through to localStorage as backup
   const localRecords = getFromStorage<FeeRecord>(STORAGE_KEYS.FEES);
   return localRecords.find(f => f.studentId === studentId);
 };
 
 export const updateFeeRecord = async (feeRecord: FeeRecord): Promise<void> => {
-  // Always save to localStorage as backup
+  // Save to local cache
   const records = getFromStorage<FeeRecord>(STORAGE_KEYS.FEES);
   const index = records.findIndex(f => f.studentId === feeRecord.studentId);
   let newRecords;
@@ -856,16 +847,21 @@ export const updateFeeRecord = async (feeRecord: FeeRecord): Promise<void> => {
   }
   saveToStorage(STORAGE_KEYS.FEES, newRecords);
 
-  // Also save to SQLite in Electron
-  if (isElectron) {
-    try {
-      await window.electronAPI.updateFeeRecord(feeRecord);
-    } catch (error) {
-      console.error('SQLite updateFeeRecord failed', error);
-    }
-  }
-
+  // Sync with Firebase Realtime Database
   void writeItemToRealtime(DB_PATHS.FEES, feeRecord.studentId, feeRecord);
+};
+
+export const deleteFeeRecord = async (studentId: string): Promise<boolean> => {
+  try {
+    const records = getFromStorage<FeeRecord>(STORAGE_KEYS.FEES);
+    const filtered = records.filter(r => r.studentId !== studentId);
+    saveToStorage(STORAGE_KEYS.FEES, filtered);
+    void removeItemFromRealtime(DB_PATHS.FEES, studentId);
+    return true;
+  } catch (error) {
+    console.error('Error deleting fee record:', error);
+    return false;
+  }
 };
 
 export const getNextAutoReceiptNo = async (studentId: string): Promise<string> => {
@@ -933,7 +929,7 @@ export const searchFeeByReceiptNo = async (receiptNo: string): Promise<FeeSearch
   if (!receiptNo || !receiptNo.trim()) return [];
   const searchTerm = receiptNo.trim().toLowerCase();
 
-  // Search all fee records (checks SQLite first, falls back to localStorage)
+  // Search all fee records from local cache (synced with Firebase)
   const records = await getFeeRecords();
   const results: FeeSearchResult[] = [];
   for (const record of records) {

@@ -113,3 +113,27 @@ All colors MUST be HSL.
     @apply bg-background text-foreground;
   }
 }
+
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  
+  /* Strictly hide UI navigation, sidebar, fixed overlays, modals, and Radix portals */
+  [data-radix-portal],
+  [role="dialog"],
+  [data-state="open"],
+  .fixed,
+  .print\:hidden {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+  }
+
+  .print\:block {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+}
