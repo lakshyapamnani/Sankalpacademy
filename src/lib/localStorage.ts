@@ -51,15 +51,18 @@ export interface Teacher {
   firebaseUid?: string;
 }
 
+export type PaymentMode = 'cash' | 'upi' | 'card' | 'bank_transfer' | 'cheque' | 'other' | string;
+
 export interface FeePayment {
   id: string;
   date: string;
   amount: number;
   receiptNo?: string;
-  paymentMode?: 'cash' | 'upi' | 'card' | 'cheque';
+  paymentMode?: PaymentMode;
   transactionId?: string;
   chequeNo?: string;
   chequeDate?: string;
+  notes?: string;
 }
 
 export interface FeeRecord {
