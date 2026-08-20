@@ -414,6 +414,11 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
     periodStats.thisMonth.due = totalDue;
 
     const totalStudentsCount = filteredStudents.length;
+    const studentsWithStructureCount = filteredStudents.filter((student) => {
+      const record = feeRecordMap.get(student.id);
+      return record && Number(record.totalFees) > 0;
+    }).length;
+    const structurePercent = totalStudentsCount > 0 ? (studentsWithStructureCount / totalStudentsCount) * 100 : 0;
     const receivedPercent = totalFees > 0 ? (totalReceived / totalFees) * 100 : 0;
     const duePercent = totalFees > 0 ? (totalDue / totalFees) * 100 : 0;
 
@@ -424,6 +429,8 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
       receivedPercent,
       duePercent,
       totalStudentsCount,
+      studentsWithStructureCount,
+      structurePercent,
       fullyPaidCount,
       fullyPaidPercent: totalStudentsCount > 0 ? (fullyPaidCount / totalStudentsCount) * 100 : 0,
       partiallyPaidCount,
@@ -457,13 +464,13 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
         "Latest Payment Date",
         "Latest Payment Mode",
         "Latest Receipt No",
-        "Payment Status",
+        "Status",
       ];
 
       const rows = filteredStudents.map((student) => {
         const record = feeRecordMap.get(student.id);
         const batch = batches.find((b) => b.id === student.batchId);
-        const totalFees = record?.totalFees || 0;
+        const totalFees = Number(record?.totalFees) || 0;
         const payments = record?.payments || [];
         const totalPaid = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
         const dueAmount = Math.max(0, totalFees - totalPaid);
@@ -539,37 +546,36 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
                 Fees Overview Dashboard
               </h2>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Live financial calculations, payment breakdowns, and student fee status tracking.
+            <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+              Live financial calculations, collection tracking & fee status analytics across batches and classes
             </p>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex flex-wrap items-center gap-2">
             {isAnyFilterActive && (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={handleResetFilters}
-                className="h-9 text-xs rounded-xl text-muted-foreground hover:text-foreground gap-1.5"
+                className="gap-1.5 h-9 rounded-xl text-xs text-muted-foreground hover:text-foreground"
               >
-                <RotateCcw className="h-3.5 w-3.5" />
-                Reset Filters
+                <RotateCcw className="h-3.5 w-3.5" /> Reset Filters
               </Button>
             )}
+
             <Button
               onClick={handleExportFilteredCSV}
               variant="outline"
               size="sm"
-              className="h-9 text-xs rounded-xl border-primary/30 text-primary hover:bg-primary/10 gap-1.5 font-semibold"
+              className="gap-1.5 h-9 rounded-xl text-xs font-semibold hover:bg-accent border"
             >
-              <Download className="h-3.5 w-3.5" />
-              Export Filtered CSV
+              <Download className="h-3.5 w-3.5" /> Export Filtered CSV
             </Button>
           </div>
         </div>
 
-        {/* Filter Controls Row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t">
+        {/* Filter Controls Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-border/60">
           {/* Academic Year Filter */}
           <div className="space-y-1.5">
             <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
@@ -581,9 +587,9 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
               className="h-9 w-full rounded-xl border border-input bg-background px-3 py-1.5 text-xs font-medium focus:ring-1 focus:ring-primary focus:outline-none"
             >
               <option value="all">All Academic Years</option>
-              {academicYears.map((yr) => (
-                <option key={yr} value={yr}>
-                  {yr}
+              {academicYears.map((year) => (
+                <option key={year} value={year}>
+                  {year}
                 </option>
               ))}
             </select>
@@ -684,27 +690,43 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
               <h3 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">
                 ₹{metrics.totalFees.toLocaleString("en-IN")}
               </h3>
-              <p className="text-xs text-muted-foreground">
-                Assigned across{" "}
-                <span className="font-semibold text-foreground">{metrics.totalStudentsCount}</span>{" "}
-                students
-              </p>
+              <div className="text-xs text-muted-foreground space-y-0.5">
+                <p>
+                  {metrics.studentsWithStructureCount === 0 ? (
+                    <span className="text-amber-600 dark:text-amber-400 font-medium">0 of {metrics.totalStudentsCount} students structured</span>
+                  ) : metrics.studentsWithStructureCount === metrics.totalStudentsCount ? (
+                    <>
+                      Assigned across all <span className="font-semibold text-foreground">{metrics.totalStudentsCount}</span> students
+                    </>
+                  ) : (
+                    <>
+                      Assigned for <span className="font-semibold text-foreground">{metrics.studentsWithStructureCount}</span> of{" "}
+                      <span className="font-semibold text-foreground">{metrics.totalStudentsCount}</span> students
+                    </>
+                  )}
+                </p>
+                {metrics.totalStudentsCount > metrics.studentsWithStructureCount && metrics.studentsWithStructureCount > 0 && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">
+                    ({metrics.totalStudentsCount - metrics.studentsWithStructureCount} pending structure)
+                  </p>
+                )}
+              </div>
             </div>
 
             <CircularProgress
-              percentage={100}
+              percentage={metrics.structurePercent}
               size={76}
               strokeWidth={7}
               colorClass="text-primary stroke-current"
               glowColor="hsl(var(--primary) / 0.3)"
-              label="Assigned"
+              label="Structured"
             />
           </div>
 
           <div className="mt-4 pt-3 border-t border-border/60 flex items-center justify-between text-xs text-muted-foreground">
-            <span>Overall Fee Target</span>
+            <span>Structure Coverage</span>
             <span className="font-bold text-primary flex items-center gap-0.5">
-              100% Target <ArrowUpRight className="h-3.5 w-3.5" />
+              {metrics.structurePercent.toFixed(0)}% Assigned <ArrowUpRight className="h-3.5 w-3.5" />
             </span>
           </div>
         </Card>
