@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit, ArrowLeft, Search, Download, MessageSquare, Eye, TrendingUp, FileText, Trash2, GraduationCap, LogIn, Key, Upload, FileSpreadsheet, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit, ArrowLeft, Search, Download, MessageSquare, Eye, TrendingUp, FileText, Trash2, GraduationCap, LogIn, Key, Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Layers } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -218,6 +218,26 @@ const AdminDashboard = () => {
     new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   );
   const [feeFormFrequency, setFeeFormFrequency] = useState<'monthly' | 'custom'>('monthly');
+
+  // Batch Fee Structure Form State
+  const [isBatchFeeModalOpen, setIsBatchFeeModalOpen] = useState(false);
+  const [batchFeeTotalFees, setBatchFeeTotalFees] = useState<string>("");
+  const [batchFeeDownPayment, setBatchFeeDownPayment] = useState<string>("0");
+  const [batchFeeEmiMonths, setBatchFeeEmiMonths] = useState<string>("");
+  const [batchFeeFirstEmiDate, setBatchFeeFirstEmiDate] = useState<string>(
+    new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  );
+  const [batchFeeFrequency, setBatchFeeFrequency] = useState<'monthly' | 'custom'>('monthly');
+  const [batchFeeScope, setBatchFeeScope] = useState<'all' | 'unstructured'>('all');
+  const [isAssigningBatchFees, setIsAssigningBatchFees] = useState(false);
+
+  // Edit Individual Student Fee Structure Modal State
+  const [isEditStudentFeeModalOpen, setIsEditStudentFeeModalOpen] = useState(false);
+  const [editFeeTotalFees, setEditFeeTotalFees] = useState<string>("");
+  const [editFeeDownPayment, setEditFeeDownPayment] = useState<string>("0");
+  const [editFeeEmiMonths, setEditFeeEmiMonths] = useState<string>("");
+  const [editFeeFirstEmiDate, setEditFeeFirstEmiDate] = useState<string>("");
+  const [editFeeFrequency, setEditFeeFrequency] = useState<'monthly' | 'custom'>('monthly');
 
   // Payment Mode State
   const [paymentMode, setPaymentMode] = useState<PaymentMode>('cash');
@@ -450,6 +470,127 @@ const AdminDashboard = () => {
     setFeeFormFirstEmiDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
     setFeeFormFrequency('monthly');
     toast.success("Fee structure saved successfully");
+  };
+
+  const handleOpenEditStudentFee = () => {
+    if (!feeRecord) return;
+    setEditFeeTotalFees(feeRecord.totalFees ? feeRecord.totalFees.toString() : "");
+    setEditFeeDownPayment(feeRecord.downPayment !== undefined ? feeRecord.downPayment.toString() : "0");
+    setEditFeeEmiMonths(feeRecord.emiMonths ? feeRecord.emiMonths.toString() : "");
+    setEditFeeFirstEmiDate(
+      feeRecord.firstEmiDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    );
+    setEditFeeFrequency(feeRecord.paymentFrequency || 'monthly');
+    setIsEditStudentFeeModalOpen(true);
+  };
+
+  const handleSaveEditStudentFee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedStudentForFees || !feeRecord) return;
+    const totalFees = Number(editFeeTotalFees);
+    const downPayment = Number(editFeeDownPayment) || 0;
+    const emiMonths = Number(editFeeEmiMonths);
+    const firstEmiDate = editFeeFirstEmiDate;
+    const paymentFrequency = editFeeFrequency;
+
+    if (!totalFees || totalFees <= 0) {
+      toast.error("Please enter a valid Total Course Fees");
+      return;
+    }
+    if (!emiMonths || emiMonths <= 0) {
+      toast.error("Please enter valid EMI Months");
+      return;
+    }
+    if (!firstEmiDate) {
+      toast.error("Please select a valid First EMI Due Date");
+      return;
+    }
+
+    const updatedRecord: FeeRecord = {
+      ...feeRecord,
+      studentId: selectedStudentForFees.id,
+      totalFees,
+      downPayment,
+      emiMonths,
+      firstEmiDate,
+      paymentFrequency,
+      payments: feeRecord.payments || [], // Preserve existing payments!
+    };
+
+    await updateFeeRecord(updatedRecord);
+    setFeeRecord(updatedRecord);
+    const freshRecords = await getFeeRecords();
+    setAllFeeRecords(freshRecords || []);
+    setIsEditStudentFeeModalOpen(false);
+    toast.success(`Fee structure updated for ${selectedStudentForFees.name}`);
+  };
+
+  const handleAssignBatchFeeStructure = async (targetBatchStudents: Student[], targetBatchName: string) => {
+    const totalFees = Number(batchFeeTotalFees);
+    const downPayment = Number(batchFeeDownPayment) || 0;
+    const emiMonths = Number(batchFeeEmiMonths);
+    const firstEmiDate = batchFeeFirstEmiDate;
+    const paymentFrequency = batchFeeFrequency;
+
+    if (!totalFees || totalFees <= 0) {
+      toast.error("Please enter a valid Total Course Fees");
+      return;
+    }
+    if (!emiMonths || emiMonths <= 0) {
+      toast.error("Please enter valid EMI Months");
+      return;
+    }
+    if (!firstEmiDate) {
+      toast.error("Please select a valid First EMI Due Date");
+      return;
+    }
+
+    setIsAssigningBatchFees(true);
+    try {
+      const allCurrentRecords = await getFeeRecords();
+      let updatedCount = 0;
+
+      for (const student of targetBatchStudents) {
+        const existingRecord = allCurrentRecords.find(r => r.studentId === student.id);
+        
+        // If scope is 'unstructured' and student already has totalFees > 0, skip
+        if (batchFeeScope === 'unstructured' && existingRecord && Number(existingRecord.totalFees) > 0) {
+          continue;
+        }
+
+        const newRecord: FeeRecord = {
+          studentId: student.id,
+          totalFees,
+          downPayment,
+          emiMonths,
+          firstEmiDate,
+          paymentFrequency,
+          payments: existingRecord?.payments || [], // Preserve existing payments!
+        };
+
+        await updateFeeRecord(newRecord);
+        updatedCount++;
+      }
+
+      const freshRecords = await getFeeRecords();
+      setAllFeeRecords(freshRecords || []);
+
+      if (selectedStudentForFees) {
+        const refreshedCurrent = await getFeeRecordByStudent(selectedStudentForFees.id);
+        setFeeRecord(refreshedCurrent || null);
+      }
+
+      setIsBatchFeeModalOpen(false);
+      setBatchFeeTotalFees("");
+      setBatchFeeDownPayment("0");
+      setBatchFeeEmiMonths("");
+      toast.success(`Fee structure assigned to ${updatedCount} students in ${targetBatchName}`);
+    } catch (err) {
+      console.error("Batch fee assignment failed:", err);
+      toast.error("Failed to assign fee structure to batch");
+    } finally {
+      setIsAssigningBatchFees(false);
+    }
   };
 
   const handleAddPayment = async () => {
@@ -3847,6 +3988,21 @@ const AdminDashboard = () => {
                               </select>
                               <Button 
                                 onClick={() => {
+                                  setBatchFeeTotalFees("");
+                                  setBatchFeeDownPayment("0");
+                                  setBatchFeeEmiMonths("");
+                                  setBatchFeeScope('all');
+                                  setIsBatchFeeModalOpen(true);
+                                }} 
+                                variant="outline" 
+                                className="gap-2 shrink-0 self-start sm:self-center rounded-xl h-10 hover:bg-accent border border-primary/40 text-primary hover:bg-primary/10"
+                                disabled={batchStudents.length === 0}
+                              >
+                                <Layers className="h-4 w-4" />
+                                <span className="font-semibold text-xs">Assign Batch Structure</span>
+                              </Button>
+                              <Button 
+                                onClick={() => {
                                   if (selectedFeeReportMonth === 'all') {
                                     handleExportFeesCSV(batchStudents, batchName);
                                   } else {
@@ -3971,6 +4127,13 @@ const AdminDashboard = () => {
                                         
                                         {feeRecord && (
                                           <div className="flex flex-wrap gap-2 items-center">
+                                            <Button 
+                                              onClick={handleOpenEditStudentFee} 
+                                              variant="outline" 
+                                              className="gap-2 shrink-0 border-accent hover:bg-accent text-xs font-semibold"
+                                            >
+                                              <Edit className="h-4 w-4" /> Edit Structure
+                                            </Button>
                                             <Button 
                                               onClick={() => setIsInstallmentModalOpen(true)} 
                                               variant="outline" 
@@ -7048,6 +7211,313 @@ const AdminDashboard = () => {
                 </div>
               );
             })()}
+          </DialogContent>
+        </Dialog>
+
+        {/* Assign Batch Fee Structure Dialog */}
+        <Dialog open={isBatchFeeModalOpen} onOpenChange={setIsBatchFeeModalOpen}>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-lg font-bold">
+                <Layers className="h-5 w-5 text-primary" /> Assign Fee Structure to Batch
+              </DialogTitle>
+              {selectedBatchForFees && (() => {
+                const activeBatch = batches.find(b => b.id === selectedBatchForFees);
+                const batchName = selectedBatchForFees === 'unassigned' ? "Unassigned Students" : (activeBatch?.name || "Selected Batch");
+                const batchStudents = selectedBatchForFees === 'unassigned'
+                  ? students.filter(s => !s.batchId || !batches.some(b => b.id === s.batchId))
+                  : students.filter(s => s.batchId === selectedBatchForFees);
+                return (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Set a standard fee schedule for all <span className="font-semibold text-foreground">{batchStudents.length} students</span> in <span className="font-semibold text-primary">{batchName}</span>. Any already-recorded payments will be preserved.
+                  </p>
+                );
+              })()}
+            </DialogHeader>
+
+            {selectedBatchForFees && (() => {
+              const activeBatch = batches.find(b => b.id === selectedBatchForFees);
+              const batchName = selectedBatchForFees === 'unassigned' ? "Unassigned Students" : (activeBatch?.name || "Selected Batch");
+              const batchStudents = selectedBatchForFees === 'unassigned'
+                ? students.filter(s => !s.batchId || !batches.some(b => b.id === s.batchId))
+                : students.filter(s => s.batchId === selectedBatchForFees);
+
+              return (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleAssignBatchFeeStructure(batchStudents, batchName);
+                  }}
+                  className="space-y-4 pt-2"
+                >
+                  <div className="space-y-1.5">
+                    <Label htmlFor="batchFeeTotalFees">Total Course Fees (₹)</Label>
+                    <div className="relative">
+                      <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="batchFeeTotalFees"
+                        type="number"
+                        className="pl-8"
+                        placeholder="e.g. 36000"
+                        required
+                        min="1"
+                        value={batchFeeTotalFees}
+                        onChange={(e) => setBatchFeeTotalFees(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="batchFeeDownPayment">Down Payment (₹)</Label>
+                    <div className="relative">
+                      <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="batchFeeDownPayment"
+                        type="number"
+                        className="pl-8"
+                        placeholder="e.g. 12000"
+                        min="0"
+                        value={batchFeeDownPayment}
+                        onChange={(e) => setBatchFeeDownPayment(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="batchFeeEmiMonths">EMI Months</Label>
+                      <Input
+                        id="batchFeeEmiMonths"
+                        type="number"
+                        placeholder="e.g. 3"
+                        required
+                        min="1"
+                        value={batchFeeEmiMonths}
+                        onChange={(e) => setBatchFeeEmiMonths(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label>Monthly EMI Preview</Label>
+                      <div className="relative">
+                        <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          className="pl-8 bg-muted font-semibold text-primary"
+                          readOnly
+                          value={(() => {
+                            const m = Number(batchFeeEmiMonths || 0);
+                            if (m <= 0) return '—';
+                            const remaining = Math.max(0, Number(batchFeeTotalFees || 0) - Number(batchFeeDownPayment || 0));
+                            return Math.ceil(remaining / m).toLocaleString('en-IN');
+                          })()}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="batchFeeFirstEmiDate">First EMI Due Date</Label>
+                      <Input
+                        id="batchFeeFirstEmiDate"
+                        type="date"
+                        required
+                        value={batchFeeFirstEmiDate}
+                        onChange={(e) => setBatchFeeFirstEmiDate(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="batchFeeFrequency">Payment Frequency</Label>
+                      <select
+                        id="batchFeeFrequency"
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        value={batchFeeFrequency}
+                        onChange={(e) => setBatchFeeFrequency(e.target.value as 'monthly' | 'custom')}
+                      >
+                        <option value="monthly">Monthly</option>
+                        <option value="custom">Custom</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Scope Selection */}
+                  <div className="space-y-2 pt-2 border-t">
+                    <Label className="text-xs font-semibold text-muted-foreground uppercase">Target Students</Label>
+                    <div className="grid grid-cols-1 gap-2">
+                      <label className="flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer hover:bg-accent/40 text-xs font-medium">
+                        <input
+                          type="radio"
+                          name="batchScope"
+                          checked={batchFeeScope === 'all'}
+                          onChange={() => setBatchFeeScope('all')}
+                          className="accent-primary"
+                        />
+                        <div>
+                          <p className="font-semibold text-foreground">Apply to all {batchStudents.length} students</p>
+                          <p className="text-[11px] text-muted-foreground">Updates structure for all students while keeping their recorded payments intact</p>
+                        </div>
+                      </label>
+
+                      <label className="flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer hover:bg-accent/40 text-xs font-medium">
+                        <input
+                          type="radio"
+                          name="batchScope"
+                          checked={batchFeeScope === 'unstructured'}
+                          onChange={() => setBatchFeeScope('unstructured')}
+                          className="accent-primary"
+                        />
+                        <div>
+                          <p className="font-semibold text-foreground">Apply only to students without a fee structure</p>
+                          <p className="text-[11px] text-muted-foreground">Leaves students who already have an existing fee structure unchanged</p>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-3 border-t">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsBatchFeeModalOpen(false)}
+                      disabled={isAssigningBatchFees}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={isAssigningBatchFees || batchStudents.length === 0}
+                      className="gap-2"
+                    >
+                      <Layers className="h-4 w-4" />
+                      {isAssigningBatchFees ? "Assigning..." : `Assign to ${batchStudents.length} Students`}
+                    </Button>
+                  </div>
+                </form>
+              );
+            })()}
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Individual Student Fee Structure Dialog */}
+        <Dialog open={isEditStudentFeeModalOpen} onOpenChange={setIsEditStudentFeeModalOpen}>
+          <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-lg font-bold">
+                <Edit className="h-5 w-5 text-primary" /> Edit Fee Structure
+              </DialogTitle>
+              {selectedStudentForFees && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Adjust custom fee structure for <span className="font-semibold text-foreground">{selectedStudentForFees.name}</span>. Existing payment records and receipts will be preserved.
+                </p>
+              )}
+            </DialogHeader>
+
+            <form onSubmit={handleSaveEditStudentFee} className="space-y-4 pt-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="editFeeTotalFees">Total Course Fees (₹)</Label>
+                <div className="relative">
+                  <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="editFeeTotalFees"
+                    type="number"
+                    className="pl-8"
+                    placeholder="e.g. 36000"
+                    required
+                    min="1"
+                    value={editFeeTotalFees}
+                    onChange={(e) => setEditFeeTotalFees(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="editFeeDownPayment">Down Payment (₹)</Label>
+                <div className="relative">
+                  <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="editFeeDownPayment"
+                    type="number"
+                    className="pl-8"
+                    placeholder="e.g. 12000"
+                    min="0"
+                    value={editFeeDownPayment}
+                    onChange={(e) => setEditFeeDownPayment(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="editFeeEmiMonths">EMI Months</Label>
+                  <Input
+                    id="editFeeEmiMonths"
+                    type="number"
+                    placeholder="e.g. 3"
+                    required
+                    min="1"
+                    value={editFeeEmiMonths}
+                    onChange={(e) => setEditFeeEmiMonths(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Monthly EMI Preview</Label>
+                  <div className="relative">
+                    <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      className="pl-8 bg-muted font-semibold text-primary"
+                      readOnly
+                      value={(() => {
+                        const m = Number(editFeeEmiMonths || 0);
+                        if (m <= 0) return '—';
+                        const remaining = Math.max(0, Number(editFeeTotalFees || 0) - Number(editFeeDownPayment || 0));
+                        return Math.ceil(remaining / m).toLocaleString('en-IN');
+                      })()}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="editFeeFirstEmiDate">First EMI Due Date</Label>
+                  <Input
+                    id="editFeeFirstEmiDate"
+                    type="date"
+                    required
+                    value={editFeeFirstEmiDate}
+                    onChange={(e) => setEditFeeFirstEmiDate(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="editFeeFrequency">Payment Frequency</Label>
+                  <select
+                    id="editFeeFrequency"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    value={editFeeFrequency}
+                    onChange={(e) => setEditFeeFrequency(e.target.value as 'monthly' | 'custom')}
+                  >
+                    <option value="monthly">Monthly</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsEditStudentFeeModalOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit">
+                  Save Changes
+                </Button>
+              </div>
+            </form>
           </DialogContent>
         </Dialog>
         </DashboardLayout>
