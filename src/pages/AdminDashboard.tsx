@@ -60,6 +60,7 @@ import {
   FeeRecord,
   FeePayment,
   FeeSearchResult,
+  PaymentMode,
   Test,
   TestResult,
   Staff,
@@ -75,6 +76,7 @@ import {
   deleteLead,
   setCurrentUser,
 } from "@/lib/localStorage";
+import FeesDashboardOverview from "@/components/fees/FeesDashboardOverview";
 
 type StudentTestResult = TestResult & { test: Test };
 
@@ -198,6 +200,7 @@ const AdminDashboard = () => {
   // Fees State
   const [selectedStudentForFees, setSelectedStudentForFees] = useState<Student | null>(null);
   const [feeRecord, setFeeRecord] = useState<FeeRecord | null>(null);
+  const [allFeeRecords, setAllFeeRecords] = useState<FeeRecord[]>([]);
   const [paymentAmount, setPaymentAmount] = useState<string>("");
   const [receiptNoInput, setReceiptNoInput] = useState<string>("");
   const [selectedBatchForFees, setSelectedBatchForFees] = useState<string | null>(null);
@@ -217,7 +220,7 @@ const AdminDashboard = () => {
   const [feeFormFrequency, setFeeFormFrequency] = useState<'monthly' | 'custom'>('monthly');
 
   // Payment Mode State
-  const [paymentMode, setPaymentMode] = useState<'cash' | 'upi' | 'card' | 'cheque'>('cash');
+  const [paymentMode, setPaymentMode] = useState<PaymentMode>('cash');
   const [paymentTransactionId, setPaymentTransactionId] = useState<string>("");
   const [paymentChequeNo, setPaymentChequeNo] = useState<string>("");
   const [paymentChequeDate, setPaymentChequeDate] = useState<string>("");
@@ -349,6 +352,9 @@ const AdminDashboard = () => {
     setTeachersState(getTeachers());
     setLeads(getLeads());
 
+    const records = await getFeeRecords();
+    setAllFeeRecords(records || []);
+
     if (selectedStudentForFees) {
       // Reload fee record if editing
       const freshRecord = await getFeeRecordByStudent(selectedStudentForFees.id);
@@ -435,6 +441,8 @@ const AdminDashboard = () => {
     };
     await updateFeeRecord(newRecord);
     setFeeRecord(newRecord);
+    const freshRecords = await getFeeRecords();
+    setAllFeeRecords(freshRecords || []);
     // Reset form state
     setFeeFormTotalFees("");
     setFeeFormDownPayment("0");
@@ -464,7 +472,7 @@ const AdminDashboard = () => {
       amount,
       receiptNo,
       paymentMode,
-      ...((paymentMode === 'upi' || paymentMode === 'card') && paymentTransactionId.trim() ? { transactionId: paymentTransactionId.trim() } : {}),
+      ...((paymentMode === 'upi' || paymentMode === 'card' || paymentMode === 'bank_transfer' || paymentMode === 'other') && paymentTransactionId.trim() ? { transactionId: paymentTransactionId.trim() } : {}),
       ...(paymentMode === 'cheque' && paymentChequeNo.trim() ? { chequeNo: paymentChequeNo.trim() } : {}),
       ...(paymentMode === 'cheque' && paymentChequeDate ? { chequeDate: paymentChequeDate } : {}),
     };
@@ -478,6 +486,8 @@ const AdminDashboard = () => {
     // Save to DB
     await updateFeeRecord(updatedRecord);
     setFeeRecord(updatedRecord);
+    const freshRecords = await getFeeRecords();
+    setAllFeeRecords(freshRecords || []);
     setPaymentAmount("");
     setPaymentMode('cash');
     setPaymentTransactionId("");
@@ -529,16 +539,22 @@ const AdminDashboard = () => {
         }
       });
 
-      // Build CSV headers
+      // Build CSV headers including all required fields
       const headers = [
         "Student Name",
+        "Student ID",
+        "Class",
         "Email",
         "Phone Number",
-        "Total Course Fees (₹)",
+        "Total Fees (₹)",
         "Down Payment (₹)",
         "EMI Months",
-        "Total Paid (₹)",
-        "Remaining Balance (₹)"
+        "Amount Paid (₹)",
+        "Due Amount (₹)",
+        "Payment Date",
+        "Payment Mode",
+        "Receipt Number",
+        "Status"
       ];
 
       // Add dynamic installment payment headers with full details
@@ -557,17 +573,35 @@ const AdminDashboard = () => {
       const rows = batchStudents.map(student => {
         const record = batchRecords.find(r => r.studentId === student.id);
         const totalPaid = record?.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
-        const remaining = record ? record.totalFees - totalPaid : 0;
+        const totalFees = record ? record.totalFees : 0;
+        const remaining = Math.max(0, totalFees - totalPaid);
+        const payments = record?.payments || [];
+        const latestPayment = payments.length > 0 ? payments[payments.length - 1] : null;
+        const latestDate = latestPayment?.date ? new Date(latestPayment.date).toLocaleDateString('en-IN') : '-';
+        const latestMode = (latestPayment?.paymentMode || '-').toUpperCase();
+        const latestReceipt = latestPayment?.receiptNo || (latestPayment ? `RCPT-${latestPayment.id.slice(-6).toUpperCase()}` : '-');
+
+        let status = 'UNPAID';
+        if (totalFees > 0) {
+          if (totalPaid >= totalFees) status = 'FULLY PAID';
+          else if (totalPaid > 0) status = 'PARTIALLY PAID';
+        }
         
         const row = [
           `"${student.name.replace(/"/g, '""')}"`,
+          `"${student.id}"`,
+          `"${(student.studentClass || '-').replace(/"/g, '""')}"`,
           `"${student.email.replace(/"/g, '""')}"`,
           `"${(student.phoneNo || "").replace(/"/g, '""')}"`,
-          record ? record.totalFees : 0,
+          totalFees,
           record?.downPayment || 0,
           record ? record.emiMonths : 0,
           totalPaid,
-          remaining
+          remaining,
+          `"${latestDate}"`,
+          `"${latestMode}"`,
+          `"${latestReceipt}"`,
+          `"${status}"`
         ];
 
         // Add detailed payment data
@@ -3522,6 +3556,23 @@ const AdminDashboard = () => {
             
             {activeTab === 'fees' && (
               <div className="space-y-6">
+                {/* 1. Fees Overview Dashboard */}
+                <FeesDashboardOverview
+                  students={students}
+                  batches={batches}
+                  classes={classes}
+                  feeRecords={allFeeRecords}
+                  selectedBatchId={selectedBatchForFees}
+                  onSelectBatch={(batchId) => {
+                    setSelectedBatchForFees(batchId);
+                    setSelectedStudentForFees(null);
+                  }}
+                  onSelectStudent={(student) => {
+                    handleSelectStudentForFees(student);
+                  }}
+                />
+
+                {/* 2. Existing Student & Batch Management Section */}
                 <Card className="p-6">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                     <div>
@@ -4133,24 +4184,38 @@ const AdminDashboard = () => {
                                               id="paymentMode"
                                               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                               value={paymentMode}
-                                              onChange={(e) => setPaymentMode(e.target.value as 'cash' | 'upi' | 'card' | 'cheque')}
+                                              onChange={(e) => setPaymentMode(e.target.value as PaymentMode)}
                                             >
                                               <option value="cash">Cash</option>
                                               <option value="upi">UPI</option>
                                               <option value="card">Card</option>
+                                              <option value="bank_transfer">Bank Transfer</option>
                                               <option value="cheque">Cheque</option>
+                                              <option value="other">Other</option>
                                             </select>
                                           </div>
-                                          {(paymentMode === 'upi' || paymentMode === 'card') && (
+                                          {(paymentMode === 'upi' || paymentMode === 'card' || paymentMode === 'bank_transfer' || paymentMode === 'other') && (
                                             <div className="flex-1 min-w-[140px]">
                                               <Label htmlFor="paymentTransactionId">
-                                                {paymentMode === 'card' ? 'Card / Txn ID' : 'Transaction ID'}{' '}
+                                                {paymentMode === 'card'
+                                                  ? 'Card / Txn ID'
+                                                  : paymentMode === 'bank_transfer'
+                                                  ? 'Bank Reference / UTR'
+                                                  : paymentMode === 'other'
+                                                  ? 'Reference / Note'
+                                                  : 'Transaction ID'}{' '}
                                                 <span className="text-muted-foreground text-xs">(optional)</span>
                                               </Label>
                                               <Input
                                                 id="paymentTransactionId"
                                                 type="text"
-                                                placeholder={paymentMode === 'card' ? 'e.g. CARD-REF-1234' : 'e.g. TXN123456'}
+                                                placeholder={
+                                                  paymentMode === 'card'
+                                                    ? 'e.g. CARD-REF-1234'
+                                                    : paymentMode === 'bank_transfer'
+                                                    ? 'e.g. UTR123456789'
+                                                    : 'e.g. TXN123456'
+                                                }
                                                 value={paymentTransactionId}
                                                 onChange={(e) => setPaymentTransactionId(e.target.value)}
                                               />
@@ -4198,8 +4263,10 @@ const AdminDashboard = () => {
                                                         p.paymentMode === 'cash' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
                                                         p.paymentMode === 'upi' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
                                                         p.paymentMode === 'card' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' :
-                                                        'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                                                      }`}>{p.paymentMode}</span>
+                                                        p.paymentMode === 'bank_transfer' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' :
+                                                        p.paymentMode === 'cheque' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                                                        'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                                      }`}>{p.paymentMode.replace('_', ' ')}</span>
                                                     )}
                                                   </p>
                                                   <p className="text-xs text-muted-foreground">

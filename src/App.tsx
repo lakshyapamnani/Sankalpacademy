@@ -27,18 +27,18 @@ const App = () => (
       {isElectron ? (
         <HashRouter>
           <Routes>
-            <Route path="/" element={<Navigate to="/student" replace />} />
+            <Route path="/" element={<Navigate to="/admin" replace />} />
+            <Route path="/admin" element={<Login defaultRole="admin" forceRole={true} />} />
+            <Route path="/login" element={<Login defaultRole="admin" forceRole={true} />} />
+            <Route path="/select-role" element={<Login defaultRole="admin" forceRole={true} />} />
+            <Route path="/admin-dashboard" element={<AdminDashboard />} />
+            <Route path="/admin-dashboard/batches/:batchId" element={<BatchDetails />} />
             <Route path="/student" element={<Login defaultRole="student" forceRole={true} />} />
-            <Route path="/admin" element={<Login defaultRole="admin" />} />
             <Route path="/teacher" element={<Login defaultRole="teacher" forceRole={true} />} />
             <Route path="/rctstaff" element={<Login defaultRole="staff" forceRole={true} />} />
             <Route path="/rctstudent" element={<Login defaultRole="student" forceRole={true} />} />
             <Route path="/sastaff" element={<Login defaultRole="staff" forceRole={true} />} />
             <Route path="/sastudent" element={<Login defaultRole="student" forceRole={true} />} />
-            <Route path="/login" element={<Login defaultRole="student" forceRole={true} />} />
-            <Route path="/select-role" element={<Login />} />
-            <Route path="/admin-dashboard" element={<AdminDashboard />} />
-            <Route path="/admin-dashboard/batches/:batchId" element={<BatchDetails />} />
             <Route path="/student-dashboard" element={<StudentDashboard />} />
             <Route path="/staff-dashboard" element={<StaffDashboard />} />
             <Route path="/teacher-dashboard" element={<TeacherDashboard />} />
