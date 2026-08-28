@@ -183,7 +183,9 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
     if (!record || !record.totalFees || record.totalFees <= 0) {
       return "unpaid"; // No fee structure configured or 0 total
     }
-    const totalPaid = (record.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    const downPayment = Number(record.downPayment) || 0;
+    const paymentsTotal = (record.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    const totalPaid = downPayment + paymentsTotal;
     const balance = Math.max(0, record.totalFees - totalPaid);
 
     if (balance <= 0 && record.totalFees > 0) {
@@ -194,19 +196,18 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
     const todayStr = new Date().toISOString().split("T")[0];
     let isOverdue = false;
 
-    if (record.firstEmiDate && record.firstEmiDate < todayStr && totalPaid <= 0) {
+    if (record.firstEmiDate && record.firstEmiDate < todayStr && paymentsTotal <= 0 && downPayment <= 0) {
       isOverdue = true;
     }
 
     if (!isOverdue && record.emiMonths && record.emiMonths > 0) {
-      const downPayment = record.downPayment || 0;
       const emiRemaining = Math.max(0, record.totalFees - downPayment);
       const months = Math.max(1, record.emiMonths);
       const baseEmi = Math.floor(emiRemaining / months);
       const startDateStr = record.firstEmiDate || (record.payments?.[0]?.date?.split("T")[0] || todayStr);
       const startDate = new Date(startDateStr + "T00:00:00");
 
-      let cumulativeDue = downPayment;
+      let cumulativeDue = 0;
       const today = new Date();
 
       for (let i = 0; i < months; i++) {
@@ -217,7 +218,7 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
         }
       }
 
-      if (totalPaid < cumulativeDue) {
+      if (paymentsTotal < cumulativeDue) {
         isOverdue = true;
       }
     }
@@ -345,8 +346,20 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
       const studentTotalFee = Number(record?.totalFees) || 0;
       totalFees += studentTotalFee;
 
+      const downPayment = Number(record?.downPayment) || 0;
       const payments = record?.payments || [];
       let studentPaid = 0;
+
+      // Always credit down payment into totalReceived and student paid
+      studentPaid += downPayment;
+      totalReceived += downPayment;
+      if (downPayment > 0) {
+        modeAggregates.cash.amount += downPayment;
+        modeAggregates.cash.count += 1;
+        // Also credit to period stats if setup occurred this period
+        periodStats.thisMonth.collected += downPayment;
+        periodStats.thisMonth.count += 1;
+      }
 
       payments.forEach((p) => {
         const amt = Number(p.amount) || 0;
@@ -459,6 +472,7 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
         "Batch",
         "Academic Year",
         "Total Fees (₹)",
+        "Down Payment (₹)",
         "Amount Paid (₹)",
         "Due Amount (₹)",
         "Latest Payment Date",
@@ -471,8 +485,9 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
         const record = feeRecordMap.get(student.id);
         const batch = batches.find((b) => b.id === student.batchId);
         const totalFees = Number(record?.totalFees) || 0;
+        const downPayment = Number(record?.downPayment) || 0;
         const payments = record?.payments || [];
-        const totalPaid = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+        const totalPaid = downPayment + payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
         const dueAmount = Math.max(0, totalFees - totalPaid);
 
         const latestPayment = payments.length > 0 ? payments[payments.length - 1] : null;
@@ -490,6 +505,7 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
           `"${(batch?.name || "Unassigned").replace(/"/g, '""')}"`,
           `"${(batch?.year || "-").replace(/"/g, '""')}"`,
           totalFees,
+          downPayment,
           totalPaid,
           dueAmount,
           `"${latestDate}"`,

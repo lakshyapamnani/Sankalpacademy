@@ -254,6 +254,7 @@ const STORAGE_KEYS = {
   INSTITUTE_SETTINGS: 'smartclass_institute_settings',
   SUBJECTS: 'smartclass_subjects',
   LEADS: 'smartclass_leads',
+  RECEIPT_COUNTER: 'smartclass_receipt_counter',
 };
 
 const DB_PATHS = {
@@ -274,6 +275,7 @@ const DB_PATHS = {
   INSTITUTE_SETTINGS: 'instituteSettings',
   SUBJECTS: 'subjects',
   LEADS: 'leads',
+  META: 'meta',
 };
 
 // Initialize default data
@@ -417,6 +419,19 @@ const syncRealtimeData = async () => {
   }
   if (leadsList) {
     saveToStorage(STORAGE_KEYS.LEADS, leadsList);
+  }
+
+  // Sync receipt counter – take the max of local & remote to avoid regression
+  try {
+    const counterSnap = await get(child(ref(database), `${DB_PATHS.META}/receiptCounter`));
+    if (counterSnap.exists()) {
+      const remoteCounter = Number(counterSnap.val()) || 0;
+      const localCounter = Number(localStorage.getItem(STORAGE_KEYS.RECEIPT_COUNTER)) || 0;
+      const best = Math.max(localCounter, remoteCounter);
+      localStorage.setItem(STORAGE_KEYS.RECEIPT_COUNTER, String(best));
+    }
+  } catch {
+    // Firebase unavailable – local counter remains authoritative
   }
 };
 
@@ -865,33 +880,72 @@ export const deleteFeeRecord = async (studentId: string): Promise<boolean> => {
   }
 };
 
-export const getNextAutoReceiptNo = async (studentId: string): Promise<string> => {
+// ─── Receipt Counter (Global Auto-Increment) ────────────────────────────────
+// Uses a single global counter stored in localStorage + Firebase so receipt
+// numbers are stable and never shift when fee records are added or removed.
+
+/** Read the current counter value from localStorage (returns 0 if uninitialised). */
+const getReceiptCounter = (): number => {
+  const raw = localStorage.getItem(STORAGE_KEYS.RECEIPT_COUNTER);
+  return raw ? Number(raw) : 0;
+};
+
+/** Persist counter value to localStorage AND Firebase. */
+const setReceiptCounter = async (value: number): Promise<void> => {
+  localStorage.setItem(STORAGE_KEYS.RECEIPT_COUNTER, String(value));
+  // Sync to Firebase so counter survives across devices / browsers
+  try {
+    await set(ref(database, `${DB_PATHS.META}/receiptCounter`), value);
+  } catch (error) {
+    console.error('Failed to sync receipt counter to Firebase', error);
+  }
+};
+
+/**
+ * One-time migration: if the counter has never been initialised (fresh install
+ * or upgrade from the old position-based scheme) we scan every existing payment
+ * across all fee records and set the counter = totalPayments so the next receipt
+ * starts at totalPayments + 1.  Existing receipt strings on payments are NOT
+ * touched — they stay exactly as they were.
+ */
+export const initReceiptCounter = async (): Promise<void> => {
+  // If counter already exists in localStorage we're good – nothing to migrate.
+  if (localStorage.getItem(STORAGE_KEYS.RECEIPT_COUNTER) !== null) return;
+
+  // Try to pull counter from Firebase first (another device may have set it)
+  try {
+    const snapshot = await get(child(ref(database), `${DB_PATHS.META}/receiptCounter`));
+    if (snapshot.exists()) {
+      const fbValue = Number(snapshot.val()) || 0;
+      localStorage.setItem(STORAGE_KEYS.RECEIPT_COUNTER, String(fbValue));
+      return;
+    }
+  } catch {
+    // Firebase unavailable – fall through to local scan
+  }
+
+  // Count every payment across all fee records to bootstrap the counter
   const records = await getFeeRecords();
-  
-  // Build ordered list of all student IDs that have fee records
-  // The order determines the student sequence number
-  const studentIds = records.map(r => r.studentId);
-  
-  let studentSeq: number;
-  const existingIndex = studentIds.indexOf(studentId);
-  if (existingIndex >= 0) {
-    studentSeq = existingIndex + 1; // 1-based
-  } else {
-    studentSeq = studentIds.length + 1; // next available
+  let totalPayments = 0;
+  for (const record of records) {
+    totalPayments += (record.payments?.length || 0);
   }
+  await setReceiptCounter(totalPayments);
+};
 
-  const studentRecord = records.find(r => r.studentId === studentId);
-  const existingPayments = studentRecord?.payments || [];
-  const paymentCount = existingPayments.length;
+/**
+ * Generate the next receipt number.
+ * Format: plain sequential integer as a string ("1", "2", "3", …).
+ * Each call atomically increments the global counter.
+ */
+export const getNextAutoReceiptNo = async (_studentId?: string): Promise<string> => {
+  // Ensure counter is initialised (no-op if already done)
+  await initReceiptCounter();
 
-  // First payment for this student: just the sequence number (e.g. "1", "2", "3")
-  if (paymentCount === 0) {
-    return `${studentSeq}`;
-  }
-
-  // Subsequent payments: "S.N" where N = paymentCount + 1
-  // e.g. 2nd payment = "1.2", 3rd = "1.3", etc.
-  return `${studentSeq}.${paymentCount + 1}`;
+  const current = getReceiptCounter();
+  const next = current + 1;
+  await setReceiptCounter(next);
+  return String(next);
 };
 
 export const addFeePayment = async (studentId: string, amount: number, customReceiptNo?: string): Promise<FeeRecord | null> => {
@@ -900,7 +954,7 @@ export const addFeePayment = async (studentId: string, amount: number, customRec
   
   const receiptNo = customReceiptNo && customReceiptNo.trim() !== "" 
     ? customReceiptNo.trim() 
-    : await getNextAutoReceiptNo(studentId);
+    : await getNextAutoReceiptNo();
 
   const payment: FeePayment = {
     id: Date.now().toString(),

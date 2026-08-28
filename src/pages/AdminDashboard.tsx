@@ -29,6 +29,7 @@ import {
   updateFeeRecord,
   addFeePayment,
   getNextAutoReceiptNo,
+  initReceiptCounter,
   searchFeeByReceiptNo,
   getTests,
   addTest,
@@ -375,6 +376,9 @@ const AdminDashboard = () => {
     const records = await getFeeRecords();
     setAllFeeRecords(records || []);
 
+    // Ensure global receipt counter is initialised (migration from old scheme)
+    await initReceiptCounter();
+
     if (selectedStudentForFees) {
       // Reload fee record if editing
       const freshRecord = await getFeeRecordByStudent(selectedStudentForFees.id);
@@ -395,7 +399,7 @@ const AdminDashboard = () => {
     setFeeRecord(record || null);
     setPaymentAmount("");
     
-    const autoReceipt = await getNextAutoReceiptNo(student.id);
+    const autoReceipt = await getNextAutoReceiptNo();
     setReceiptNoInput(autoReceipt);
     
     const phone = student.parentWhatsApp || student.whatsappNo || student.phoneNo || "";
@@ -469,6 +473,23 @@ const AdminDashboard = () => {
     setFeeFormEmiMonths("");
     setFeeFormFirstEmiDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
     setFeeFormFrequency('monthly');
+
+    // Auto-prepare Down Payment receipt if down payment > 0
+    if (downPayment > 0) {
+      setReceiptData({
+        student: selectedStudentForFees,
+        payment: {
+          id: `dp_${selectedStudentForFees.id}`,
+          date: firstEmiDate ? new Date(firstEmiDate).toISOString() : new Date().toISOString(),
+          amount: downPayment,
+          receiptNo: `DP-${selectedStudentForFees.id.slice(-6).toUpperCase()}`,
+          paymentMode: 'cash',
+          notes: 'Down Payment (Advance / Token)',
+        },
+        record: newRecord
+      });
+    }
+
     toast.success("Fee structure saved successfully");
   };
 
@@ -604,7 +625,7 @@ const AdminDashboard = () => {
     // Build receipt number
     const receiptNo = receiptNoInput && receiptNoInput.trim() !== ""
       ? receiptNoInput.trim()
-      : await getNextAutoReceiptNo(selectedStudentForFees.id);
+      : await getNextAutoReceiptNo();
 
     // Create payment entry
     const payment: FeePayment = {
@@ -636,7 +657,7 @@ const AdminDashboard = () => {
     setPaymentChequeDate("");
     toast.success("Payment recorded successfully");
     
-    const nextReceipt = await getNextAutoReceiptNo(selectedStudentForFees.id);
+    const nextReceipt = await getNextAutoReceiptNo();
     setReceiptNoInput(nextReceipt);
     
     // Prepare receipt data
@@ -713,7 +734,9 @@ const AdminDashboard = () => {
       // Build CSV rows
       const rows = batchStudents.map(student => {
         const record = batchRecords.find(r => r.studentId === student.id);
-        const totalPaid = record?.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+        const downPayment = Number(record?.downPayment) || 0;
+        const paymentsTotal = record?.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+        const totalPaid = downPayment + paymentsTotal;
         const totalFees = record ? record.totalFees : 0;
         const remaining = Math.max(0, totalFees - totalPaid);
         const payments = record?.payments || [];
@@ -735,7 +758,7 @@ const AdminDashboard = () => {
           `"${student.email.replace(/"/g, '""')}"`,
           `"${(student.phoneNo || "").replace(/"/g, '""')}"`,
           totalFees,
-          record?.downPayment || 0,
+          downPayment,
           record ? record.emiMonths : 0,
           totalPaid,
           remaining,
@@ -801,10 +824,26 @@ const AdminDashboard = () => {
   };
 
   const handleDownloadReceiptPDF = (payment: FeePayment) => {
+    handlePrintReceipt(payment);
+  };
+
+  const handlePrintDownPaymentReceipt = () => {
     if (!selectedStudentForFees || !feeRecord) return;
+    const dpAmount = Number(feeRecord.downPayment || 0);
+    if (dpAmount <= 0) return;
+
+    const dpPayment: FeePayment = {
+      id: `dp_${feeRecord.studentId}`,
+      date: feeRecord.firstEmiDate ? new Date(feeRecord.firstEmiDate).toISOString() : new Date().toISOString(),
+      amount: dpAmount,
+      receiptNo: `DP-${feeRecord.studentId.slice(-6).toUpperCase()}`,
+      paymentMode: 'cash',
+      notes: 'Down Payment (Advance / Token)',
+    };
+
     setReceiptData({
       student: selectedStudentForFees,
-      payment: payment,
+      payment: dpPayment,
       record: feeRecord
     });
     setTimeout(() => {
@@ -812,9 +851,13 @@ const AdminDashboard = () => {
     }, 100);
   };
 
+  const handleDownloadDownPaymentPDF = () => {
+    handlePrintDownPaymentReceipt();
+  };
+
   const getStudentInstallmentSchedule = (record: FeeRecord) => {
     const total = record.totalFees || 0;
-    const downPayment = record.downPayment || 0;
+    const downPayment = Number(record.downPayment) || 0;
     const remaining = Math.max(0, total - downPayment);
     const months = Math.max(1, record.emiMonths || 1);
     const baseEmi = Math.floor(remaining / months);
@@ -823,8 +866,9 @@ const AdminDashboard = () => {
     const startDateStr = record.firstEmiDate || (record.payments && record.payments[0] ? record.payments[0].date.split('T')[0] : new Date().toISOString().split('T')[0]);
     const startDate = new Date(startDateStr + 'T00:00:00');
 
-    const totalPaid = record.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
-    let runningCredit = totalPaid;
+    const paymentsTotal = record.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+    const totalPaid = downPayment + paymentsTotal;
+    let runningCredit = paymentsTotal;
     const installments = [];
     for (let i = 0; i < months; i++) {
       const dt = new Date(startDate);
@@ -939,6 +983,45 @@ const AdminDashboard = () => {
           refNo: p.transactionId || p.chequeNo || '-'
         });
       }
+
+      // Include Down Payment in MoM collections if present
+      const dp = Number(record.downPayment) || 0;
+      if (dp > 0) {
+        const dpDateStr = record.firstEmiDate ? new Date(record.firstEmiDate).toISOString() : (record.payments?.[0]?.date || new Date().toISOString());
+        const d = new Date(dpDateStr);
+        const year = d.getFullYear();
+        const monthNum = String(d.getMonth() + 1).padStart(2, '0');
+        const monthKey = `${year}-${monthNum}`;
+        const monthLabel = d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+
+        if (!monthMap[monthKey]) {
+          monthMap[monthKey] = {
+            monthKey,
+            monthLabel,
+            totalCollected: 0,
+            paymentCount: 0,
+            cashAmount: 0,
+            upiAmount: 0,
+            cardAmount: 0,
+            chequeAmount: 0,
+            payments: []
+          };
+        }
+
+        const m = monthMap[monthKey];
+        m.totalCollected += dp;
+        m.paymentCount += 1;
+        m.cashAmount += dp;
+        m.payments.unshift({
+          studentName: student.name,
+          studentPhone: student.phoneNo || '',
+          receiptNo: 'DOWN-PAYMENT',
+          date: d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+          amount: dp,
+          mode: 'CASH / ADVANCE',
+          refNo: 'Token / Setup'
+        });
+      }
     }
 
     const sortedKeys = Object.keys(monthMap).sort();
@@ -986,7 +1069,9 @@ const AdminDashboard = () => {
   };
 
   const getDueMessage = (student: Student, record: FeeRecord) => {
-    const totalPaid = record.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+    const downPayment = Number(record.downPayment) || 0;
+    const paymentsTotal = record.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+    const totalPaid = downPayment + paymentsTotal;
     const remaining = Math.max(0, record.totalFees - totalPaid);
     const sched = getStudentInstallmentSchedule(record);
     const nextPending = sched.installments.find(i => i.status === 'pending' || i.status === 'partial');
@@ -999,9 +1084,11 @@ const AdminDashboard = () => {
   };
 
   const getReceivedMessage = (student: Student, record: FeeRecord, lastPaidAmount?: number) => {
-    const totalPaid = record.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+    const downPayment = Number(record.downPayment) || 0;
+    const paymentsTotal = record.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+    const totalPaid = downPayment + paymentsTotal;
     const remaining = Math.max(0, record.totalFees - totalPaid);
-    return `Dear Parent, fee payment ${lastPaidAmount ? `of ₹${lastPaidAmount.toLocaleString('en-IN')}` : ''} received for ${student.name}.\nTotal Paid: ₹${totalPaid.toLocaleString('en-IN')}\nRemaining Balance: ₹${remaining.toLocaleString('en-IN')}\nThank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
+    return `Dear Parent, fee payment ${lastPaidAmount ? `of ₹${lastPaidAmount.toLocaleString('en-IN')}` : ''} received for ${student.name}.\nTotal Course Fees: ₹${record.totalFees.toLocaleString('en-IN')}\nTotal Paid: ₹${totalPaid.toLocaleString('en-IN')}\nRemaining Balance: ₹${remaining.toLocaleString('en-IN')}\nThank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
   };
 
   const handlePrintSchedule = () => {
@@ -1123,8 +1210,10 @@ const AdminDashboard = () => {
         const record = batchRecords.find(r => r.studentId === student.id);
         if (!record || !record.payments) continue;
 
-        const totalPaidOverall = record.payments.reduce((sum, p) => sum + p.amount, 0);
-        const remainingOverall = record.totalFees - totalPaidOverall;
+        const downPayment = Number(record.downPayment) || 0;
+        const paymentsTotal = record.payments.reduce((sum, p) => sum + p.amount, 0);
+        const totalPaidOverall = downPayment + paymentsTotal;
+        const remainingOverall = Math.max(0, record.totalFees - totalPaidOverall);
 
         for (const p of record.payments) {
           if (!p.date || !p.amount) continue;
@@ -4141,7 +4230,7 @@ const AdminDashboard = () => {
                                             >
                                               <Calendar className="h-4 w-4" /> Installment Schedule
                                             </Button>
-                                            {receiptData && receiptData.student.id === selectedStudentForFees.id && (
+                                            {receiptData && receiptData.student.id === selectedStudentForFees.id ? (
                                               <>
                                                 <Button onClick={handlePrint} variant="outline" className="gap-2 shrink-0">
                                                   <Printer className="h-4 w-4" /> Print Latest Receipt
@@ -4150,7 +4239,16 @@ const AdminDashboard = () => {
                                                   <Download className="h-4 w-4" /> Download Latest Receipt
                                                 </Button>
                                               </>
-                                            )}
+                                            ) : Number(feeRecord.downPayment || 0) > 0 ? (
+                                              <>
+                                                <Button onClick={handlePrintDownPaymentReceipt} variant="outline" className="gap-2 shrink-0">
+                                                  <Printer className="h-4 w-4" /> Print Down Payment Receipt
+                                                </Button>
+                                                <Button onClick={handleDownloadDownPaymentPDF} variant="default" className="gap-2 shrink-0">
+                                                  <Download className="h-4 w-4" /> Download Down Payment Receipt
+                                                </Button>
+                                              </>
+                                            ) : null}
                                           </div>
                                         )}
                                       </div>
@@ -4170,24 +4268,35 @@ const AdminDashboard = () => {
                                           </div>
                                         </div>
                                         <div>
-                                          <Label htmlFor="feeFormDownPayment">Down Payment</Label>
-                                          <div className="relative">
-                                            <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                                            <Input id="feeFormDownPayment" type="number" className="pl-8" placeholder="e.g. 12000" min="0"
-                                              value={feeFormDownPayment}
-                                              onChange={(e) => setFeeFormDownPayment(e.target.value)}
-                                            />
-                                          </div>
-                                        </div>
-                                        <div>
-                                          <Label>Remaining Amount</Label>
-                                          <div className="relative">
-                                            <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                                            <Input className="pl-8 bg-muted" readOnly
-                                              value={Math.max(0, Number(feeFormTotalFees || 0) - Number(feeFormDownPayment || 0)).toLocaleString('en-IN')}
-                                            />
-                                          </div>
-                                        </div>
+                                           <Label htmlFor="feeFormDownPayment">Down Payment (Token / Advance)</Label>
+                                           <div className="relative">
+                                             <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                             <Input id="feeFormDownPayment" type="number" className="pl-8" placeholder="e.g. 12000" min="0"
+                                               value={feeFormDownPayment}
+                                               onChange={(e) => setFeeFormDownPayment(e.target.value)}
+                                             />
+                                           </div>
+                                         </div>
+
+                                         {/* Live Deduction Summary Banner */}
+                                         {Number(feeFormTotalFees || 0) > 0 && (
+                                           <div className="bg-primary/5 border border-primary/20 p-3.5 rounded-xl space-y-1.5 text-xs">
+                                             <div className="flex justify-between items-center text-muted-foreground">
+                                               <span>Total Course Fees:</span>
+                                               <span className="font-semibold text-foreground">₹{Number(feeFormTotalFees || 0).toLocaleString('en-IN')}</span>
+                                             </div>
+                                             {Number(feeFormDownPayment || 0) > 0 && (
+                                               <div className="flex justify-between items-center text-green-600 dark:text-green-400 font-medium">
+                                                 <span>Down Payment (Deducted upfront):</span>
+                                                 <span>- ₹{Number(feeFormDownPayment || 0).toLocaleString('en-IN')}</span>
+                                               </div>
+                                             )}
+                                             <div className="flex justify-between items-center pt-1.5 border-t font-bold text-sm text-foreground">
+                                               <span>Remaining Balance in EMIs:</span>
+                                               <span className="text-primary font-mono text-base">₹{Math.max(0, Number(feeFormTotalFees || 0) - Number(feeFormDownPayment || 0)).toLocaleString('en-IN')}</span>
+                                             </div>
+                                           </div>
+                                         )}
                                         <div className="grid grid-cols-2 gap-4">
                                           <div>
                                             <Label htmlFor="feeFormEmiMonths">EMI Months</Label>
@@ -4281,10 +4390,12 @@ const AdminDashboard = () => {
                                   ) : (
                                     <div className="space-y-6">
                                       
-                                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                                         {(() => {
-                                          const totalPaid = feeRecord.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
-                                          const remainingBalance = feeRecord.totalFees - totalPaid;
+                                          const downPayment = Number(feeRecord.downPayment) || 0;
+                                          const paymentsTotal = feeRecord.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+                                          const totalPaid = downPayment + paymentsTotal;
+                                          const remainingBalance = Math.max(0, feeRecord.totalFees - totalPaid);
                                           const emiMonthsRemaining = Math.max(1, feeRecord.emiMonths - (feeRecord.payments?.length || 0));
                                           // Re-calculate the EMI structure based on remaining balance
                                           const dynamicEmi = (remainingBalance / emiMonthsRemaining).toFixed(0);
@@ -4293,19 +4404,23 @@ const AdminDashboard = () => {
                                             <>
                                               <div className="bg-card border rounded-lg p-3">
                                                 <p className="text-xs text-muted-foreground">Total Fees</p>
-                                                <p className="text-lg font-semibold">₹{feeRecord.totalFees}</p>
+                                                <p className="text-lg font-semibold">₹{feeRecord.totalFees.toLocaleString('en-IN')}</p>
+                                              </div>
+                                              <div className="bg-card border rounded-lg p-3">
+                                                <p className="text-xs text-muted-foreground">Down Payment</p>
+                                                <p className="text-lg font-semibold text-primary">₹{downPayment.toLocaleString('en-IN')}</p>
                                               </div>
                                               <div className="bg-card border rounded-lg p-3">
                                                 <p className="text-xs text-muted-foreground">Total Paid</p>
-                                                <p className="text-lg font-semibold text-green-600">₹{totalPaid}</p>
+                                                <p className="text-lg font-semibold text-green-600">₹{totalPaid.toLocaleString('en-IN')}</p>
                                               </div>
                                               <div className="bg-card border rounded-lg p-3">
                                                 <p className="text-xs text-muted-foreground">Remaining</p>
-                                                <p className="text-lg font-semibold text-red-500">₹{remainingBalance}</p>
+                                                <p className="text-lg font-semibold text-red-500">₹{remainingBalance.toLocaleString('en-IN')}</p>
                                               </div>
                                               <div className="bg-card border rounded-lg p-3">
                                                 <p className="text-xs text-muted-foreground">Adjusted EMI</p>
-                                                <p className="text-lg font-semibold text-blue-600">₹{dynamicEmi}</p>
+                                                <p className="text-lg font-semibold text-blue-600">₹{Number(dynamicEmi).toLocaleString('en-IN')}</p>
                                               </div>
                                             </>
                                           );
@@ -4414,7 +4529,45 @@ const AdminDashboard = () => {
                                       
                                       <div>
                                         <h4 className="font-semibold mb-3">Payment History</h4>
-                                        <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
+                                        <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                                          {/* Down Payment entry if present */}
+                                          {Number(feeRecord.downPayment || 0) > 0 && (
+                                            <div className="flex justify-between items-center bg-primary/5 border border-primary/20 p-3 rounded-xl text-sm">
+                                              <div className="flex-1">
+                                                <p className="font-semibold">
+                                                  Down Payment • <span className="text-primary font-mono">Receipt: DP-{feeRecord.studentId.slice(-6).toUpperCase()}</span>
+                                                  <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium uppercase bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                                                    Paid at Setup
+                                                  </span>
+                                                </p>
+                                                <p className="text-xs text-muted-foreground">
+                                                  Initial upfront token/advance payment credited towards total course fees
+                                                </p>
+                                              </div>
+                                              <div className="flex items-center gap-2">
+                                                <div className="font-bold text-green-600 mr-1">+₹{Number(feeRecord.downPayment).toLocaleString('en-IN')}</div>
+                                                <Button 
+                                                  onClick={handlePrintDownPaymentReceipt} 
+                                                  variant="ghost" 
+                                                  size="icon" 
+                                                  className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-xl"
+                                                  title="Print Down Payment Receipt"
+                                                >
+                                                  <Printer className="h-4 w-4" />
+                                                </Button>
+                                                <Button 
+                                                  onClick={handleDownloadDownPaymentPDF} 
+                                                  variant="ghost" 
+                                                  size="icon" 
+                                                  className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-xl"
+                                                  title="Download Down Payment Receipt PDF"
+                                                >
+                                                  <Download className="h-4 w-4" />
+                                                </Button>
+                                              </div>
+                                            </div>
+                                          )}
+
                                           {feeRecord.payments?.length > 0 ? (
                                             feeRecord.payments.map((p, index) => (
                                               <div key={p.id} className="flex justify-between items-center bg-card border p-3 rounded-xl text-sm hover:shadow-sm transition-shadow">
@@ -4463,7 +4616,9 @@ const AdminDashboard = () => {
                                               </div>
                                             ))
                                           ) : (
-                                            <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
+                                            (!feeRecord.downPayment || Number(feeRecord.downPayment) === 0) && (
+                                              <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
+                                            )
                                           )}
                                         </div>
                                       </div>
@@ -6882,18 +7037,19 @@ const AdminDashboard = () => {
 
             {feeRecord && (() => {
               const total = feeRecord.totalFees || 0;
-              const downPayment = feeRecord.downPayment || 0;
+              const downPayment = Number(feeRecord.downPayment) || 0;
               const remaining = Math.max(0, total - downPayment);
               const months = Math.max(1, feeRecord.emiMonths || 1);
               const baseEmi = Math.floor(remaining / months);
               const lastEmi = remaining - baseEmi * (months - 1);
-              const totalPaid = feeRecord.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+              const paymentsTotal = feeRecord.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+              const totalPaid = downPayment + paymentsTotal;
               const remainingBalance = Math.max(0, total - totalPaid);
 
               const startDateStr = feeRecord.firstEmiDate || (feeRecord.payments && feeRecord.payments[0] ? feeRecord.payments[0].date.split('T')[0] : new Date().toISOString().split('T')[0]);
               const startDate = new Date(startDateStr + 'T00:00:00');
 
-              let runningCredit = totalPaid;
+              let runningCredit = paymentsTotal;
               const installments = [];
               for (let i = 0; i < months; i++) {
                 const dt = new Date(startDate);
@@ -7268,7 +7424,7 @@ const AdminDashboard = () => {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="batchFeeDownPayment">Down Payment (₹)</Label>
+                    <Label htmlFor="batchFeeDownPayment">Down Payment (₹) <span className="text-xs text-muted-foreground">(Deducted upfront)</span></Label>
                     <div className="relative">
                       <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                       <Input
@@ -7282,6 +7438,26 @@ const AdminDashboard = () => {
                       />
                     </div>
                   </div>
+
+                  {/* Batch Live Deduction Banner */}
+                  {Number(batchFeeTotalFees || 0) > 0 && (
+                    <div className="bg-primary/5 border border-primary/20 p-3 rounded-xl space-y-1 text-xs">
+                      <div className="flex justify-between items-center text-muted-foreground">
+                        <span>Total Fees per student:</span>
+                        <span className="font-semibold text-foreground">₹{Number(batchFeeTotalFees || 0).toLocaleString('en-IN')}</span>
+                      </div>
+                      {Number(batchFeeDownPayment || 0) > 0 && (
+                        <div className="flex justify-between items-center text-green-600 dark:text-green-400 font-medium">
+                          <span>Down Payment (Deducted upfront):</span>
+                          <span>- ₹{Number(batchFeeDownPayment || 0).toLocaleString('en-IN')}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-center pt-1 border-t font-bold text-sm">
+                        <span>Net Balance to Split into EMIs:</span>
+                        <span className="text-primary font-mono">₹{Math.max(0, Number(batchFeeTotalFees || 0) - Number(batchFeeDownPayment || 0)).toLocaleString('en-IN')}</span>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
@@ -7432,7 +7608,7 @@ const AdminDashboard = () => {
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="editFeeDownPayment">Down Payment (₹)</Label>
+                <Label htmlFor="editFeeDownPayment">Down Payment (₹) <span className="text-xs text-muted-foreground">(Deducted upfront)</span></Label>
                 <div className="relative">
                   <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
@@ -7446,6 +7622,26 @@ const AdminDashboard = () => {
                   />
                 </div>
               </div>
+
+              {/* Edit Student Live Deduction Banner */}
+              {Number(editFeeTotalFees || 0) > 0 && (
+                <div className="bg-primary/5 border border-primary/20 p-3 rounded-xl space-y-1 text-xs">
+                  <div className="flex justify-between items-center text-muted-foreground">
+                    <span>Total Course Fees:</span>
+                    <span className="font-semibold text-foreground">₹{Number(editFeeTotalFees || 0).toLocaleString('en-IN')}</span>
+                  </div>
+                  {Number(editFeeDownPayment || 0) > 0 && (
+                    <div className="flex justify-between items-center text-green-600 dark:text-green-400 font-medium">
+                      <span>Down Payment (Deducted upfront):</span>
+                      <span>- ₹{Number(editFeeDownPayment || 0).toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center pt-1 border-t font-bold text-sm">
+                    <span>Net Balance to Split into EMIs:</span>
+                    <span className="text-primary font-mono">₹{Math.max(0, Number(editFeeTotalFees || 0) - Number(editFeeDownPayment || 0)).toLocaleString('en-IN')}</span>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
@@ -7586,8 +7782,17 @@ const AdminDashboard = () => {
                   <tr>
                     <td className="border border-gray-300 px-4 py-3 text-gray-600">1</td>
                     <td className="border border-gray-300 px-4 py-3">
-                      <p className="font-medium">Fee Payment — Installment #{receiptData.record.payments?.findIndex(p => p.id === receiptData.payment.id)! + 1}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">Course Fee Installment</p>
+                      {receiptData.payment.id.startsWith('dp_') || receiptData.payment.receiptNo?.startsWith('DP-') ? (
+                        <>
+                          <p className="font-medium">Down Payment • Initial Token / Advance</p>
+                          <p className="text-xs text-gray-500 mt-0.5">Upfront Course Fee Token credited at admission/setup</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="font-medium">Fee Payment — Installment #{receiptData.record.payments?.findIndex(p => p.id === receiptData.payment.id)! + 1}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">Course Fee Installment</p>
+                        </>
+                      )}
                     </td>
                     <td className="border border-gray-300 px-4 py-3 text-right text-lg font-bold">₹{receiptData.payment.amount.toLocaleString('en-IN')}</td>
                   </tr>
@@ -7608,13 +7813,23 @@ const AdminDashboard = () => {
                   <span className="text-gray-500">Total Course Fees</span>
                   <span className="font-semibold">₹{receiptData.record.totalFees.toLocaleString('en-IN')}</span>
                 </div>
+                {Number(receiptData.record.downPayment || 0) > 0 && (
+                  <div className="flex justify-between px-4 py-2 border-b border-gray-200">
+                    <span className="text-gray-500">Down Payment</span>
+                    <span className="font-semibold text-primary">₹{Number(receiptData.record.downPayment).toLocaleString('en-IN')}</span>
+                  </div>
+                )}
                 <div className="flex justify-between px-4 py-2 border-b border-gray-200">
                   <span className="text-gray-500">Total Paid (All)</span>
-                  <span className="font-semibold text-green-700">₹{receiptData.record.payments.reduce((a, b) => a + b.amount, 0).toLocaleString('en-IN')}</span>
+                  <span className="font-semibold text-green-700">
+                    ₹{((Number(receiptData.record.downPayment) || 0) + receiptData.record.payments.reduce((a, b) => a + b.amount, 0)).toLocaleString('en-IN')}
+                  </span>
                 </div>
                 <div className="flex justify-between px-4 py-2.5 bg-gray-50">
                   <span className="font-bold text-gray-800">Outstanding Balance</span>
-                  <span className="font-bold text-red-600">₹{(receiptData.record.totalFees - receiptData.record.payments.reduce((a, b) => a + b.amount, 0)).toLocaleString('en-IN')}</span>
+                  <span className="font-bold text-red-600">
+                    ₹{Math.max(0, receiptData.record.totalFees - ((Number(receiptData.record.downPayment) || 0) + receiptData.record.payments.reduce((a, b) => a + b.amount, 0))).toLocaleString('en-IN')}
+                  </span>
                 </div>
               </div>
             </div>
@@ -7654,7 +7869,9 @@ const AdminDashboard = () => {
       {printingSchedule && selectedStudentForFees && feeRecord && (() => {
         const student = selectedStudentForFees;
         const scheduleData = getStudentInstallmentSchedule(feeRecord);
-        const totalPaid = feeRecord.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+        const paymentsTotal = feeRecord.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+        const downPayment = Number(feeRecord.downPayment) || 0;
+        const totalPaid = downPayment + paymentsTotal;
         const balanceDue = Math.max(0, feeRecord.totalFees - totalPaid);
 
         return (
