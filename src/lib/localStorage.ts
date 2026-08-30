@@ -71,6 +71,9 @@ export interface FeeRecord {
   emiMonths: number;
   payments: FeePayment[];
   downPayment?: number;
+  downPaymentDate?: string;
+  downPaymentReceiptNo?: string;
+  downPaymentMode?: PaymentMode;
   firstEmiDate?: string;
   paymentFrequency?: 'monthly' | 'custom';
 }
@@ -948,7 +951,14 @@ export const getNextAutoReceiptNo = async (_studentId?: string): Promise<string>
   return String(next);
 };
 
-export const addFeePayment = async (studentId: string, amount: number, customReceiptNo?: string): Promise<FeeRecord | null> => {
+export const addFeePayment = async (
+  studentId: string, 
+  amount: number, 
+  customReceiptNo?: string,
+  customDate?: string,
+  paymentMode?: PaymentMode,
+  details?: Partial<FeePayment>
+): Promise<FeeRecord | null> => {
   const record = await getFeeRecordByStudent(studentId);
   if (!record) return null; // Fee structure must be created first
   
@@ -958,9 +968,11 @@ export const addFeePayment = async (studentId: string, amount: number, customRec
 
   const payment: FeePayment = {
     id: Date.now().toString(),
-    date: new Date().toISOString(),
+    date: customDate || new Date().toISOString(),
     amount,
-    receiptNo
+    receiptNo,
+    paymentMode: paymentMode || 'cash',
+    ...details
   };
   
   const updatedRecord = {

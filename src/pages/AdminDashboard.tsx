@@ -214,6 +214,11 @@ const AdminDashboard = () => {
   // Fee Structure Form State
   const [feeFormTotalFees, setFeeFormTotalFees] = useState<string>("");
   const [feeFormDownPayment, setFeeFormDownPayment] = useState<string>("0");
+  const [feeFormDownPaymentDate, setFeeFormDownPaymentDate] = useState<string>(
+    new Date().toISOString().split('T')[0]
+  );
+  const [feeFormDownPaymentReceiptNo, setFeeFormDownPaymentReceiptNo] = useState<string>("");
+  const [feeFormDownPaymentMode, setFeeFormDownPaymentMode] = useState<PaymentMode>('cash');
   const [feeFormEmiMonths, setFeeFormEmiMonths] = useState<string>("");
   const [feeFormFirstEmiDate, setFeeFormFirstEmiDate] = useState<string>(
     new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
@@ -224,6 +229,9 @@ const AdminDashboard = () => {
   const [isBatchFeeModalOpen, setIsBatchFeeModalOpen] = useState(false);
   const [batchFeeTotalFees, setBatchFeeTotalFees] = useState<string>("");
   const [batchFeeDownPayment, setBatchFeeDownPayment] = useState<string>("0");
+  const [batchFeeDownPaymentDate, setBatchFeeDownPaymentDate] = useState<string>(
+    new Date().toISOString().split('T')[0]
+  );
   const [batchFeeEmiMonths, setBatchFeeEmiMonths] = useState<string>("");
   const [batchFeeFirstEmiDate, setBatchFeeFirstEmiDate] = useState<string>(
     new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
@@ -236,16 +244,31 @@ const AdminDashboard = () => {
   const [isEditStudentFeeModalOpen, setIsEditStudentFeeModalOpen] = useState(false);
   const [editFeeTotalFees, setEditFeeTotalFees] = useState<string>("");
   const [editFeeDownPayment, setEditFeeDownPayment] = useState<string>("0");
+  const [editFeeDownPaymentDate, setEditFeeDownPaymentDate] = useState<string>("");
+  const [editFeeDownPaymentReceiptNo, setEditFeeDownPaymentReceiptNo] = useState<string>("");
+  const [editFeeDownPaymentMode, setEditFeeDownPaymentMode] = useState<PaymentMode>('cash');
   const [editFeeEmiMonths, setEditFeeEmiMonths] = useState<string>("");
   const [editFeeFirstEmiDate, setEditFeeFirstEmiDate] = useState<string>("");
   const [editFeeFrequency, setEditFeeFrequency] = useState<'monthly' | 'custom'>('monthly');
 
   // Payment Mode State
   const [paymentMode, setPaymentMode] = useState<PaymentMode>('cash');
+  const [paymentDate, setPaymentDate] = useState<string>(
+    new Date().toISOString().split('T')[0]
+  );
   const [paymentTransactionId, setPaymentTransactionId] = useState<string>("");
   const [paymentChequeNo, setPaymentChequeNo] = useState<string>("");
   const [paymentChequeDate, setPaymentChequeDate] = useState<string>("");
   const [isInstallmentModalOpen, setIsInstallmentModalOpen] = useState(false);
+  const [isEditPaymentModalOpen, setIsEditPaymentModalOpen] = useState(false);
+  const [editingPayment, setEditingPayment] = useState<FeePayment | null>(null);
+  const [editPaymentDate, setEditPaymentDate] = useState<string>("");
+  const [editPaymentAmount, setEditPaymentAmount] = useState<string>("");
+  const [editPaymentReceiptNo, setEditPaymentReceiptNo] = useState<string>("");
+  const [editPaymentMode, setEditPaymentMode] = useState<PaymentMode>('cash');
+  const [editPaymentTransactionId, setEditPaymentTransactionId] = useState<string>("");
+  const [editPaymentChequeNo, setEditPaymentChequeNo] = useState<string>("");
+  const [editPaymentChequeDate, setEditPaymentChequeDate] = useState<string>("");
   const [printingSchedule, setPrintingSchedule] = useState<boolean>(false);
   const [printingMomReport, setPrintingMomReport] = useState<boolean>(false);
   const [isMomModalOpen, setIsMomModalOpen] = useState<boolean>(false);
@@ -431,6 +454,9 @@ const AdminDashboard = () => {
     const emiMonths = Number(feeFormEmiMonths);
     const firstEmiDate = feeFormFirstEmiDate;
     const paymentFrequency = feeFormFrequency;
+    const downPaymentDate = feeFormDownPaymentDate || new Date().toISOString().split('T')[0];
+    const downPaymentReceiptNo = feeFormDownPaymentReceiptNo.trim() || `DP-${selectedStudentForFees.id.slice(-6).toUpperCase()}`;
+    const downPaymentMode = feeFormDownPaymentMode || 'cash';
 
     // Validation
     if (!totalFees || totalFees <= 0) {
@@ -460,6 +486,9 @@ const AdminDashboard = () => {
       emiMonths,
       payments: feeRecord?.payments || [],
       downPayment,
+      downPaymentDate: downPayment > 0 ? downPaymentDate : undefined,
+      downPaymentReceiptNo: downPayment > 0 ? downPaymentReceiptNo : undefined,
+      downPaymentMode: downPayment > 0 ? downPaymentMode : undefined,
       firstEmiDate,
       paymentFrequency,
     };
@@ -470,20 +499,28 @@ const AdminDashboard = () => {
     // Reset form state
     setFeeFormTotalFees("");
     setFeeFormDownPayment("0");
+    setFeeFormDownPaymentDate(new Date().toISOString().split('T')[0]);
+    setFeeFormDownPaymentReceiptNo("");
+    setFeeFormDownPaymentMode('cash');
     setFeeFormEmiMonths("");
     setFeeFormFirstEmiDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
     setFeeFormFrequency('monthly');
 
     // Auto-prepare Down Payment receipt if down payment > 0
     if (downPayment > 0) {
+      let dpDateISO = new Date().toISOString();
+      if (downPaymentDate) {
+        const [y, m, d] = downPaymentDate.split('-').map(Number);
+        dpDateISO = new Date(y, m - 1, d, 12, 0, 0).toISOString();
+      }
       setReceiptData({
         student: selectedStudentForFees,
         payment: {
           id: `dp_${selectedStudentForFees.id}`,
-          date: firstEmiDate ? new Date(firstEmiDate).toISOString() : new Date().toISOString(),
+          date: dpDateISO,
           amount: downPayment,
-          receiptNo: `DP-${selectedStudentForFees.id.slice(-6).toUpperCase()}`,
-          paymentMode: 'cash',
+          receiptNo: downPaymentReceiptNo,
+          paymentMode: downPaymentMode,
           notes: 'Down Payment (Advance / Token)',
         },
         record: newRecord
@@ -497,6 +534,13 @@ const AdminDashboard = () => {
     if (!feeRecord) return;
     setEditFeeTotalFees(feeRecord.totalFees ? feeRecord.totalFees.toString() : "");
     setEditFeeDownPayment(feeRecord.downPayment !== undefined ? feeRecord.downPayment.toString() : "0");
+    setEditFeeDownPaymentDate(
+      feeRecord.downPaymentDate || (feeRecord.firstEmiDate ? feeRecord.firstEmiDate : new Date().toISOString().split('T')[0])
+    );
+    setEditFeeDownPaymentReceiptNo(
+      feeRecord.downPaymentReceiptNo || (selectedStudentForFees ? `DP-${selectedStudentForFees.id.slice(-6).toUpperCase()}` : "")
+    );
+    setEditFeeDownPaymentMode(feeRecord.downPaymentMode || 'cash');
     setEditFeeEmiMonths(feeRecord.emiMonths ? feeRecord.emiMonths.toString() : "");
     setEditFeeFirstEmiDate(
       feeRecord.firstEmiDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
@@ -513,12 +557,15 @@ const AdminDashboard = () => {
     const emiMonths = Number(editFeeEmiMonths);
     const firstEmiDate = editFeeFirstEmiDate;
     const paymentFrequency = editFeeFrequency;
+    const downPaymentDate = editFeeDownPaymentDate || new Date().toISOString().split('T')[0];
+    const downPaymentReceiptNo = editFeeDownPaymentReceiptNo.trim() || `DP-${selectedStudentForFees.id.slice(-6).toUpperCase()}`;
+    const downPaymentMode = editFeeDownPaymentMode || 'cash';
 
     if (!totalFees || totalFees <= 0) {
       toast.error("Please enter a valid Total Course Fees");
       return;
     }
-    if (!emiMonths || emiMonths <= 0) {
+    if (emiMonths <= 0) {
       toast.error("Please enter valid EMI Months");
       return;
     }
@@ -532,6 +579,9 @@ const AdminDashboard = () => {
       studentId: selectedStudentForFees.id,
       totalFees,
       downPayment,
+      downPaymentDate: downPayment > 0 ? downPaymentDate : undefined,
+      downPaymentReceiptNo: downPayment > 0 ? downPaymentReceiptNo : undefined,
+      downPaymentMode: downPayment > 0 ? downPaymentMode : undefined,
       emiMonths,
       firstEmiDate,
       paymentFrequency,
@@ -542,6 +592,28 @@ const AdminDashboard = () => {
     setFeeRecord(updatedRecord);
     const freshRecords = await getFeeRecords();
     setAllFeeRecords(freshRecords || []);
+
+    // If receipt preview is currently showing Down Payment, update it
+    if (receiptData && (receiptData.payment.id === `dp_${selectedStudentForFees.id}` || receiptData.payment.id.startsWith('dp_'))) {
+      let dpDateISO = new Date().toISOString();
+      if (downPaymentDate) {
+        const [y, m, d] = downPaymentDate.split('-').map(Number);
+        dpDateISO = new Date(y, m - 1, d, 12, 0, 0).toISOString();
+      }
+      setReceiptData({
+        student: selectedStudentForFees,
+        payment: {
+          id: `dp_${selectedStudentForFees.id}`,
+          date: dpDateISO,
+          amount: downPayment,
+          receiptNo: downPaymentReceiptNo,
+          paymentMode: downPaymentMode,
+          notes: 'Down Payment (Advance / Token)',
+        },
+        record: updatedRecord
+      });
+    }
+
     setIsEditStudentFeeModalOpen(false);
     toast.success(`Fee structure updated for ${selectedStudentForFees.name}`);
   };
@@ -552,6 +624,7 @@ const AdminDashboard = () => {
     const emiMonths = Number(batchFeeEmiMonths);
     const firstEmiDate = batchFeeFirstEmiDate;
     const paymentFrequency = batchFeeFrequency;
+    const downPaymentDate = batchFeeDownPaymentDate || new Date().toISOString().split('T')[0];
 
     if (!totalFees || totalFees <= 0) {
       toast.error("Please enter a valid Total Course Fees");
@@ -583,6 +656,8 @@ const AdminDashboard = () => {
           studentId: student.id,
           totalFees,
           downPayment,
+          downPaymentDate: downPayment > 0 ? downPaymentDate : undefined,
+          downPaymentReceiptNo: downPayment > 0 ? `DP-${student.id.slice(-6).toUpperCase()}` : undefined,
           emiMonths,
           firstEmiDate,
           paymentFrequency,
@@ -627,10 +702,19 @@ const AdminDashboard = () => {
       ? receiptNoInput.trim()
       : await getNextAutoReceiptNo();
 
+    // Determine payment date
+    let finalPaymentDate = new Date().toISOString();
+    if (paymentDate) {
+      const [y, m, d] = paymentDate.split('-').map(Number);
+      const now = new Date();
+      const dObj = new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds());
+      finalPaymentDate = dObj.toISOString();
+    }
+
     // Create payment entry
     const payment: FeePayment = {
       id: Date.now().toString(),
-      date: new Date().toISOString(),
+      date: finalPaymentDate,
       amount,
       receiptNo,
       paymentMode,
@@ -651,6 +735,7 @@ const AdminDashboard = () => {
     const freshRecords = await getFeeRecords();
     setAllFeeRecords(freshRecords || []);
     setPaymentAmount("");
+    setPaymentDate(new Date().toISOString().split('T')[0]);
     setPaymentMode('cash');
     setPaymentTransactionId("");
     setPaymentChequeNo("");
@@ -671,6 +756,97 @@ const AdminDashboard = () => {
     const msg = getReceivedMessage(selectedStudentForFees, updatedRecord, amount);
     setWaCustomMessage(msg);
     setWaMsgType('received');
+  };
+
+  const handleOpenEditPayment = (payment: FeePayment) => {
+    setEditingPayment(payment);
+    setEditPaymentDate(payment.date ? payment.date.split('T')[0] : new Date().toISOString().split('T')[0]);
+    setEditPaymentAmount(payment.amount ? payment.amount.toString() : "");
+    setEditPaymentReceiptNo(payment.receiptNo || "");
+    setEditPaymentMode(payment.paymentMode || 'cash');
+    setEditPaymentTransactionId(payment.transactionId || "");
+    setEditPaymentChequeNo(payment.chequeNo || "");
+    setEditPaymentChequeDate(payment.chequeDate || "");
+    setIsEditPaymentModalOpen(true);
+  };
+
+  const handleSaveEditPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!feeRecord || !editingPayment || !selectedStudentForFees) return;
+    const amt = Number(editPaymentAmount);
+    if (isNaN(amt) || amt <= 0) {
+      toast.error("Please enter a valid amount");
+      return;
+    }
+    if (!editPaymentDate) {
+      toast.error("Please select a valid date");
+      return;
+    }
+
+    const [y, m, d] = editPaymentDate.split('-').map(Number);
+    const prevDate = new Date(editingPayment.date || Date.now());
+    const updatedDateObj = new Date(y, m - 1, d, prevDate.getHours() || 12, prevDate.getMinutes() || 0, prevDate.getSeconds() || 0);
+
+    const updatedPayment: FeePayment = {
+      ...editingPayment,
+      date: updatedDateObj.toISOString(),
+      amount: amt,
+      receiptNo: editPaymentReceiptNo.trim(),
+      paymentMode: editPaymentMode,
+      ...((editPaymentMode === 'upi' || editPaymentMode === 'card' || editPaymentMode === 'bank_transfer' || editPaymentMode === 'other') && editPaymentTransactionId.trim() ? { transactionId: editPaymentTransactionId.trim() } : { transactionId: undefined }),
+      ...(editPaymentMode === 'cheque' && editPaymentChequeNo.trim() ? { chequeNo: editPaymentChequeNo.trim() } : { chequeNo: undefined }),
+      ...(editPaymentMode === 'cheque' && editPaymentChequeDate ? { chequeDate: editPaymentChequeDate } : { chequeDate: undefined }),
+    };
+
+    const updatedPayments = (feeRecord.payments || []).map(p => 
+      p.id === editingPayment.id ? updatedPayment : p
+    );
+
+    const updatedRecord: FeeRecord = {
+      ...feeRecord,
+      payments: updatedPayments,
+    };
+
+    await updateFeeRecord(updatedRecord);
+    setFeeRecord(updatedRecord);
+    const freshRecords = await getFeeRecords();
+    setAllFeeRecords(freshRecords || []);
+
+    // Sync receiptData if the edited payment is currently active in receipt preview
+    if (receiptData && editingPayment && (receiptData.payment.id === editingPayment.id || receiptData.payment.receiptNo === editingPayment.receiptNo)) {
+      setReceiptData({
+        student: selectedStudentForFees,
+        payment: updatedPayment,
+        record: updatedRecord
+      });
+    }
+
+    setIsEditPaymentModalOpen(false);
+    setEditingPayment(null);
+    toast.success("Installment / Payment date and details updated successfully");
+  };
+
+  const handleDeletePayment = async (paymentId: string) => {
+    if (!feeRecord || !selectedStudentForFees) return;
+    if (!window.confirm("Are you sure you want to delete this payment record?")) return;
+
+    const updatedPayments = (feeRecord.payments || []).filter(p => p.id !== paymentId);
+    const updatedRecord: FeeRecord = {
+      ...feeRecord,
+      payments: updatedPayments,
+    };
+
+    await updateFeeRecord(updatedRecord);
+    setFeeRecord(updatedRecord);
+    const freshRecords = await getFeeRecords();
+    setAllFeeRecords(freshRecords || []);
+    
+    // Clear receipt preview if the deleted payment was active
+    if (receiptData && receiptData.payment.id === paymentId) {
+      setReceiptData(null);
+    }
+
+    toast.success("Payment deleted successfully");
   };
 
   const handlePrint = () => {
@@ -832,12 +1008,25 @@ const AdminDashboard = () => {
     const dpAmount = Number(feeRecord.downPayment || 0);
     if (dpAmount <= 0) return;
 
+    let dpDateISO = new Date().toISOString();
+    if (feeRecord.downPaymentDate) {
+      if (feeRecord.downPaymentDate.includes('T')) {
+        dpDateISO = feeRecord.downPaymentDate;
+      } else {
+        const [y, m, d] = feeRecord.downPaymentDate.split('-').map(Number);
+        dpDateISO = new Date(y, m - 1, d, 12, 0, 0).toISOString();
+      }
+    } else if (feeRecord.firstEmiDate) {
+      const [y, m, d] = feeRecord.firstEmiDate.split('-').map(Number);
+      dpDateISO = new Date(y, m - 1, d, 12, 0, 0).toISOString();
+    }
+
     const dpPayment: FeePayment = {
       id: `dp_${feeRecord.studentId}`,
-      date: feeRecord.firstEmiDate ? new Date(feeRecord.firstEmiDate).toISOString() : new Date().toISOString(),
+      date: dpDateISO,
       amount: dpAmount,
-      receiptNo: `DP-${feeRecord.studentId.slice(-6).toUpperCase()}`,
-      paymentMode: 'cash',
+      receiptNo: feeRecord.downPaymentReceiptNo || `DP-${feeRecord.studentId.slice(-6).toUpperCase()}`,
+      paymentMode: feeRecord.downPaymentMode || 'cash',
       notes: 'Down Payment (Advance / Token)',
     };
 
@@ -4278,6 +4467,30 @@ const AdminDashboard = () => {
                                            </div>
                                          </div>
 
+                                          {Number(feeFormDownPayment || 0) > 0 && (
+                                            <div className="grid grid-cols-2 gap-4">
+                                              <div>
+                                                <Label htmlFor="feeFormDownPaymentDate">Down Payment Date</Label>
+                                                <Input
+                                                  id="feeFormDownPaymentDate"
+                                                  type="date"
+                                                  value={feeFormDownPaymentDate}
+                                                  onChange={(e) => setFeeFormDownPaymentDate(e.target.value)}
+                                                />
+                                              </div>
+                                              <div>
+                                                <Label htmlFor="feeFormDownPaymentReceiptNo">DP Receipt No. <span className="text-xs text-muted-foreground">(Optional)</span></Label>
+                                                <Input
+                                                  id="feeFormDownPaymentReceiptNo"
+                                                  type="text"
+                                                  placeholder={`DP-${selectedStudentForFees.id.slice(-6).toUpperCase()}`}
+                                                  value={feeFormDownPaymentReceiptNo}
+                                                  onChange={(e) => setFeeFormDownPaymentReceiptNo(e.target.value)}
+                                                />
+                                              </div>
+                                            </div>
+                                          )}
+
                                          {/* Live Deduction Summary Banner */}
                                          {Number(feeFormTotalFees || 0) > 0 && (
                                            <div className="bg-primary/5 border border-primary/20 p-3.5 rounded-xl space-y-1.5 text-xs">
@@ -4392,13 +4605,13 @@ const AdminDashboard = () => {
                                       
                                       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                                         {(() => {
+                                          const total = feeRecord.totalFees || 0;
                                           const downPayment = Number(feeRecord.downPayment) || 0;
                                           const paymentsTotal = feeRecord.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
                                           const totalPaid = downPayment + paymentsTotal;
-                                          const remainingBalance = Math.max(0, feeRecord.totalFees - totalPaid);
-                                          const emiMonthsRemaining = Math.max(1, feeRecord.emiMonths - (feeRecord.payments?.length || 0));
-                                          // Re-calculate the EMI structure based on remaining balance
-                                          const dynamicEmi = (remainingBalance / emiMonthsRemaining).toFixed(0);
+                                          const remainingBalance = Math.max(0, total - totalPaid);
+                                          const months = Math.max(1, feeRecord.emiMonths || 1);
+                                          const dynamicEmi = Math.ceil(remainingBalance / months);
 
                                           return (
                                             <>
@@ -4429,8 +4642,8 @@ const AdminDashboard = () => {
 
                                       
                                       <div className="bg-accent/40 p-4 rounded-xl space-y-3 max-w-xl">
-                                        <div className="flex flex-wrap items-end gap-4">
-                                          <div className="flex-1 min-w-[140px]">
+                                        <div className="flex flex-wrap items-end gap-3">
+                                          <div className="flex-1 min-w-[130px]">
                                             <Label htmlFor="paymentAmount">Add Payment Amount</Label>
                                             <div className="relative">
                                               <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -4444,7 +4657,7 @@ const AdminDashboard = () => {
                                               />
                                             </div>
                                           </div>
-                                          <div className="w-36">
+                                          <div className="w-28 sm:w-32">
                                             <Label htmlFor="receiptNoInput">Receipt No.</Label>
                                             <Input 
                                               id="receiptNoInput" 
@@ -4452,6 +4665,15 @@ const AdminDashboard = () => {
                                               placeholder="e.g. 1, 1.2" 
                                               value={receiptNoInput}
                                               onChange={(e) => setReceiptNoInput(e.target.value)}
+                                            />
+                                          </div>
+                                          <div className="w-36">
+                                            <Label htmlFor="paymentDate">Payment Date</Label>
+                                            <Input 
+                                              id="paymentDate" 
+                                              type="date" 
+                                              value={paymentDate}
+                                              onChange={(e) => setPaymentDate(e.target.value)}
                                             />
                                           </div>
                                         </div>
@@ -4535,17 +4757,30 @@ const AdminDashboard = () => {
                                             <div className="flex justify-between items-center bg-primary/5 border border-primary/20 p-3 rounded-xl text-sm">
                                               <div className="flex-1">
                                                 <p className="font-semibold">
-                                                  Down Payment • <span className="text-primary font-mono">Receipt: DP-{feeRecord.studentId.slice(-6).toUpperCase()}</span>
+                                                  Down Payment • <span className="text-primary font-mono">Receipt: {feeRecord.downPaymentReceiptNo || `DP-${feeRecord.studentId.slice(-6).toUpperCase()}`}</span>
                                                   <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium uppercase bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
                                                     Paid at Setup
                                                   </span>
                                                 </p>
                                                 <p className="text-xs text-muted-foreground">
-                                                  Initial upfront token/advance payment credited towards total course fees
+                                                  {feeRecord.downPaymentDate
+                                                    ? new Date(feeRecord.downPaymentDate.includes('T') ? feeRecord.downPaymentDate : feeRecord.downPaymentDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                                                    : feeRecord.firstEmiDate
+                                                    ? new Date(feeRecord.firstEmiDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                                                    : 'Initial upfront token/advance payment'} • Initial upfront token/advance payment credited towards total course fees
                                                 </p>
                                               </div>
-                                              <div className="flex items-center gap-2">
-                                                <div className="font-bold text-green-600 mr-1">+₹{Number(feeRecord.downPayment).toLocaleString('en-IN')}</div>
+                                              <div className="flex items-center gap-1.5">
+                                                <div className="font-bold text-green-600 mr-1.5">+₹{Number(feeRecord.downPayment).toLocaleString('en-IN')}</div>
+                                                <Button 
+                                                  onClick={handleOpenEditStudentFee} 
+                                                  variant="ghost" 
+                                                  size="icon" 
+                                                  className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-xl"
+                                                  title="Edit Down Payment / Date"
+                                                >
+                                                  <Edit className="h-4 w-4" />
+                                                </Button>
                                                 <Button 
                                                   onClick={handlePrintDownPaymentReceipt} 
                                                   variant="ghost" 
@@ -4586,14 +4821,23 @@ const AdminDashboard = () => {
                                                     )}
                                                   </p>
                                                   <p className="text-xs text-muted-foreground">
-                                                    {new Date(p.date).toLocaleString()}
+                                                    {new Date(p.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                                                     {p.transactionId && <span> • TXN: {p.transactionId}</span>}
                                                     {p.chequeNo && <span> • Cheque: {p.chequeNo}</span>}
                                                     {p.chequeDate && <span> • Dt: {new Date(p.chequeDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>}
                                                   </p>
                                                 </div>
-                                                <div className="flex items-center gap-2">
-                                                  <div className="font-bold text-green-600 mr-1">+₹{p.amount}</div>
+                                                <div className="flex items-center gap-1.5">
+                                                  <div className="font-bold text-green-600 mr-1.5">+₹{p.amount.toLocaleString('en-IN')}</div>
+                                                  <Button 
+                                                    onClick={() => handleOpenEditPayment(p)} 
+                                                    variant="ghost" 
+                                                    size="icon" 
+                                                    className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-xl"
+                                                    title="Edit Payment / Date"
+                                                  >
+                                                    <Edit className="h-4 w-4" />
+                                                  </Button>
                                                   <Button 
                                                     onClick={() => handlePrintReceipt(p)} 
                                                     variant="ghost" 
@@ -4612,6 +4856,15 @@ const AdminDashboard = () => {
                                                   >
                                                     <Download className="h-4 w-4" />
                                                   </Button>
+                                                  <Button 
+                                                    onClick={() => handleDeletePayment(p.id)} 
+                                                    variant="ghost" 
+                                                    size="icon" 
+                                                    className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl"
+                                                    title="Delete Payment Record"
+                                                  >
+                                                    <Trash2 className="h-4 w-4" />
+                                                  </Button>
                                                 </div>
                                               </div>
                                             ))
@@ -4622,7 +4875,6 @@ const AdminDashboard = () => {
                                           )}
                                         </div>
                                       </div>
-                                      
                                       <div className="border-t pt-5 mt-5 space-y-4">
                                         <div className="flex flex-wrap items-center justify-between gap-2">
                                           <div className="flex items-center gap-2">
@@ -7439,6 +7691,18 @@ const AdminDashboard = () => {
                     </div>
                   </div>
 
+                  {Number(batchFeeDownPayment || 0) > 0 && (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="batchFeeDownPaymentDate">Down Payment Date</Label>
+                      <Input
+                        id="batchFeeDownPaymentDate"
+                        type="date"
+                        value={batchFeeDownPaymentDate}
+                        onChange={(e) => setBatchFeeDownPaymentDate(e.target.value)}
+                      />
+                    </div>
+                  )}
+
                   {/* Batch Live Deduction Banner */}
                   {Number(batchFeeTotalFees || 0) > 0 && (
                     <div className="bg-primary/5 border border-primary/20 p-3 rounded-xl space-y-1 text-xs">
@@ -7584,7 +7848,7 @@ const AdminDashboard = () => {
               </DialogTitle>
               {selectedStudentForFees && (
                 <p className="text-xs text-muted-foreground mt-1">
-                  Adjust custom fee structure for <span className="font-semibold text-foreground">{selectedStudentForFees.name}</span>. Existing payment records and receipts will be preserved.
+                  Adjust custom fee structure and down payment details for <span className="font-semibold text-foreground">{selectedStudentForFees.name}</span>. Existing payment records will be preserved.
                 </p>
               )}
             </DialogHeader>
@@ -7622,6 +7886,30 @@ const AdminDashboard = () => {
                   />
                 </div>
               </div>
+
+              {Number(editFeeDownPayment || 0) > 0 && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="editFeeDownPaymentDate">Down Payment Date</Label>
+                    <Input
+                      id="editFeeDownPaymentDate"
+                      type="date"
+                      value={editFeeDownPaymentDate}
+                      onChange={(e) => setEditFeeDownPaymentDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="editFeeDownPaymentReceiptNo">DP Receipt No.</Label>
+                    <Input
+                      id="editFeeDownPaymentReceiptNo"
+                      type="text"
+                      placeholder="e.g. DP-123456"
+                      value={editFeeDownPaymentReceiptNo}
+                      onChange={(e) => setEditFeeDownPaymentReceiptNo(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* Edit Student Live Deduction Banner */}
               {Number(editFeeTotalFees || 0) > 0 && (
@@ -7706,6 +7994,139 @@ const AdminDashboard = () => {
                   type="button"
                   variant="outline"
                   onClick={() => setIsEditStudentFeeModalOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit">
+                  Save Changes
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Payment / Installment Dialog */}
+        <Dialog open={isEditPaymentModalOpen} onOpenChange={setIsEditPaymentModalOpen}>
+          <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-lg font-bold">
+                <Edit className="h-5 w-5 text-primary" /> Edit Installment / Payment Details
+              </DialogTitle>
+              {selectedStudentForFees && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Update payment date, amount, receipt number, or payment mode for <span className="font-semibold text-foreground">{selectedStudentForFees.name}</span>.
+                </p>
+              )}
+            </DialogHeader>
+
+            <form onSubmit={handleSaveEditPayment} className="space-y-4 pt-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="editPaymentDate">Payment / Installment Date</Label>
+                <Input
+                  id="editPaymentDate"
+                  type="date"
+                  required
+                  value={editPaymentDate}
+                  onChange={(e) => setEditPaymentDate(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="editPaymentAmount">Payment Amount (₹)</Label>
+                <div className="relative">
+                  <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="editPaymentAmount"
+                    type="number"
+                    className="pl-8"
+                    placeholder="e.g. 5000"
+                    required
+                    min="1"
+                    value={editPaymentAmount}
+                    onChange={(e) => setEditPaymentAmount(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="editPaymentReceiptNo">Receipt Number</Label>
+                <Input
+                  id="editPaymentReceiptNo"
+                  type="text"
+                  placeholder="e.g. 1, RCPT-1234"
+                  value={editPaymentReceiptNo}
+                  onChange={(e) => setEditPaymentReceiptNo(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="editPaymentMode">Payment Mode</Label>
+                <select
+                  id="editPaymentMode"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  value={editPaymentMode}
+                  onChange={(e) => setEditPaymentMode(e.target.value as PaymentMode)}
+                >
+                  <option value="cash">Cash</option>
+                  <option value="upi">UPI</option>
+                  <option value="card">Card</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="cheque">Cheque</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              {(editPaymentMode === 'upi' || editPaymentMode === 'card' || editPaymentMode === 'bank_transfer' || editPaymentMode === 'other') && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="editPaymentTransactionId">
+                    {editPaymentMode === 'card'
+                      ? 'Card / Txn ID'
+                      : editPaymentMode === 'bank_transfer'
+                      ? 'Bank Reference / UTR'
+                      : editPaymentMode === 'other'
+                      ? 'Reference / Note'
+                      : 'Transaction ID'}{' '}
+                    <span className="text-muted-foreground text-xs">(optional)</span>
+                  </Label>
+                  <Input
+                    id="editPaymentTransactionId"
+                    type="text"
+                    placeholder="e.g. TXN123456"
+                    value={editPaymentTransactionId}
+                    onChange={(e) => setEditPaymentTransactionId(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {editPaymentMode === 'cheque' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="editPaymentChequeNo">Cheque No. <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                    <Input
+                      id="editPaymentChequeNo"
+                      type="text"
+                      placeholder="e.g. 000123"
+                      value={editPaymentChequeNo}
+                      onChange={(e) => setEditPaymentChequeNo(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="editPaymentChequeDate">Cheque Date <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                    <Input
+                      id="editPaymentChequeDate"
+                      type="date"
+                      value={editPaymentChequeDate}
+                      onChange={(e) => setEditPaymentChequeDate(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-3 border-t">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsEditPaymentModalOpen(false)}
                 >
                   Cancel
                 </Button>
