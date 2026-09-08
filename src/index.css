@@ -115,16 +115,29 @@ All colors MUST be HSL.
 }
 
 @media print {
-  body {
-    background: white !important;
-    color: black !important;
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
   
-  /* Strictly hide UI navigation, sidebar, fixed overlays, modals, and Radix portals */
+  /* Strictly hide UI navigation, sidebar, fixed overlays, modals, and elements marked print:hidden */
+  header,
+  aside,
+  nav,
   [data-radix-portal],
   [role="dialog"],
-  [data-state="open"],
-  .fixed,
   .print\:hidden {
     display: none !important;
     visibility: hidden !important;
@@ -135,5 +148,7 @@ All colors MUST be HSL.
     display: block !important;
     visibility: visible !important;
     opacity: 1 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
   }
 }

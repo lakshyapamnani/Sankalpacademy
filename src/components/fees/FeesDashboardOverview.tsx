@@ -207,12 +207,28 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
       const startDateStr = record.firstEmiDate || (record.payments?.[0]?.date?.split("T")[0] || todayStr);
       const startDate = new Date(startDateStr + "T00:00:00");
 
+      let stepMonths = 1;
+      if (record.paymentFrequency === '2_months') stepMonths = 2;
+      else if (record.paymentFrequency === '3_months') stepMonths = 3;
+      else if (record.paymentFrequency === '6_months') stepMonths = 6;
+      else if (record.paymentFrequency === 'custom_interval') stepMonths = Math.max(1, Number(record.emiIntervalMonths) || 2);
+      else if (record.emiIntervalMonths && record.emiIntervalMonths > 1) stepMonths = record.emiIntervalMonths;
+
       let cumulativeDue = 0;
       const today = new Date();
 
       for (let i = 0; i < months; i++) {
-        const instDate = new Date(startDate);
-        instDate.setMonth(instDate.getMonth() + i);
+        let instDate = new Date(startDate);
+        if (record.customInstallmentDates && record.customInstallmentDates[i]) {
+          const cDate = new Date(record.customInstallmentDates[i] + 'T00:00:00');
+          if (!isNaN(cDate.getTime())) {
+            instDate = cDate;
+          } else {
+            instDate.setMonth(instDate.getMonth() + i * stepMonths);
+          }
+        } else {
+          instDate.setMonth(instDate.getMonth() + i * stepMonths);
+        }
         if (instDate <= today) {
           cumulativeDue += baseEmi;
         }
@@ -354,8 +370,15 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
       studentPaid += downPayment;
       totalReceived += downPayment;
       if (downPayment > 0) {
-        modeAggregates.cash.amount += downPayment;
-        modeAggregates.cash.count += 1;
+        const dpMode = (record?.downPaymentMode || "cash").toLowerCase().trim();
+        let dpModeKey: keyof typeof modeAggregates = "other";
+        if (dpMode.includes("cash")) dpModeKey = "cash";
+        else if (dpMode.includes("upi") || dpMode.includes("gpay") || dpMode.includes("phonepe") || dpMode.includes("paytm")) dpModeKey = "upi";
+        else if (dpMode.includes("card") || dpMode.includes("debit") || dpMode.includes("credit") || dpMode.includes("pos")) dpModeKey = "card";
+        else if (dpMode.includes("cheque") || dpMode.includes("check")) dpModeKey = "cheque";
+        else if (dpMode.includes("bank") || dpMode.includes("netbanking") || dpMode.includes("neft") || dpMode.includes("rtgs") || dpMode.includes("imps")) dpModeKey = "bank_transfer";
+        modeAggregates[dpModeKey].amount += downPayment;
+        modeAggregates[dpModeKey].count += 1;
         // Also credit to period stats if setup occurred this period
         periodStats.thisMonth.collected += downPayment;
         periodStats.thisMonth.count += 1;

@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit, ArrowLeft, Search, Download, MessageSquare, Eye, TrendingUp, FileText, Trash2, GraduationCap, LogIn, Key, Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Layers } from "lucide-react";
+import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit, ArrowLeft, Search, Download, MessageSquare, Eye, TrendingUp, FileText, Trash2, GraduationCap, LogIn, Key, Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Layers, Settings, Image, PenTool, Building, Save } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -69,6 +69,7 @@ import {
   MCQQuestion,
   InstituteSettings,
   getInstituteSettings,
+  saveInstituteSettings,
   Note,
   Lead,
   getLeads,
@@ -163,7 +164,7 @@ const AdminDashboard = () => {
     return `${year}-${month}-${day}`;
   };
 
-  const [activeTab, setActiveTab] = useState<'batches' | 'students' | 'leads' | 'staff' | 'teachers' | 'classes' | 'fees' | 'tests' | 'attendance' | 'birthdays' | 'notes'>('students');
+  const [activeTab, setActiveTab] = useState<'batches' | 'students' | 'leads' | 'staff' | 'teachers' | 'classes' | 'fees' | 'tests' | 'attendance' | 'birthdays' | 'notes' | 'settings'>('students');
   const [currentDateStr, setCurrentDateStr] = useState<string>('');
 
   useEffect(() => {
@@ -219,11 +220,15 @@ const AdminDashboard = () => {
   );
   const [feeFormDownPaymentReceiptNo, setFeeFormDownPaymentReceiptNo] = useState<string>("");
   const [feeFormDownPaymentMode, setFeeFormDownPaymentMode] = useState<PaymentMode>('cash');
+  const [feeFormDownPaymentTransactionId, setFeeFormDownPaymentTransactionId] = useState<string>("");
   const [feeFormEmiMonths, setFeeFormEmiMonths] = useState<string>("");
   const [feeFormFirstEmiDate, setFeeFormFirstEmiDate] = useState<string>(
     new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   );
-  const [feeFormFrequency, setFeeFormFrequency] = useState<'monthly' | 'custom'>('monthly');
+  const [feeFormFrequency, setFeeFormFrequency] = useState<string>('monthly');
+  const [feeFormIntervalMonths, setFeeFormIntervalMonths] = useState<string>("2");
+  const [feeFormCustomDates, setFeeFormCustomDates] = useState<string[]>([]);
+  const [feeFormShowCustomDates, setFeeFormShowCustomDates] = useState<boolean>(false);
 
   // Batch Fee Structure Form State
   const [isBatchFeeModalOpen, setIsBatchFeeModalOpen] = useState(false);
@@ -232,11 +237,14 @@ const AdminDashboard = () => {
   const [batchFeeDownPaymentDate, setBatchFeeDownPaymentDate] = useState<string>(
     new Date().toISOString().split('T')[0]
   );
+  const [batchFeeDownPaymentMode, setBatchFeeDownPaymentMode] = useState<PaymentMode>('cash');
+  const [batchFeeDownPaymentTransactionId, setBatchFeeDownPaymentTransactionId] = useState<string>("");
   const [batchFeeEmiMonths, setBatchFeeEmiMonths] = useState<string>("");
   const [batchFeeFirstEmiDate, setBatchFeeFirstEmiDate] = useState<string>(
     new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   );
-  const [batchFeeFrequency, setBatchFeeFrequency] = useState<'monthly' | 'custom'>('monthly');
+  const [batchFeeFrequency, setBatchFeeFrequency] = useState<string>('monthly');
+  const [batchFeeIntervalMonths, setBatchFeeIntervalMonths] = useState<string>("2");
   const [batchFeeScope, setBatchFeeScope] = useState<'all' | 'unstructured'>('all');
   const [isAssigningBatchFees, setIsAssigningBatchFees] = useState(false);
 
@@ -247,9 +255,13 @@ const AdminDashboard = () => {
   const [editFeeDownPaymentDate, setEditFeeDownPaymentDate] = useState<string>("");
   const [editFeeDownPaymentReceiptNo, setEditFeeDownPaymentReceiptNo] = useState<string>("");
   const [editFeeDownPaymentMode, setEditFeeDownPaymentMode] = useState<PaymentMode>('cash');
+  const [editFeeDownPaymentTransactionId, setEditFeeDownPaymentTransactionId] = useState<string>("");
   const [editFeeEmiMonths, setEditFeeEmiMonths] = useState<string>("");
   const [editFeeFirstEmiDate, setEditFeeFirstEmiDate] = useState<string>("");
-  const [editFeeFrequency, setEditFeeFrequency] = useState<'monthly' | 'custom'>('monthly');
+  const [editFeeFrequency, setEditFeeFrequency] = useState<string>('monthly');
+  const [editFeeIntervalMonths, setEditFeeIntervalMonths] = useState<string>("2");
+  const [editFeeCustomDates, setEditFeeCustomDates] = useState<string[]>([]);
+  const [editFeeShowCustomDates, setEditFeeShowCustomDates] = useState<boolean>(false);
 
   // Payment Mode State
   const [paymentMode, setPaymentMode] = useState<PaymentMode>('cash');
@@ -269,6 +281,7 @@ const AdminDashboard = () => {
   const [editPaymentTransactionId, setEditPaymentTransactionId] = useState<string>("");
   const [editPaymentChequeNo, setEditPaymentChequeNo] = useState<string>("");
   const [editPaymentChequeDate, setEditPaymentChequeDate] = useState<string>("");
+  const [printingReceipt, setPrintingReceipt] = useState<boolean>(false);
   const [printingSchedule, setPrintingSchedule] = useState<boolean>(false);
   const [printingMomReport, setPrintingMomReport] = useState<boolean>(false);
   const [isMomModalOpen, setIsMomModalOpen] = useState<boolean>(false);
@@ -327,6 +340,25 @@ const AdminDashboard = () => {
 
   // Institute Settings State
   const [instituteSettings, setInstituteSettingsState] = useState<InstituteSettings>(getInstituteSettings());
+  const [settingsName, setSettingsName] = useState<string>(instituteSettings.name || 'Sankalp Academy ERP');
+  const [settingsAddress, setSettingsAddress] = useState<string>(instituteSettings.address || '');
+  const [settingsPhone, setSettingsPhone] = useState<string>(instituteSettings.phone || '');
+  const [settingsEmail, setSettingsEmail] = useState<string>(instituteSettings.email || '');
+  const [settingsLogo, setSettingsLogo] = useState<string>(instituteSettings.logo || '');
+  const [settingsSignature, setSettingsSignature] = useState<string>(instituteSettings.signature || '');
+  const [isSavingSettings, setIsSavingSettings] = useState<boolean>(false);
+
+  // Keep settings form in sync when instituteSettings updates
+  useEffect(() => {
+    const current = getInstituteSettings();
+    setInstituteSettingsState(current);
+    setSettingsName(current.name || 'Sankalp Academy ERP');
+    setSettingsAddress(current.address || '');
+    setSettingsPhone(current.phone || '');
+    setSettingsEmail(current.email || '');
+    setSettingsLogo(current.logo || '');
+    setSettingsSignature(current.signature || '');
+  }, []);
 
   // Absent Today State
   const [absentDate, setAbsentDate] = useState<string>(getLocalDateString());
@@ -429,12 +461,50 @@ const AdminDashboard = () => {
     setWaRecipientPhone(phone);
 
     if (record) {
+      if (record.payments && record.payments.length > 0) {
+        const latestPayment = record.payments[record.payments.length - 1];
+        setReceiptData({
+          student: student,
+          payment: latestPayment,
+          record: record
+        });
+      } else if (Number(record.downPayment || 0) > 0) {
+        let dpDateISO = new Date().toISOString();
+        if (record.downPaymentDate) {
+          if (record.downPaymentDate.includes('T')) {
+            dpDateISO = record.downPaymentDate;
+          } else {
+            const [y, m, d] = record.downPaymentDate.split('-').map(Number);
+            dpDateISO = new Date(y, m - 1, d, 12, 0, 0).toISOString();
+          }
+        } else if (record.firstEmiDate) {
+          const [y, m, d] = record.firstEmiDate.split('-').map(Number);
+          dpDateISO = new Date(y, m - 1, d, 12, 0, 0).toISOString();
+        }
+        setReceiptData({
+          student: student,
+          payment: {
+            id: `dp_${record.studentId}`,
+            date: dpDateISO,
+            amount: Number(record.downPayment),
+            receiptNo: record.downPaymentReceiptNo || `DP-${record.studentId.slice(-6).toUpperCase()}`,
+            paymentMode: record.downPaymentMode || 'cash',
+            transactionId: record.downPaymentTransactionId,
+            notes: 'Down Payment (Advance / Token)',
+          },
+          record: record
+        });
+      } else {
+        setReceiptData(null);
+      }
+
       if (waMsgType === 'due') {
         setWaCustomMessage(getDueMessage(student, record));
       } else {
         setWaCustomMessage(getReceivedMessage(student, record));
       }
     } else {
+      setReceiptData(null);
       setWaCustomMessage("");
     }
   };
@@ -480,6 +550,17 @@ const AdminDashboard = () => {
       return;
     }
 
+    const emiIntervalMonths = feeFormFrequency === '2_months' ? 2 : feeFormFrequency === '3_months' ? 3 : feeFormFrequency === '6_months' ? 6 : feeFormFrequency === 'custom_interval' ? Math.max(1, Number(feeFormIntervalMonths) || 2) : 1;
+    
+    let customDatesToSave: string[] | undefined = undefined;
+    if (feeFormCustomDates.length > 0 && feeFormShowCustomDates) {
+      customDatesToSave = feeFormCustomDates.slice(0, emiMonths);
+    } else if (feeFormFrequency === 'custom_dates') {
+      customDatesToSave = feeFormCustomDates.slice(0, emiMonths);
+    } else {
+      customDatesToSave = computeInstallmentDates(firstEmiDate, emiMonths, feeFormFrequency, emiIntervalMonths);
+    }
+
     const newRecord: FeeRecord = {
       studentId: selectedStudentForFees.id,
       totalFees,
@@ -488,9 +569,12 @@ const AdminDashboard = () => {
       downPayment,
       downPaymentDate: downPayment > 0 ? downPaymentDate : undefined,
       downPaymentReceiptNo: downPayment > 0 ? downPaymentReceiptNo : undefined,
-      downPaymentMode: downPayment > 0 ? downPaymentMode : undefined,
+      downPaymentMode: downPayment > 0 ? (feeFormDownPaymentMode || 'cash') : undefined,
+      downPaymentTransactionId: downPayment > 0 && feeFormDownPaymentTransactionId.trim() ? feeFormDownPaymentTransactionId.trim() : undefined,
       firstEmiDate,
       paymentFrequency,
+      emiIntervalMonths,
+      customInstallmentDates: customDatesToSave,
     };
     await updateFeeRecord(newRecord);
     setFeeRecord(newRecord);
@@ -502,9 +586,13 @@ const AdminDashboard = () => {
     setFeeFormDownPaymentDate(new Date().toISOString().split('T')[0]);
     setFeeFormDownPaymentReceiptNo("");
     setFeeFormDownPaymentMode('cash');
+    setFeeFormDownPaymentTransactionId("");
     setFeeFormEmiMonths("");
     setFeeFormFirstEmiDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
     setFeeFormFrequency('monthly');
+    setFeeFormIntervalMonths("2");
+    setFeeFormCustomDates([]);
+    setFeeFormShowCustomDates(false);
 
     // Auto-prepare Down Payment receipt if down payment > 0
     if (downPayment > 0) {
@@ -520,7 +608,8 @@ const AdminDashboard = () => {
           date: dpDateISO,
           amount: downPayment,
           receiptNo: downPaymentReceiptNo,
-          paymentMode: downPaymentMode,
+          paymentMode: feeFormDownPaymentMode || 'cash',
+          transactionId: feeFormDownPaymentTransactionId.trim() || undefined,
           notes: 'Down Payment (Advance / Token)',
         },
         record: newRecord
@@ -541,11 +630,23 @@ const AdminDashboard = () => {
       feeRecord.downPaymentReceiptNo || (selectedStudentForFees ? `DP-${selectedStudentForFees.id.slice(-6).toUpperCase()}` : "")
     );
     setEditFeeDownPaymentMode(feeRecord.downPaymentMode || 'cash');
+    setEditFeeDownPaymentTransactionId(feeRecord.downPaymentTransactionId || "");
+    const emiCount = Number(feeRecord.emiMonths || 1);
     setEditFeeEmiMonths(feeRecord.emiMonths ? feeRecord.emiMonths.toString() : "");
-    setEditFeeFirstEmiDate(
-      feeRecord.firstEmiDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-    );
-    setEditFeeFrequency(feeRecord.paymentFrequency || 'monthly');
+    const firstDate = feeRecord.firstEmiDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    setEditFeeFirstEmiDate(firstDate);
+    const freq = feeRecord.paymentFrequency || 'monthly';
+    setEditFeeFrequency(freq);
+    setEditFeeIntervalMonths(feeRecord.emiIntervalMonths ? feeRecord.emiIntervalMonths.toString() : "2");
+    
+    if (feeRecord.customInstallmentDates && feeRecord.customInstallmentDates.length > 0) {
+      setEditFeeCustomDates(feeRecord.customInstallmentDates);
+      setEditFeeShowCustomDates(true);
+    } else {
+      const computed = computeInstallmentDates(firstDate, emiCount, freq, feeRecord.emiIntervalMonths || 2);
+      setEditFeeCustomDates(computed);
+      setEditFeeShowCustomDates(false);
+    }
     setIsEditStudentFeeModalOpen(true);
   };
 
@@ -560,6 +661,7 @@ const AdminDashboard = () => {
     const downPaymentDate = editFeeDownPaymentDate || new Date().toISOString().split('T')[0];
     const downPaymentReceiptNo = editFeeDownPaymentReceiptNo.trim() || `DP-${selectedStudentForFees.id.slice(-6).toUpperCase()}`;
     const downPaymentMode = editFeeDownPaymentMode || 'cash';
+    const downPaymentTransactionId = editFeeDownPaymentTransactionId.trim() || undefined;
 
     if (!totalFees || totalFees <= 0) {
       toast.error("Please enter a valid Total Course Fees");
@@ -574,6 +676,17 @@ const AdminDashboard = () => {
       return;
     }
 
+    const emiIntervalMonths = editFeeFrequency === '2_months' ? 2 : editFeeFrequency === '3_months' ? 3 : editFeeFrequency === '6_months' ? 6 : editFeeFrequency === 'custom_interval' ? Math.max(1, Number(editFeeIntervalMonths) || 2) : 1;
+
+    let customDatesToSave: string[] | undefined = undefined;
+    if (editFeeCustomDates.length > 0 && editFeeShowCustomDates) {
+      customDatesToSave = editFeeCustomDates.slice(0, emiMonths);
+    } else if (editFeeFrequency === 'custom_dates') {
+      customDatesToSave = editFeeCustomDates.slice(0, emiMonths);
+    } else {
+      customDatesToSave = computeInstallmentDates(firstEmiDate, emiMonths, editFeeFrequency, emiIntervalMonths);
+    }
+
     const updatedRecord: FeeRecord = {
       ...feeRecord,
       studentId: selectedStudentForFees.id,
@@ -582,9 +695,12 @@ const AdminDashboard = () => {
       downPaymentDate: downPayment > 0 ? downPaymentDate : undefined,
       downPaymentReceiptNo: downPayment > 0 ? downPaymentReceiptNo : undefined,
       downPaymentMode: downPayment > 0 ? downPaymentMode : undefined,
+      downPaymentTransactionId: downPayment > 0 ? downPaymentTransactionId : undefined,
       emiMonths,
       firstEmiDate,
-      paymentFrequency,
+      paymentFrequency: editFeeFrequency,
+      emiIntervalMonths,
+      customInstallmentDates: customDatesToSave,
       payments: feeRecord.payments || [], // Preserve existing payments!
     };
 
@@ -608,6 +724,7 @@ const AdminDashboard = () => {
           amount: downPayment,
           receiptNo: downPaymentReceiptNo,
           paymentMode: downPaymentMode,
+          transactionId: downPaymentTransactionId,
           notes: 'Down Payment (Advance / Token)',
         },
         record: updatedRecord
@@ -625,6 +742,8 @@ const AdminDashboard = () => {
     const firstEmiDate = batchFeeFirstEmiDate;
     const paymentFrequency = batchFeeFrequency;
     const downPaymentDate = batchFeeDownPaymentDate || new Date().toISOString().split('T')[0];
+    const downPaymentMode = batchFeeDownPaymentMode || 'cash';
+    const downPaymentTransactionId = batchFeeDownPaymentTransactionId.trim() || undefined;
 
     if (!totalFees || totalFees <= 0) {
       toast.error("Please enter a valid Total Course Fees");
@@ -652,15 +771,22 @@ const AdminDashboard = () => {
           continue;
         }
 
+        const batchEmiIntervalMonths = batchFeeFrequency === '2_months' ? 2 : batchFeeFrequency === '3_months' ? 3 : batchFeeFrequency === '6_months' ? 6 : batchFeeFrequency === 'custom_interval' ? Math.max(1, Number(batchFeeIntervalMonths) || 2) : 1;
+        const batchCustomDates = computeInstallmentDates(firstEmiDate, emiMonths, batchFeeFrequency, batchEmiIntervalMonths);
+
         const newRecord: FeeRecord = {
           studentId: student.id,
           totalFees,
           downPayment,
           downPaymentDate: downPayment > 0 ? downPaymentDate : undefined,
           downPaymentReceiptNo: downPayment > 0 ? `DP-${student.id.slice(-6).toUpperCase()}` : undefined,
+          downPaymentMode: downPayment > 0 ? downPaymentMode : undefined,
+          downPaymentTransactionId: downPayment > 0 ? downPaymentTransactionId : undefined,
           emiMonths,
           firstEmiDate,
-          paymentFrequency,
+          paymentFrequency: batchFeeFrequency,
+          emiIntervalMonths: batchEmiIntervalMonths,
+          customInstallmentDates: batchCustomDates,
           payments: existingRecord?.payments || [], // Preserve existing payments!
         };
 
@@ -679,6 +805,8 @@ const AdminDashboard = () => {
       setIsBatchFeeModalOpen(false);
       setBatchFeeTotalFees("");
       setBatchFeeDownPayment("0");
+      setBatchFeeDownPaymentMode('cash');
+      setBatchFeeDownPaymentTransactionId("");
       setBatchFeeEmiMonths("");
       toast.success(`Fee structure assigned to ${updatedCount} students in ${targetBatchName}`);
     } catch (err) {
@@ -850,14 +978,31 @@ const AdminDashboard = () => {
   };
 
   const handlePrint = () => {
-    if (receiptData) {
-      window.print();
+    if (!selectedStudentForFees || !feeRecord) {
+      toast.error("Please select a student first");
+      return;
+    }
+    if (receiptData && receiptData.student.id === selectedStudentForFees.id) {
+      setPrintingReceipt(true);
+      return;
+    }
+    if (feeRecord.payments && feeRecord.payments.length > 0) {
+      const latestPayment = feeRecord.payments[feeRecord.payments.length - 1];
+      setReceiptData({
+        student: selectedStudentForFees,
+        payment: latestPayment,
+        record: feeRecord
+      });
+      setPrintingReceipt(true);
+    } else if (Number(feeRecord.downPayment || 0) > 0) {
+      handlePrintDownPaymentReceipt();
+    } else {
+      toast.info("No payment or down payment recorded for this student yet");
     }
   };
 
   const handleDownloadLatestPDF = () => {
-    if (!receiptData) return;
-    window.print();
+    handlePrint();
   };
 
   const handleExportFeesCSV = async (batchStudents: Student[], batchName: string) => {
@@ -994,9 +1139,7 @@ const AdminDashboard = () => {
       payment: payment,
       record: feeRecord
     });
-    setTimeout(() => {
-      window.print();
-    }, 100);
+    setPrintingReceipt(true);
   };
 
   const handleDownloadReceiptPDF = (payment: FeePayment) => {
@@ -1027,6 +1170,7 @@ const AdminDashboard = () => {
       amount: dpAmount,
       receiptNo: feeRecord.downPaymentReceiptNo || `DP-${feeRecord.studentId.slice(-6).toUpperCase()}`,
       paymentMode: feeRecord.downPaymentMode || 'cash',
+      transactionId: feeRecord.downPaymentTransactionId,
       notes: 'Down Payment (Advance / Token)',
     };
 
@@ -1035,33 +1179,82 @@ const AdminDashboard = () => {
       payment: dpPayment,
       record: feeRecord
     });
-    setTimeout(() => {
-      window.print();
-    }, 100);
+    setPrintingReceipt(true);
   };
 
   const handleDownloadDownPaymentPDF = () => {
     handlePrintDownPaymentReceipt();
   };
 
+  const getFrequencyLabel = (freq?: string, intervalMonths?: number) => {
+    if (freq === '2_months') return 'Every 2 Months (Bi-Monthly)';
+    if (freq === '3_months') return 'Every 3 Months (Quarterly)';
+    if (freq === '6_months') return 'Every 6 Months (Half-Yearly)';
+    if (freq === 'custom_interval') return `Every ${intervalMonths || 2} Months`;
+    if (freq === 'custom_dates') return 'Custom Dates';
+    if (freq === 'custom') return 'Custom Schedule';
+    return 'Monthly';
+  };
+
+  const computeInstallmentDates = (startDateStr: string, count: number, freq: string, intervalVal: number = 2): string[] => {
+    if (!startDateStr || count <= 0) return [];
+    let step = 1;
+    if (freq === '2_months') step = 2;
+    else if (freq === '3_months') step = 3;
+    else if (freq === '6_months') step = 6;
+    else if (freq === 'custom_interval') step = Math.max(1, intervalVal || 1);
+
+    const dates: string[] = [];
+    const start = new Date(startDateStr + 'T00:00:00');
+    for (let i = 0; i < count; i++) {
+      const dt = new Date(start);
+      dt.setMonth(dt.getMonth() + i * step);
+      dates.push(dt.toISOString().split('T')[0]);
+    }
+    return dates;
+  };
+
   const getStudentInstallmentSchedule = (record: FeeRecord) => {
-    const total = record.totalFees || 0;
+    const total = Number(record.totalFees) || 0;
     const downPayment = Number(record.downPayment) || 0;
     const remaining = Math.max(0, total - downPayment);
-    const months = Math.max(1, record.emiMonths || 1);
+    const months = Math.max(1, Number(record.emiMonths) || 1);
     const baseEmi = Math.floor(remaining / months);
     const lastEmi = remaining - baseEmi * (months - 1);
 
     const startDateStr = record.firstEmiDate || (record.payments && record.payments[0] ? record.payments[0].date.split('T')[0] : new Date().toISOString().split('T')[0]);
     const startDate = new Date(startDateStr + 'T00:00:00');
 
-    const paymentsTotal = record.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+    let stepMonths = 1;
+    if (record.paymentFrequency === '2_months') stepMonths = 2;
+    else if (record.paymentFrequency === '3_months') stepMonths = 3;
+    else if (record.paymentFrequency === '6_months') stepMonths = 6;
+    else if (record.paymentFrequency === 'custom_interval') stepMonths = Math.max(1, Number(record.emiIntervalMonths) || 2);
+    else if (record.emiIntervalMonths && record.emiIntervalMonths > 1) stepMonths = record.emiIntervalMonths;
+
+    const paymentsTotal = (record.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
     const totalPaid = downPayment + paymentsTotal;
     let runningCredit = paymentsTotal;
     const installments = [];
     for (let i = 0; i < months; i++) {
-      const dt = new Date(startDate);
-      dt.setMonth(dt.getMonth() + i);
+      let instDateFormatted = '';
+      let instDateISO = '';
+      if (record.customInstallmentDates && record.customInstallmentDates[i]) {
+        const cDate = new Date(record.customInstallmentDates[i] + 'T00:00:00');
+        if (!isNaN(cDate.getTime())) {
+          instDateFormatted = cDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+          instDateISO = record.customInstallmentDates[i];
+        } else {
+          instDateFormatted = record.customInstallmentDates[i];
+          instDateISO = record.customInstallmentDates[i];
+        }
+      } else {
+        const dt = new Date(startDate);
+        dt.setMonth(dt.getMonth() + i * stepMonths);
+        instDateFormatted = dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+        instDateISO = dt.toISOString().split('T')[0];
+      }
+
       const amount = i === months - 1 ? lastEmi : baseEmi;
       
       let status: 'paid' | 'partial' | 'pending' = 'pending';
@@ -1078,7 +1271,8 @@ const AdminDashboard = () => {
 
       installments.push({
         num: i + 1,
-        date: dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+        date: instDateFormatted,
+        rawDate: instDateISO,
         amount,
         paidAmount,
         status
@@ -1093,6 +1287,7 @@ const AdminDashboard = () => {
       totalPaid,
       remainingBalance: Math.max(0, total - totalPaid),
       frequency: record.paymentFrequency || 'monthly',
+      frequencyLabel: getFrequencyLabel(record.paymentFrequency, record.emiIntervalMonths),
       firstEmiDate: startDateStr,
       installments
     };
@@ -1129,9 +1324,10 @@ const AdminDashboard = () => {
 
     for (const student of batchStudents) {
       const record = batchRecords.find(r => r.studentId === student.id);
-      if (!record || !record.payments) continue;
+      if (!record) continue;
 
-      for (const p of record.payments) {
+      if (record.payments && Array.isArray(record.payments)) {
+        for (const p of record.payments) {
         if (!p.date || !p.amount) continue;
         const d = new Date(p.date);
         const year = d.getFullYear();
@@ -1172,6 +1368,7 @@ const AdminDashboard = () => {
           refNo: p.transactionId || p.chequeNo || '-'
         });
       }
+    }
 
       // Include Down Payment in MoM collections if present
       const dp = Number(record.downPayment) || 0;
@@ -1259,9 +1456,9 @@ const AdminDashboard = () => {
 
   const getDueMessage = (student: Student, record: FeeRecord) => {
     const downPayment = Number(record.downPayment) || 0;
-    const paymentsTotal = record.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+    const paymentsTotal = (record.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
     const totalPaid = downPayment + paymentsTotal;
-    const remaining = Math.max(0, record.totalFees - totalPaid);
+    const remaining = Math.max(0, (Number(record.totalFees) || 0) - totalPaid);
     const sched = getStudentInstallmentSchedule(record);
     const nextPending = sched.installments.find(i => i.status === 'pending' || i.status === 'partial');
     let dueDetails = `Total Outstanding Balance: ₹${remaining.toLocaleString('en-IN')}`;
@@ -1274,10 +1471,10 @@ const AdminDashboard = () => {
 
   const getReceivedMessage = (student: Student, record: FeeRecord, lastPaidAmount?: number) => {
     const downPayment = Number(record.downPayment) || 0;
-    const paymentsTotal = record.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+    const paymentsTotal = (record.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
     const totalPaid = downPayment + paymentsTotal;
-    const remaining = Math.max(0, record.totalFees - totalPaid);
-    return `Dear Parent, fee payment ${lastPaidAmount ? `of ₹${lastPaidAmount.toLocaleString('en-IN')}` : ''} received for ${student.name}.\nTotal Course Fees: ₹${record.totalFees.toLocaleString('en-IN')}\nTotal Paid: ₹${totalPaid.toLocaleString('en-IN')}\nRemaining Balance: ₹${remaining.toLocaleString('en-IN')}\nThank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
+    const remaining = Math.max(0, (Number(record.totalFees) || 0) - totalPaid);
+    return `Dear Parent, fee payment ${lastPaidAmount ? `of ₹${lastPaidAmount.toLocaleString('en-IN')}` : ''} received for ${student.name}.\nTotal Course Fees: ₹${(Number(record.totalFees) || 0).toLocaleString('en-IN')}\nTotal Paid: ₹${totalPaid.toLocaleString('en-IN')}\nRemaining Balance: ₹${remaining.toLocaleString('en-IN')}\nThank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
   };
 
   const handlePrintSchedule = () => {
@@ -1397,14 +1594,14 @@ const AdminDashboard = () => {
 
       for (const student of batchStudents) {
         const record = batchRecords.find(r => r.studentId === student.id);
-        if (!record || !record.payments) continue;
+        if (!record) continue;
 
         const downPayment = Number(record.downPayment) || 0;
-        const paymentsTotal = record.payments.reduce((sum, p) => sum + p.amount, 0);
+        const paymentsTotal = (record.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
         const totalPaidOverall = downPayment + paymentsTotal;
-        const remainingOverall = Math.max(0, record.totalFees - totalPaidOverall);
+        const remainingOverall = Math.max(0, (Number(record.totalFees) || 0) - totalPaidOverall);
 
-        for (const p of record.payments) {
+        for (const p of (record.payments || [])) {
           if (!p.date || !p.amount) continue;
           const d = new Date(p.date);
           const pYear = d.getFullYear();
@@ -1461,6 +1658,26 @@ const AdminDashboard = () => {
       toast.error("Failed to export monthly CSV");
     }
   };
+
+  useEffect(() => {
+    if (!printingReceipt || !receiptData) return;
+
+    const handleAfterPrint = () => {
+      setPrintingReceipt(false);
+    };
+
+    window.addEventListener('afterprint', handleAfterPrint);
+    const timer = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.print();
+      });
+    });
+
+    return () => {
+      window.removeEventListener('afterprint', handleAfterPrint);
+      cancelAnimationFrame(timer);
+    };
+  }, [printingReceipt, receiptData]);
 
   useEffect(() => {
     if (!printingSchedule) return;
@@ -1602,6 +1819,7 @@ const AdminDashboard = () => {
 </head>
 <body>
   <div class="header">
+    ${settings.logo ? `<img src="${settings.logo}" alt="Logo" style="height:60px;max-width:160px;object-fit:contain;margin-bottom:8px;" /><br/>` : ''}
     <h1>${settings.name || 'Sankalp Academy'}</h1>
     ${settings.address ? `<p style="color:#4b5563;margin:4px 0">${settings.address}</p>` : ''}
     <div style="font-size:11px;color:#6b7280">${settings.phone ? `Phone: ${settings.phone}` : ''} ${settings.email ? `&nbsp; Email: ${settings.email}` : ''}</div>
@@ -1667,7 +1885,11 @@ const AdminDashboard = () => {
 
   <div class="signatures">
     <div style="text-align:center"><div class="sig-line"></div><div style="font-size:11px;color:#6b7280">Parent / Guardian</div></div>
-    <div style="text-align:center"><div class="sig-line"></div><div style="font-size:11px;color:#6b7280">Authorized Signatory</div></div>
+    <div style="text-align:center">
+      ${settings.signature ? `<img src="${settings.signature}" alt="Signature" style="height:36px;max-width:140px;object-fit:contain;margin-bottom:2px;" /><br/>` : ''}
+      <div class="sig-line"></div>
+      <div style="font-size:11px;color:#6b7280">Authorized Signatory</div>
+    </div>
   </div>
   <div class="footer">This report is electronically generated by ${settings.name || 'Sankalp Academy'} Management System</div>
 </body>
@@ -2282,7 +2504,7 @@ const AdminDashboard = () => {
         role: 'staff'
       };
       await addStaff(newStaff);
-      setStaff(prev => [...prev, newStaff]);
+      await loadData();
       setOpenDialog(null);
       toast.success("Staff account created successfully");
     } catch (error: any) {
@@ -2292,8 +2514,74 @@ const AdminDashboard = () => {
 
   const handleDeleteStaff = (staffId: string) => {
     if (deleteStaff(staffId)) {
-      setStaff(staff.filter(s => s.id !== staffId));
+      setStaff(getStaff());
       toast.success("Staff member deleted");
+    }
+  };
+
+  // Settings Handlers (Logo & Signature & Institute Details)
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please upload a valid image file (PNG, JPG, SVG, WebP)');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      setSettingsLogo(base64);
+      toast.success('Fee receipt logo selected');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleLogoRemove = () => {
+    setSettingsLogo('');
+    toast.info('Fee receipt logo removed');
+  };
+
+  const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please upload an image file for signature');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      setSettingsSignature(base64);
+      toast.success('Authorized signature selected');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSignatureRemove = () => {
+    setSettingsSignature('');
+    toast.info('Authorized signature removed');
+  };
+
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingSettings(true);
+    try {
+      const updatedSettings: InstituteSettings = {
+        name: settingsName.trim() || 'Sankalp Academy ERP',
+        address: settingsAddress.trim(),
+        phone: settingsPhone.trim(),
+        email: settingsEmail.trim(),
+        logo: settingsLogo.trim() || undefined,
+        signature: settingsSignature.trim() || undefined,
+      };
+      await saveInstituteSettings(updatedSettings);
+      setInstituteSettingsState(updatedSettings);
+      toast.success('Settings and Fee Receipt customization saved successfully!');
+    } catch (err) {
+      console.error('Failed to save settings:', err);
+      toast.error('Failed to save settings');
+    } finally {
+      setIsSavingSettings(false);
     }
   };
 
@@ -2524,6 +2812,7 @@ const AdminDashboard = () => {
     { id: 'tests', label: 'Tests', icon: CheckSquare, action: () => setActiveTab('tests') },
     { id: 'notes', label: 'Notes', icon: FileText, action: () => setActiveTab('notes') },
     { id: 'birthdays', label: 'Birthdays', icon: Cake, action: () => setActiveTab('birthdays') },
+    { id: 'settings', label: 'Settings', icon: Settings, action: () => setActiveTab('settings') },
   ];
 
   return (
@@ -4468,25 +4757,57 @@ const AdminDashboard = () => {
                                          </div>
 
                                           {Number(feeFormDownPayment || 0) > 0 && (
-                                            <div className="grid grid-cols-2 gap-4">
-                                              <div>
-                                                <Label htmlFor="feeFormDownPaymentDate">Down Payment Date</Label>
-                                                <Input
-                                                  id="feeFormDownPaymentDate"
-                                                  type="date"
-                                                  value={feeFormDownPaymentDate}
-                                                  onChange={(e) => setFeeFormDownPaymentDate(e.target.value)}
-                                                />
+                                            <div className="space-y-4">
+                                              <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                  <Label htmlFor="feeFormDownPaymentDate">Down Payment Date</Label>
+                                                  <Input
+                                                    id="feeFormDownPaymentDate"
+                                                    type="date"
+                                                    value={feeFormDownPaymentDate}
+                                                    onChange={(e) => setFeeFormDownPaymentDate(e.target.value)}
+                                                  />
+                                                </div>
+                                                <div>
+                                                  <Label htmlFor="feeFormDownPaymentReceiptNo">DP Receipt No. <span className="text-xs text-muted-foreground">(Optional)</span></Label>
+                                                  <Input
+                                                    id="feeFormDownPaymentReceiptNo"
+                                                    type="text"
+                                                    placeholder={`DP-${selectedStudentForFees.id.slice(-6).toUpperCase()}`}
+                                                    value={feeFormDownPaymentReceiptNo}
+                                                    onChange={(e) => setFeeFormDownPaymentReceiptNo(e.target.value)}
+                                                  />
+                                                </div>
                                               </div>
-                                              <div>
-                                                <Label htmlFor="feeFormDownPaymentReceiptNo">DP Receipt No. <span className="text-xs text-muted-foreground">(Optional)</span></Label>
-                                                <Input
-                                                  id="feeFormDownPaymentReceiptNo"
-                                                  type="text"
-                                                  placeholder={`DP-${selectedStudentForFees.id.slice(-6).toUpperCase()}`}
-                                                  value={feeFormDownPaymentReceiptNo}
-                                                  onChange={(e) => setFeeFormDownPaymentReceiptNo(e.target.value)}
-                                                />
+                                              <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                  <Label htmlFor="feeFormDownPaymentMode">Payment Method</Label>
+                                                  <select
+                                                    id="feeFormDownPaymentMode"
+                                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                                    value={feeFormDownPaymentMode}
+                                                    onChange={(e) => setFeeFormDownPaymentMode(e.target.value as PaymentMode)}
+                                                  >
+                                                    <option value="cash">Cash</option>
+                                                    <option value="upi">UPI / Online</option>
+                                                    <option value="card">Debit / Credit Card</option>
+                                                    <option value="cheque">Cheque</option>
+                                                    <option value="bank_transfer">Bank Transfer / NEFT</option>
+                                                    <option value="other">Other</option>
+                                                  </select>
+                                                </div>
+                                                <div>
+                                                  <Label htmlFor="feeFormDownPaymentTransactionId">
+                                                    Transaction ID / Ref <span className="text-xs text-muted-foreground">(Optional)</span>
+                                                  </Label>
+                                                  <Input
+                                                    id="feeFormDownPaymentTransactionId"
+                                                    type="text"
+                                                    placeholder="e.g. UPI Ref / Txn ID"
+                                                    value={feeFormDownPaymentTransactionId}
+                                                    onChange={(e) => setFeeFormDownPaymentTransactionId(e.target.value)}
+                                                  />
+                                                </div>
                                               </div>
                                             </div>
                                           )}
@@ -4538,7 +4859,14 @@ const AdminDashboard = () => {
                                             <Label htmlFor="feeFormFirstEmiDate">First EMI Due Date</Label>
                                             <Input id="feeFormFirstEmiDate" type="date" required
                                               value={feeFormFirstEmiDate}
-                                              onChange={(e) => setFeeFormFirstEmiDate(e.target.value)}
+                                              onChange={(e) => {
+                                                const newDate = e.target.value;
+                                                setFeeFormFirstEmiDate(newDate);
+                                                const m = Number(feeFormEmiMonths || 0);
+                                                if (m > 0 && newDate) {
+                                                  setFeeFormCustomDates(computeInstallmentDates(newDate, m, feeFormFrequency, Number(feeFormIntervalMonths || 2)));
+                                                }
+                                              }}
                                             />
                                           </div>
                                           <div>
@@ -4546,52 +4874,125 @@ const AdminDashboard = () => {
                                             <select id="feeFormFrequency"
                                               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                               value={feeFormFrequency}
-                                              onChange={(e) => setFeeFormFrequency(e.target.value as 'monthly' | 'custom')}
+                                              onChange={(e) => {
+                                                const val = e.target.value;
+                                                setFeeFormFrequency(val);
+                                                const m = Number(feeFormEmiMonths || 0);
+                                                if (m > 0 && feeFormFirstEmiDate) {
+                                                  setFeeFormCustomDates(computeInstallmentDates(feeFormFirstEmiDate, m, val, Number(feeFormIntervalMonths || 2)));
+                                                }
+                                              }}
                                             >
-                                              <option value="monthly">Monthly</option>
-                                              <option value="custom">Custom</option>
-                                            </select>
+                                                <option value="monthly">Monthly (Every 1 Month)</option>
+                                                <option value="2_months">Every 2 Months (Bi-Monthly / 2-Month EMI)</option>
+                                                <option value="3_months">Every 3 Months (Quarterly)</option>
+                                                <option value="6_months">Every 6 Months (Half-Yearly)</option>
+                                                <option value="custom_interval">Custom Interval (Every X Months)</option>
+                                                <option value="custom_dates">Custom Specific Dates (Individual Dates)</option>
+                                              </select>
+                                            </div>
                                           </div>
-                                        </div>
 
-                                        {/* Installment Schedule Preview */}
+                                        {feeFormFrequency === 'custom_interval' && (
+                                          <div className="space-y-1.5 bg-accent/30 p-3 rounded-xl">
+                                            <Label htmlFor="feeFormIntervalMonths">Repeat EMI Every (Months)</Label>
+                                            <Input
+                                              id="feeFormIntervalMonths"
+                                              type="number"
+                                              min="1"
+                                              max="24"
+                                              placeholder="e.g. 2, 4, 5"
+                                              value={feeFormIntervalMonths}
+                                              onChange={(e) => {
+                                                const val = e.target.value;
+                                                setFeeFormIntervalMonths(val);
+                                                const m = Number(feeFormEmiMonths || 0);
+                                                if (m > 0 && feeFormFirstEmiDate) {
+                                                  setFeeFormCustomDates(computeInstallmentDates(feeFormFirstEmiDate, m, 'custom_interval', Number(val || 2)));
+                                                }
+                                              }}
+                                            />
+                                          </div>
+                                        )}
+
+                                        {/* Interactive Custom Installment Dates & Schedule */}
                                         {(() => {
                                           const t = Number(feeFormTotalFees || 0);
                                           const d = Number(feeFormDownPayment || 0);
                                           const m = Number(feeFormEmiMonths || 0);
                                           const remaining = Math.max(0, t - d);
-                                          if (m <= 0 || remaining <= 0 || !feeFormFirstEmiDate) return null;
+                                          if (m <= 0 || !feeFormFirstEmiDate) return null;
 
                                           const baseEmi = Math.floor(remaining / m);
                                           const lastEmi = remaining - baseEmi * (m - 1);
-                                          const startDate = new Date(feeFormFirstEmiDate + 'T00:00:00');
-
-                                          const installments: { num: number; amount: number; date: string }[] = [];
-                                          for (let i = 0; i < m; i++) {
-                                            const dt = new Date(startDate);
-                                            dt.setMonth(dt.getMonth() + i);
-                                            installments.push({
-                                              num: i + 1,
-                                              amount: i === m - 1 ? lastEmi : baseEmi,
-                                              date: dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-                                            });
-                                          }
+                                          const defaultDates = computeInstallmentDates(feeFormFirstEmiDate, m, feeFormFrequency, Number(feeFormIntervalMonths || 2));
 
                                           return (
-                                            <div className="bg-card border rounded-lg p-4 space-y-2">
-                                              <p className="text-sm font-semibold text-muted-foreground">Installment Schedule Preview</p>
-                                              <div className="divide-y">
-                                                {installments.map((inst) => (
-                                                  <div key={inst.num} className="flex items-center justify-between py-1.5 text-sm">
-                                                    <span className="text-muted-foreground">Installment {inst.num}</span>
-                                                    <span className="font-medium">₹{inst.amount.toLocaleString('en-IN')}</span>
-                                                    <span className="text-muted-foreground text-xs">{inst.date}</span>
-                                                  </div>
-                                                ))}
+                                            <div className="bg-card border rounded-xl p-4 space-y-3">
+                                              <div className="flex items-center justify-between">
+                                                <div>
+                                                  <p className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                                                    <Calendar className="h-3.5 w-3.5 text-primary" /> Installment Timeline & Due Dates
+                                                  </p>
+                                                  <p className="text-[11px] text-muted-foreground">
+                                                    {feeFormFrequency === '2_months' ? 'Auto-spaced every 2 months. You can edit any date individually.' :
+                                                     feeFormFrequency === '3_months' ? 'Auto-spaced quarterly. You can edit any date individually.' :
+                                                     feeFormFrequency === '6_months' ? 'Auto-spaced every 6 months. You can edit any date individually.' :
+                                                     feeFormFrequency === 'custom_interval' ? `Auto-spaced every ${feeFormIntervalMonths || 2} months. You can edit any date individually.` :
+                                                     'Auto-spaced monthly. You can edit any date individually.'}
+                                                  </p>
+                                                </div>
+                                                <Button
+                                                  type="button"
+                                                  variant="outline"
+                                                  size="sm"
+                                                  className="h-7 text-xs border-dashed text-primary hover:bg-primary/10"
+                                                  onClick={() => {
+                                                    const generated = computeInstallmentDates(feeFormFirstEmiDate, m, feeFormFrequency, Number(feeFormIntervalMonths || 2));
+                                                    setFeeFormCustomDates(generated);
+                                                    setFeeFormShowCustomDates(true);
+                                                    toast.success("Installment dates reset to default interval");
+                                                  }}
+                                                >
+                                                  Reset Dates
+                                                </Button>
                                               </div>
-                                              <div className="flex justify-between pt-2 border-t text-sm font-semibold">
-                                                <span>Total</span>
-                                                <span>₹{remaining.toLocaleString('en-IN')}</span>
+
+                                              <div className="space-y-2 max-h-56 overflow-y-auto pr-1 divide-y divide-border/40">
+                                                {Array.from({ length: m }).map((_, idx) => {
+                                                  const currentDate = feeFormCustomDates[idx] || defaultDates[idx] || '';
+                                                  const instAmt = idx === m - 1 ? lastEmi : baseEmi;
+
+                                                  return (
+                                                    <div key={idx} className="flex items-center justify-between gap-3 pt-2 first:pt-0">
+                                                      <div className="w-28 shrink-0">
+                                                        <span className="font-semibold text-xs text-foreground">Installment #{idx + 1}</span>
+                                                        <p className="text-[11px] font-mono text-primary font-medium">₹{instAmt.toLocaleString('en-IN')}</p>
+                                                      </div>
+                                                      <div className="flex-1 flex items-center gap-2">
+                                                        <Input
+                                                          type="date"
+                                                          className="h-8 text-xs"
+                                                          value={currentDate}
+                                                          onChange={(e) => {
+                                                            const updated = [...(feeFormCustomDates.length >= m ? feeFormCustomDates : defaultDates)];
+                                                            updated[idx] = e.target.value;
+                                                            setFeeFormCustomDates(updated);
+                                                            setFeeFormShowCustomDates(true);
+                                                            if (idx === 0) {
+                                                              setFeeFormFirstEmiDate(e.target.value);
+                                                            }
+                                                          }}
+                                                        />
+                                                      </div>
+                                                    </div>
+                                                  );
+                                                })}
+                                              </div>
+
+                                              <div className="flex justify-between pt-2 border-t text-xs font-semibold">
+                                                <span className="text-muted-foreground">Total to Split ({m} EMIs):</span>
+                                                <span className="text-foreground">₹{remaining.toLocaleString('en-IN')}</span>
                                               </div>
                                             </div>
                                           );
@@ -7262,6 +7663,239 @@ const AdminDashboard = () => {
                 </Card>
               </div>
             )}
+
+            {/* Settings Tab */}
+            {activeTab === 'settings' && (
+              <div className="space-y-6 max-w-5xl">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-2xl font-black text-primary flex items-center gap-2.5">
+                      <Settings className="h-7 w-7 text-primary" /> Institute & Receipt Settings
+                    </h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Customize institute branding, fee receipt logo, and authorized signature across all receipts and reports.
+                    </p>
+                  </div>
+                </div>
+
+                <form onSubmit={handleSaveSettings} className="space-y-6">
+                  {/* Institute Profile Card */}
+                  <Card className="p-6 rounded-2xl border shadow-sm space-y-5">
+                    <div className="border-b pb-3">
+                      <h4 className="text-lg font-bold text-foreground flex items-center gap-2">
+                        <Building className="h-5 w-5 text-primary" /> Institute Information
+                      </h4>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        These details appear in the header of fee receipts, statement sheets, and academic report cards.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1.5 md:col-span-2">
+                        <Label htmlFor="settingsName" className="font-semibold text-xs">Institute / Organization Name *</Label>
+                        <Input
+                          id="settingsName"
+                          type="text"
+                          required
+                          placeholder="e.g. Sankalp Academy"
+                          value={settingsName}
+                          onChange={(e) => setSettingsName(e.target.value)}
+                        />
+                      </div>
+
+                      <div className="space-y-1.5 md:col-span-2">
+                        <Label htmlFor="settingsAddress" className="font-semibold text-xs">Address / Location</Label>
+                        <Input
+                          id="settingsAddress"
+                          type="text"
+                          placeholder="e.g. 2nd Floor, Sai Commercial Center, Station Road"
+                          value={settingsAddress}
+                          onChange={(e) => setSettingsAddress(e.target.value)}
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label htmlFor="settingsPhone" className="font-semibold text-xs">Contact Phone / Mobile</Label>
+                        <Input
+                          id="settingsPhone"
+                          type="text"
+                          placeholder="e.g. +91 98765 43210"
+                          value={settingsPhone}
+                          onChange={(e) => setSettingsPhone(e.target.value)}
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label htmlFor="settingsEmail" className="font-semibold text-xs">Official Email Address</Label>
+                        <Input
+                          id="settingsEmail"
+                          type="email"
+                          placeholder="e.g. info@sankalpacademy.com"
+                          value={settingsEmail}
+                          onChange={(e) => setSettingsEmail(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </Card>
+
+                  {/* Fee Receipt Logo & Authorized Signature Card */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Logo Customization */}
+                    <Card className="p-6 rounded-2xl border shadow-sm flex flex-col justify-between space-y-4">
+                      <div className="space-y-3">
+                        <div className="border-b pb-3">
+                          <h4 className="text-base font-bold text-foreground flex items-center gap-2">
+                            <Image className="h-5 w-5 text-primary" /> Fee Receipt Logo
+                          </h4>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Displayed on all fee receipts, installment schedules, and report cards.
+                          </p>
+                        </div>
+
+                        {settingsLogo ? (
+                          <div className="space-y-3">
+                            <div className="p-4 bg-muted/40 border-2 border-dashed rounded-xl flex flex-col items-center justify-center bg-white/80 dark:bg-zinc-900/80">
+                              <img
+                                src={settingsLogo}
+                                alt="Institute Logo Preview"
+                                className="h-24 max-w-[200px] object-contain rounded drop-shadow-sm"
+                              />
+                              <p className="text-[11px] text-muted-foreground mt-2 font-medium">Active Receipt Logo</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <label className="flex-1 cursor-pointer">
+                                <Button type="button" variant="outline" size="sm" className="w-full text-xs font-semibold gap-1.5" asChild>
+                                  <span>
+                                    <Upload className="h-3.5 w-3.5" /> Replace Logo
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      onChange={handleLogoUpload}
+                                    />
+                                  </span>
+                                </Button>
+                              </label>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={handleLogoRemove}
+                                className="text-xs text-destructive hover:bg-destructive/10"
+                              >
+                                Remove
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="border-2 border-dashed border-primary/30 rounded-xl p-6 text-center hover:border-primary/60 transition-colors bg-accent/10 space-y-2">
+                            <Image className="h-10 w-10 mx-auto text-muted-foreground/60" />
+                            <p className="text-xs font-semibold text-foreground">Upload Institute Logo</p>
+                            <p className="text-[11px] text-muted-foreground">PNG, JPG, or SVG with transparent background recommended</p>
+                            <label className="cursor-pointer inline-flex items-center justify-center px-4 py-2 text-xs font-bold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors mt-2">
+                              <Upload className="h-3.5 w-3.5 mr-1.5" /> Browse Logo
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={handleLogoUpload}
+                              />
+                            </label>
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground italic">
+                        If no logo is uploaded, the receipt will render a standard clean text header.
+                      </p>
+                    </Card>
+
+                    {/* Signature Customization */}
+                    <Card className="p-6 rounded-2xl border shadow-sm flex flex-col justify-between space-y-4">
+                      <div className="space-y-3">
+                        <div className="border-b pb-3">
+                          <h4 className="text-base font-bold text-foreground flex items-center gap-2">
+                            <PenTool className="h-5 w-5 text-primary" /> Authorized Signature
+                          </h4>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Printed above the "Authorized Signatory" line on receipts and statements.
+                          </p>
+                        </div>
+
+                        {settingsSignature ? (
+                          <div className="space-y-3">
+                            <div className="p-4 bg-muted/40 border-2 border-dashed rounded-xl flex flex-col items-center justify-center bg-white/80 dark:bg-zinc-900/80">
+                              <img
+                                src={settingsSignature}
+                                alt="Signature Preview"
+                                className="h-16 max-w-[180px] object-contain drop-shadow-sm"
+                              />
+                              <p className="text-[11px] text-muted-foreground mt-2 font-medium">Active Signatory Image</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <label className="flex-1 cursor-pointer">
+                                <Button type="button" variant="outline" size="sm" className="w-full text-xs font-semibold gap-1.5" asChild>
+                                  <span>
+                                    <Upload className="h-3.5 w-3.5" /> Replace Signature
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      onChange={handleSignatureUpload}
+                                    />
+                                  </span>
+                                </Button>
+                              </label>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={handleSignatureRemove}
+                                className="text-xs text-destructive hover:bg-destructive/10"
+                              >
+                                Remove
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="border-2 border-dashed border-primary/30 rounded-xl p-6 text-center hover:border-primary/60 transition-colors bg-accent/10 space-y-2">
+                            <PenTool className="h-10 w-10 mx-auto text-muted-foreground/60" />
+                            <p className="text-xs font-semibold text-foreground">Upload Authorized Signature</p>
+                            <p className="text-[11px] text-muted-foreground">PNG with transparent background or high-contrast signature</p>
+                            <label className="cursor-pointer inline-flex items-center justify-center px-4 py-2 text-xs font-bold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors mt-2">
+                              <Upload className="h-3.5 w-3.5 mr-1.5" /> Browse Signature
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={handleSignatureUpload}
+                              />
+                            </label>
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground italic">
+                        If no signature is uploaded, a clean signature line will be printed for physical signing.
+                      </p>
+                    </Card>
+                  </div>
+
+                  {/* Save Settings Action Bar */}
+                  <div className="flex items-center justify-between p-4 bg-card border rounded-2xl shadow-sm">
+                    <p className="text-xs text-muted-foreground">
+                      All changes will synchronize in real-time across all connected devices and receipt printers.
+                    </p>
+                    <Button
+                      type="submit"
+                      disabled={isSavingSettings}
+                      className="gap-2 px-6 h-11 font-bold rounded-xl shadow-md"
+                    >
+                      <Save className="h-4 w-4" />
+                      {isSavingSettings ? 'Saving Settings...' : 'Save All Settings'}
+                    </Button>
+                  </div>
+                </form>
+              </div>
+            )}
           </div>
         {/* Installment Schedule Popup Dialog */}
         <Dialog open={isInstallmentModalOpen} onOpenChange={setIsInstallmentModalOpen}>
@@ -7288,46 +7922,8 @@ const AdminDashboard = () => {
             </DialogHeader>
 
             {feeRecord && (() => {
-              const total = feeRecord.totalFees || 0;
-              const downPayment = Number(feeRecord.downPayment) || 0;
-              const remaining = Math.max(0, total - downPayment);
-              const months = Math.max(1, feeRecord.emiMonths || 1);
-              const baseEmi = Math.floor(remaining / months);
-              const lastEmi = remaining - baseEmi * (months - 1);
-              const paymentsTotal = feeRecord.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
-              const totalPaid = downPayment + paymentsTotal;
-              const remainingBalance = Math.max(0, total - totalPaid);
-
-              const startDateStr = feeRecord.firstEmiDate || (feeRecord.payments && feeRecord.payments[0] ? feeRecord.payments[0].date.split('T')[0] : new Date().toISOString().split('T')[0]);
-              const startDate = new Date(startDateStr + 'T00:00:00');
-
-              let runningCredit = paymentsTotal;
-              const installments = [];
-              for (let i = 0; i < months; i++) {
-                const dt = new Date(startDate);
-                dt.setMonth(dt.getMonth() + i);
-                const amount = i === months - 1 ? lastEmi : baseEmi;
-                
-                let status: 'paid' | 'partial' | 'pending' = 'pending';
-                let paidAmount = 0;
-                if (runningCredit >= amount) {
-                  status = 'paid';
-                  paidAmount = amount;
-                  runningCredit -= amount;
-                } else if (runningCredit > 0) {
-                  status = 'partial';
-                  paidAmount = runningCredit;
-                  runningCredit = 0;
-                }
-
-                installments.push({
-                  num: i + 1,
-                  date: dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-                  amount,
-                  paidAmount,
-                  status
-                });
-              }
+              const scheduleData = getStudentInstallmentSchedule(feeRecord);
+              const { total, downPayment, remaining, months, totalPaid, remainingBalance, frequencyLabel, installments } = scheduleData;
 
               return (
                 <div className="space-y-4 pt-1">
@@ -7352,8 +7948,8 @@ const AdminDashboard = () => {
                   </div>
 
                   <div className="flex items-center justify-between text-xs text-muted-foreground px-1 pt-1">
-                    <span>Payment Frequency: <strong className="text-foreground capitalize">{feeRecord.paymentFrequency || 'Monthly'}</strong></span>
-                    <span>EMI Duration: <strong className="text-foreground">{months} Month{months > 1 ? 's' : ''}</strong></span>
+                    <span>Payment Frequency: <strong className="text-foreground">{frequencyLabel}</strong></span>
+                    <span>EMI Duration: <strong className="text-foreground">{months} Installment{months > 1 ? 's' : ''}</strong></span>
                   </div>
 
                   {/* Installments Table / Card List */}
@@ -7692,14 +8288,46 @@ const AdminDashboard = () => {
                   </div>
 
                   {Number(batchFeeDownPayment || 0) > 0 && (
-                    <div className="space-y-1.5">
-                      <Label htmlFor="batchFeeDownPaymentDate">Down Payment Date</Label>
-                      <Input
-                        id="batchFeeDownPaymentDate"
-                        type="date"
-                        value={batchFeeDownPaymentDate}
-                        onChange={(e) => setBatchFeeDownPaymentDate(e.target.value)}
-                      />
+                    <div className="space-y-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="batchFeeDownPaymentDate">Down Payment Date</Label>
+                        <Input
+                          id="batchFeeDownPaymentDate"
+                          type="date"
+                          value={batchFeeDownPaymentDate}
+                          onChange={(e) => setBatchFeeDownPaymentDate(e.target.value)}
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="batchFeeDownPaymentMode">Payment Method</Label>
+                          <select
+                            id="batchFeeDownPaymentMode"
+                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            value={batchFeeDownPaymentMode}
+                            onChange={(e) => setBatchFeeDownPaymentMode(e.target.value as PaymentMode)}
+                          >
+                            <option value="cash">Cash</option>
+                            <option value="upi">UPI / Online</option>
+                            <option value="card">Debit / Credit Card</option>
+                            <option value="cheque">Cheque</option>
+                            <option value="bank_transfer">Bank Transfer / NEFT</option>
+                            <option value="other">Other</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="batchFeeDownPaymentTransactionId">
+                            Transaction ID / Ref <span className="text-xs text-muted-foreground">(Optional)</span>
+                          </Label>
+                          <Input
+                            id="batchFeeDownPaymentTransactionId"
+                            type="text"
+                            placeholder="e.g. UPI Ref"
+                            value={batchFeeDownPaymentTransactionId}
+                            onChange={(e) => setBatchFeeDownPaymentTransactionId(e.target.value)}
+                          />
+                        </div>
+                      </div>
                     </div>
                   )}
 
@@ -7773,13 +8401,32 @@ const AdminDashboard = () => {
                         id="batchFeeFrequency"
                         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         value={batchFeeFrequency}
-                        onChange={(e) => setBatchFeeFrequency(e.target.value as 'monthly' | 'custom')}
+                        onChange={(e) => setBatchFeeFrequency(e.target.value)}
                       >
-                        <option value="monthly">Monthly</option>
+                        <option value="monthly">Monthly (Every 1 Month)</option>
+                        <option value="2_months">Every 2 Months (Bi-Monthly / 2-Month EMI)</option>
+                        <option value="3_months">Every 3 Months (Quarterly)</option>
+                        <option value="6_months">Every 6 Months (Half-Yearly)</option>
+                        <option value="custom_interval">Custom Interval (Every X Months)</option>
                         <option value="custom">Custom</option>
                       </select>
                     </div>
                   </div>
+
+                  {batchFeeFrequency === 'custom_interval' && (
+                    <div className="space-y-1.5 bg-accent/30 p-3 rounded-xl">
+                      <Label htmlFor="batchFeeIntervalMonths">Repeat EMI Every (Months)</Label>
+                      <Input
+                        id="batchFeeIntervalMonths"
+                        type="number"
+                        min="1"
+                        max="24"
+                        placeholder="e.g. 2, 4, 5"
+                        value={batchFeeIntervalMonths}
+                        onChange={(e) => setBatchFeeIntervalMonths(e.target.value)}
+                      />
+                    </div>
+                  )}
 
                   {/* Scope Selection */}
                   <div className="space-y-2 pt-2 border-t">
@@ -7888,25 +8535,57 @@ const AdminDashboard = () => {
               </div>
 
               {Number(editFeeDownPayment || 0) > 0 && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="editFeeDownPaymentDate">Down Payment Date</Label>
-                    <Input
-                      id="editFeeDownPaymentDate"
-                      type="date"
-                      value={editFeeDownPaymentDate}
-                      onChange={(e) => setEditFeeDownPaymentDate(e.target.value)}
-                    />
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="editFeeDownPaymentDate">Down Payment Date</Label>
+                      <Input
+                        id="editFeeDownPaymentDate"
+                        type="date"
+                        value={editFeeDownPaymentDate}
+                        onChange={(e) => setEditFeeDownPaymentDate(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="editFeeDownPaymentReceiptNo">DP Receipt No.</Label>
+                      <Input
+                        id="editFeeDownPaymentReceiptNo"
+                        type="text"
+                        placeholder="e.g. DP-123456"
+                        value={editFeeDownPaymentReceiptNo}
+                        onChange={(e) => setEditFeeDownPaymentReceiptNo(e.target.value)}
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="editFeeDownPaymentReceiptNo">DP Receipt No.</Label>
-                    <Input
-                      id="editFeeDownPaymentReceiptNo"
-                      type="text"
-                      placeholder="e.g. DP-123456"
-                      value={editFeeDownPaymentReceiptNo}
-                      onChange={(e) => setEditFeeDownPaymentReceiptNo(e.target.value)}
-                    />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="editFeeDownPaymentMode">Payment Method</Label>
+                      <select
+                        id="editFeeDownPaymentMode"
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        value={editFeeDownPaymentMode}
+                        onChange={(e) => setEditFeeDownPaymentMode(e.target.value as PaymentMode)}
+                      >
+                        <option value="cash">Cash</option>
+                        <option value="upi">UPI / Online</option>
+                        <option value="card">Debit / Credit Card</option>
+                        <option value="cheque">Cheque</option>
+                        <option value="bank_transfer">Bank Transfer / NEFT</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="editFeeDownPaymentTransactionId">
+                        Transaction ID / Ref <span className="text-xs text-muted-foreground">(Optional)</span>
+                      </Label>
+                      <Input
+                        id="editFeeDownPaymentTransactionId"
+                        type="text"
+                        placeholder="e.g. UPI Ref"
+                        value={editFeeDownPaymentTransactionId}
+                        onChange={(e) => setEditFeeDownPaymentTransactionId(e.target.value)}
+                      />
+                    </div>
                   </div>
                 </div>
               )}
@@ -7933,7 +8612,7 @@ const AdminDashboard = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="editFeeEmiMonths">EMI Months</Label>
+                  <Label htmlFor="editFeeEmiMonths">EMI Months / Installments</Label>
                   <Input
                     id="editFeeEmiMonths"
                     type="number"
@@ -7941,12 +8620,19 @@ const AdminDashboard = () => {
                     required
                     min="1"
                     value={editFeeEmiMonths}
-                    onChange={(e) => setEditFeeEmiMonths(e.target.value)}
+                    onChange={(e) => {
+                      const newMonths = e.target.value;
+                      setEditFeeEmiMonths(newMonths);
+                      const m = Number(newMonths || 0);
+                      if (m > 0 && editFeeFirstEmiDate) {
+                        setEditFeeCustomDates(computeInstallmentDates(editFeeFirstEmiDate, m, editFeeFrequency, Number(editFeeIntervalMonths || 2)));
+                      }
+                    }}
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label>Monthly EMI Preview</Label>
+                  <Label>Installment Amount Preview</Label>
                   <div className="relative">
                     <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
@@ -7971,7 +8657,14 @@ const AdminDashboard = () => {
                     type="date"
                     required
                     value={editFeeFirstEmiDate}
-                    onChange={(e) => setEditFeeFirstEmiDate(e.target.value)}
+                    onChange={(e) => {
+                      const newDate = e.target.value;
+                      setEditFeeFirstEmiDate(newDate);
+                      const m = Number(editFeeEmiMonths || 0);
+                      if (m > 0 && newDate) {
+                        setEditFeeCustomDates(computeInstallmentDates(newDate, m, editFeeFrequency, Number(editFeeIntervalMonths || 2)));
+                      }
+                    }}
                   />
                 </div>
 
@@ -7981,13 +8674,129 @@ const AdminDashboard = () => {
                     id="editFeeFrequency"
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     value={editFeeFrequency}
-                    onChange={(e) => setEditFeeFrequency(e.target.value as 'monthly' | 'custom')}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setEditFeeFrequency(val);
+                      const m = Number(editFeeEmiMonths || 0);
+                      if (m > 0 && editFeeFirstEmiDate) {
+                        setEditFeeCustomDates(computeInstallmentDates(editFeeFirstEmiDate, m, val, Number(editFeeIntervalMonths || 2)));
+                      }
+                    }}
                   >
-                    <option value="monthly">Monthly</option>
-                    <option value="custom">Custom</option>
+                    <option value="monthly">Monthly (Every 1 Month)</option>
+                    <option value="2_months">Every 2 Months (Bi-Monthly / 2-Month EMI)</option>
+                    <option value="3_months">Every 3 Months (Quarterly)</option>
+                    <option value="6_months">Every 6 Months (Half-Yearly)</option>
+                    <option value="custom_interval">Custom Interval (Every X Months)</option>
+                    <option value="custom_dates">Custom Specific Dates (Individual Dates)</option>
                   </select>
                 </div>
               </div>
+
+              {editFeeFrequency === 'custom_interval' && (
+                <div className="space-y-1.5 bg-accent/30 p-3 rounded-xl">
+                  <Label htmlFor="editFeeIntervalMonths">Repeat EMI Every (Months)</Label>
+                  <Input
+                    id="editFeeIntervalMonths"
+                    type="number"
+                    min="1"
+                    max="24"
+                    placeholder="e.g. 2, 4, 5"
+                    value={editFeeIntervalMonths}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setEditFeeIntervalMonths(val);
+                      const m = Number(editFeeEmiMonths || 0);
+                      if (m > 0 && editFeeFirstEmiDate) {
+                        setEditFeeCustomDates(computeInstallmentDates(editFeeFirstEmiDate, m, 'custom_interval', Number(val || 2)));
+                      }
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Interactive Custom Installment Dates & Schedule */}
+              {(() => {
+                const t = Number(editFeeTotalFees || 0);
+                const d = Number(editFeeDownPayment || 0);
+                const m = Number(editFeeEmiMonths || 0);
+                const remaining = Math.max(0, t - d);
+                if (m <= 0 || !editFeeFirstEmiDate) return null;
+
+                const baseEmi = Math.floor(remaining / m);
+                const lastEmi = remaining - baseEmi * (m - 1);
+                const defaultDates = computeInstallmentDates(editFeeFirstEmiDate, m, editFeeFrequency, Number(editFeeIntervalMonths || 2));
+
+                return (
+                  <div className="bg-card border rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                          <Calendar className="h-3.5 w-3.5 text-primary" /> Installment Timeline & Due Dates
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {editFeeFrequency === '2_months' ? 'Auto-spaced every 2 months. You can edit any date individually.' :
+                           editFeeFrequency === '3_months' ? 'Auto-spaced quarterly. You can edit any date individually.' :
+                           editFeeFrequency === '6_months' ? 'Auto-spaced every 6 months. You can edit any date individually.' :
+                           editFeeFrequency === 'custom_interval' ? `Auto-spaced every ${editFeeIntervalMonths || 2} months. You can edit any date individually.` :
+                           'Auto-spaced monthly. You can edit any date individually.'}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs border-dashed text-primary hover:bg-primary/10"
+                        onClick={() => {
+                          const generated = computeInstallmentDates(editFeeFirstEmiDate, m, editFeeFrequency, Number(editFeeIntervalMonths || 2));
+                          setEditFeeCustomDates(generated);
+                          setEditFeeShowCustomDates(true);
+                          toast.success("Installment dates reset to default interval");
+                        }}
+                      >
+                        Reset Dates
+                      </Button>
+                    </div>
+
+                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1 divide-y divide-border/40">
+                      {Array.from({ length: m }).map((_, idx) => {
+                        const currentDate = editFeeCustomDates[idx] || defaultDates[idx] || '';
+                        const instAmt = idx === m - 1 ? lastEmi : baseEmi;
+
+                        return (
+                          <div key={idx} className="flex items-center justify-between gap-3 pt-2 first:pt-0">
+                            <div className="w-28 shrink-0">
+                              <span className="font-semibold text-xs text-foreground">Installment #{idx + 1}</span>
+                              <p className="text-[11px] font-mono text-primary font-medium">₹{instAmt.toLocaleString('en-IN')}</p>
+                            </div>
+                            <div className="flex-1 flex items-center gap-2">
+                              <Input
+                                type="date"
+                                className="h-8 text-xs"
+                                value={currentDate}
+                                onChange={(e) => {
+                                  const updated = [...(editFeeCustomDates.length >= m ? editFeeCustomDates : defaultDates)];
+                                  updated[idx] = e.target.value;
+                                  setEditFeeCustomDates(updated);
+                                  setEditFeeShowCustomDates(true);
+                                  if (idx === 0) {
+                                    setEditFeeFirstEmiDate(e.target.value);
+                                  }
+                                }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex justify-between pt-2 border-t text-xs font-semibold">
+                      <span className="text-muted-foreground">Total to Split ({m} EMIs):</span>
+                      <span className="text-foreground">₹{remaining.toLocaleString('en-IN')}</span>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="flex justify-end gap-2 pt-3 border-t">
                 <Button
@@ -8142,19 +8951,28 @@ const AdminDashboard = () => {
 
       {/* Printable Fee Receipt */}
       {!printingReport && !printingSchedule && !printingMomReport && receiptData && (
-        <div className="hidden print:block absolute top-0 left-0 w-full bg-white text-black min-h-screen" style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
+        <div className="hidden print:block w-full bg-white text-black min-h-screen" style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
           <div className="max-w-[210mm] mx-auto px-10 py-8">
             
             {/* Invoice Header */}
             <div className="border-b-2 border-gray-800 pb-5 mb-6">
-              <div className="text-center">
-                <h1 className="text-2xl font-bold uppercase tracking-widest text-gray-900">{instituteSettings.name || 'Sankalp Academy ERP'}</h1>
-                {instituteSettings.address && (
-                  <p className="text-sm text-gray-600 mt-1">{instituteSettings.address}</p>
+              <div className="flex items-center justify-center gap-6">
+                {instituteSettings.logo && (
+                  <img
+                    src={instituteSettings.logo}
+                    alt="Institute Logo"
+                    className="h-20 w-20 object-contain rounded shrink-0"
+                  />
                 )}
-                <div className="flex items-center justify-center gap-6 mt-1 text-xs text-gray-500">
-                  {instituteSettings.phone && <span>Phone: {instituteSettings.phone}</span>}
-                  {instituteSettings.email && <span>Email: {instituteSettings.email}</span>}
+                <div className={instituteSettings.logo ? "text-left" : "text-center"}>
+                  <h1 className="text-2xl font-bold uppercase tracking-widest text-gray-900">{instituteSettings.name || 'Sankalp Academy ERP'}</h1>
+                  {instituteSettings.address && (
+                    <p className="text-sm text-gray-600 mt-1">{instituteSettings.address}</p>
+                  )}
+                  <div className={`flex items-center ${instituteSettings.logo ? 'justify-start' : 'justify-center'} gap-6 mt-1 text-xs text-gray-500`}>
+                    {instituteSettings.phone && <span>Phone: {instituteSettings.phone}</span>}
+                    {instituteSettings.email && <span>Email: {instituteSettings.email}</span>}
+                  </div>
                 </div>
               </div>
               <div className="mt-4 text-center">
@@ -8173,7 +8991,7 @@ const AdminDashboard = () => {
                     <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Name:</td><td className="font-semibold">{receiptData.student.name}</td></tr>
                     <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Phone:</td><td>{receiptData.student.phoneNo || 'N/A'}</td></tr>
                     <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">College:</td><td>{receiptData.student.collegeName || 'N/A'}</td></tr>
-                    <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Class:</td><td>{receiptData.student.studentClass || 'N/A'}</td></tr>
+                    <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Standard / Grade:</td><td className="font-medium">{receiptData.student.studentClass || batches.find(b => b.id === receiptData.student.batchId)?.name || 'N/A'}</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -8184,6 +9002,22 @@ const AdminDashboard = () => {
                     <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Receipt No:</td><td className="font-mono font-semibold">{receiptData.payment.receiptNo || ('RCPT-' + receiptData.payment.id.slice(-6).toUpperCase())}</td></tr>
                     <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Date:</td><td>{new Date(receiptData.payment.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td></tr>
                     <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Time:</td><td>{new Date(receiptData.payment.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</td></tr>
+                    <tr>
+                      <td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Payment Mode:</td>
+                      <td className="font-medium uppercase">{receiptData.payment.paymentMode ? (receiptData.payment.paymentMode === 'bank_transfer' ? 'Bank Transfer' : receiptData.payment.paymentMode) : 'Cash'}</td>
+                    </tr>
+                    {receiptData.payment.transactionId && (
+                      <tr>
+                        <td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Transaction ID / Ref:</td>
+                        <td className="font-mono text-xs font-medium">{receiptData.payment.transactionId}</td>
+                      </tr>
+                    )}
+                    {receiptData.payment.chequeNo && (
+                      <tr>
+                        <td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Cheque No:</td>
+                        <td className="font-mono text-xs font-medium">{receiptData.payment.chequeNo}{receiptData.payment.chequeDate ? ` (${receiptData.payment.chequeDate})` : ''}</td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -8210,18 +9044,24 @@ const AdminDashboard = () => {
                         </>
                       ) : (
                         <>
-                          <p className="font-medium">Fee Payment — Installment #{receiptData.record.payments?.findIndex(p => p.id === receiptData.payment.id)! + 1}</p>
+                          <p className="font-medium">
+                            Fee Payment — Installment #{(() => {
+                              const pList = receiptData.record.payments || [];
+                              const idx = pList.findIndex(p => p.id === receiptData.payment.id);
+                              return idx >= 0 ? idx + 1 : 1;
+                            })()}
+                          </p>
                           <p className="text-xs text-gray-500 mt-0.5">Course Fee Installment</p>
                         </>
                       )}
                     </td>
-                    <td className="border border-gray-300 px-4 py-3 text-right text-lg font-bold">₹{receiptData.payment.amount.toLocaleString('en-IN')}</td>
+                    <td className="border border-gray-300 px-4 py-3 text-right text-lg font-bold">₹{(receiptData.payment.amount || 0).toLocaleString('en-IN')}</td>
                   </tr>
                 </tbody>
                 <tfoot>
                   <tr className="bg-gray-50">
                     <td colSpan={2} className="border border-gray-300 px-4 py-2.5 text-right font-bold text-gray-700 uppercase text-xs tracking-wider">Total Paid (This Receipt)</td>
-                    <td className="border border-gray-300 px-4 py-2.5 text-right font-bold text-lg text-gray-900">₹{receiptData.payment.amount.toLocaleString('en-IN')}</td>
+                    <td className="border border-gray-300 px-4 py-2.5 text-right font-bold text-lg text-gray-900">₹{(receiptData.payment.amount || 0).toLocaleString('en-IN')}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -8232,7 +9072,7 @@ const AdminDashboard = () => {
               <div className="w-72 border border-gray-300 rounded text-sm">
                 <div className="flex justify-between px-4 py-2 border-b border-gray-200">
                   <span className="text-gray-500">Total Course Fees</span>
-                  <span className="font-semibold">₹{receiptData.record.totalFees.toLocaleString('en-IN')}</span>
+                  <span className="font-semibold">₹{(receiptData.record.totalFees || 0).toLocaleString('en-IN')}</span>
                 </div>
                 {Number(receiptData.record.downPayment || 0) > 0 && (
                   <div className="flex justify-between px-4 py-2 border-b border-gray-200">
@@ -8243,13 +9083,13 @@ const AdminDashboard = () => {
                 <div className="flex justify-between px-4 py-2 border-b border-gray-200">
                   <span className="text-gray-500">Total Paid (All)</span>
                   <span className="font-semibold text-green-700">
-                    ₹{((Number(receiptData.record.downPayment) || 0) + receiptData.record.payments.reduce((a, b) => a + b.amount, 0)).toLocaleString('en-IN')}
+                    ₹{((Number(receiptData.record.downPayment) || 0) + (receiptData.record.payments || []).reduce((a, b) => a + (Number(b.amount) || 0), 0)).toLocaleString('en-IN')}
                   </span>
                 </div>
                 <div className="flex justify-between px-4 py-2.5 bg-gray-50">
                   <span className="font-bold text-gray-800">Outstanding Balance</span>
                   <span className="font-bold text-red-600">
-                    ₹{Math.max(0, receiptData.record.totalFees - ((Number(receiptData.record.downPayment) || 0) + receiptData.record.payments.reduce((a, b) => a + b.amount, 0))).toLocaleString('en-IN')}
+                    ₹{Math.max(0, (receiptData.record.totalFees || 0) - ((Number(receiptData.record.downPayment) || 0) + (receiptData.record.payments || []).reduce((a, b) => a + (Number(b.amount) || 0), 0))).toLocaleString('en-IN')}
                   </span>
                 </div>
               </div>
@@ -8268,10 +9108,20 @@ const AdminDashboard = () => {
             {/* Signatures */}
             <div className="flex justify-between items-end">
               <div className="text-center">
+                <div className="h-12 w-40"></div>
                 <div className="w-40 border-b-2 border-gray-400 mb-1"></div>
                 <p className="text-xs text-gray-500">Student / Guardian Signature</p>
               </div>
-              <div className="text-center">
+              <div className="text-center flex flex-col items-center">
+                {instituteSettings.signature ? (
+                  <img
+                    src={instituteSettings.signature}
+                    alt="Authorized Signature"
+                    className="h-12 max-w-[150px] object-contain mb-1"
+                  />
+                ) : (
+                  <div className="h-12 w-40"></div>
+                )}
                 <div className="w-40 border-b-2 border-gray-400 mb-1"></div>
                 <p className="text-xs text-gray-500">Authorized Signatory</p>
               </div>
@@ -8296,7 +9146,7 @@ const AdminDashboard = () => {
         const balanceDue = Math.max(0, feeRecord.totalFees - totalPaid);
 
         return (
-          <div className="hidden print:block absolute top-0 left-0 w-full bg-white text-black min-h-screen" style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
+          <div className="hidden print:block w-full bg-white text-black min-h-screen" style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
             <div className="max-w-[210mm] mx-auto px-10 py-8">
               
               {/* Header */}
@@ -8336,8 +9186,8 @@ const AdminDashboard = () => {
                   <table className="text-sm ml-auto">
                     <tbody>
                       <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Statement Date:</td><td className="font-semibold">{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td></tr>
-                      <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">EMI Tenure:</td><td className="font-semibold">{feeRecord.emiMonths} Month(s)</td></tr>
-                      <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Frequency:</td><td className="font-semibold capitalize">{feeRecord.paymentFrequency || 'Monthly'}</td></tr>
+                      <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">EMI Tenure:</td><td className="font-semibold">{scheduleData.months} Installment(s)</td></tr>
+                      <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Frequency:</td><td className="font-semibold">{scheduleData.frequencyLabel}</td></tr>
                       <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">First Due Date:</td><td>{feeRecord.firstEmiDate ? new Date(feeRecord.firstEmiDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}</td></tr>
                     </tbody>
                   </table>
@@ -8479,7 +9329,7 @@ const AdminDashboard = () => {
         const momData = getBatchMomFeeData(batchStudents);
 
         return (
-          <div className="hidden print:block absolute top-0 left-0 w-full bg-white text-black min-h-screen" style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
+          <div className="hidden print:block w-full bg-white text-black min-h-screen" style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
             <div className="max-w-[210mm] mx-auto px-8 py-8">
               
               {/* Header */}
@@ -8798,7 +9648,7 @@ const AdminDashboard = () => {
 
         if (reportPrintMode === 'monthly') {
           return (
-            <div className="hidden print:block absolute top-0 left-0 w-full bg-white text-black min-h-screen" style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
+            <div className="hidden print:block w-full bg-white text-black min-h-screen" style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
               <div className="max-w-[210mm] mx-auto px-10 py-8">
                 {/* Header */}
                 <div className="border-b-2 border-gray-800 pb-5 mb-6">
@@ -8977,7 +9827,7 @@ const AdminDashboard = () => {
         }
 
         return (
-          <div className="hidden print:block absolute top-0 left-0 w-full bg-white text-black min-h-screen" style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
+          <div className="hidden print:block w-full bg-white text-black min-h-screen" style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
             <div className="max-w-[210mm] mx-auto px-10 py-8">
 
               {/* Invoice Header Style for Report */}

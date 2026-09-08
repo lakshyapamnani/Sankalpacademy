@@ -74,8 +74,11 @@ export interface FeeRecord {
   downPaymentDate?: string;
   downPaymentReceiptNo?: string;
   downPaymentMode?: PaymentMode;
+  downPaymentTransactionId?: string;
   firstEmiDate?: string;
-  paymentFrequency?: 'monthly' | 'custom';
+  paymentFrequency?: 'monthly' | '2_months' | '3_months' | '6_months' | 'custom_interval' | 'custom_dates' | 'custom' | string;
+  emiIntervalMonths?: number;
+  customInstallmentDates?: string[];
 }
 
 export interface MCQQuestion {
@@ -126,6 +129,8 @@ export interface InstituteSettings {
   address: string;
   phone: string;
   email: string;
+  logo?: string;
+  signature?: string;
 }
 
 
@@ -424,6 +429,19 @@ const syncRealtimeData = async () => {
     saveToStorage(STORAGE_KEYS.LEADS, leadsList);
   }
 
+  // Sync institute settings
+  try {
+    const settingsSnap = await get(child(ref(database), DB_PATHS.INSTITUTE_SETTINGS));
+    if (settingsSnap.exists()) {
+      const remoteSettings = settingsSnap.val();
+      if (remoteSettings) {
+        localStorage.setItem(STORAGE_KEYS.INSTITUTE_SETTINGS, JSON.stringify(remoteSettings));
+      }
+    }
+  } catch {
+    // Firebase unavailable
+  }
+
   // Sync receipt counter – take the max of local & remote to avoid regression
   try {
     const counterSnap = await get(child(ref(database), `${DB_PATHS.META}/receiptCounter`));
@@ -478,51 +496,52 @@ export const saveNotificationToken = async (
 };
 
 const enqueuePushNotification = async (
-  role: PushNotificationQueueItem['role'],
+  role: 'students_batch',
   referenceId: string,
   notification: ClassNotification,
 ): Promise<void> => {
-  const item: PushNotificationQueueItem = {
-    id: `${notification.id}_${role}_${referenceId}`,
-    role,
-    referenceId,
-    notification,
-    createdAt: new Date().toISOString(),
-  };
-
   try {
-    await set(ref(database, `${DB_PATHS.NOTIFICATION_QUEUE}/${item.id}`), item);
+    const queueRef = ref(database, `${DB_PATHS.NOTIFICATION_QUEUE}/${notification.id}`);
+    const item: PushNotificationQueueItem = {
+      id: notification.id,
+      role,
+      referenceId,
+      notification,
+      createdAt: notification.createdAt,
+    };
+    await set(queueRef, item);
   } catch (error) {
     console.error('Failed to enqueue push notification', error);
   }
 };
 
-const buildClassNotificationPayload = (classData: Class): ClassNotification => {
-  return {
-    id: `${classData.id}_${Date.now()}`,
-    classId: classData.id,
-    batchId: classData.batchId,
-    title: `${classData.name} scheduled`,
-    message: `${classData.subject} • ${classData.date || ''} ${classData.time || ''} - ${classData.endTime || ''} ${classData.schedule || ''}`.trim(),
-    createdAt: new Date().toISOString(),
-  };
-};
-
-const notifyClassCreation = async (classData: Class): Promise<void> => {
-  const notification = buildClassNotificationPayload(classData);
-  const studentPath = `${DB_PATHS.NOTIFICATIONS_STUDENTS}/${classData.batchId}/${notification.id}`;
-
+export const notifyClassCreation = async (classData: Class): Promise<void> => {
   try {
+    const notification: ClassNotification = {
+      id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      classId: classData.id,
+      batchId: classData.batchId,
+      title: `New Class Scheduled: ${classData.subject || classData.name}`,
+      message: `${classData.name} on ${classData.date || 'TBD'} from ${classData.time || ''} to ${classData.endTime || ''}`,
+      createdAt: new Date().toISOString(),
+    };
+
+    const studentBatchPath = `${DB_PATHS.NOTIFICATIONS_STUDENTS}/${classData.batchId}/${notification.id}`;
+
     await Promise.all([
-      set(ref(database, studentPath), notification),
+      set(ref(database, studentBatchPath), notification),
       enqueuePushNotification('students_batch', classData.batchId, notification),
     ]);
   } catch (error) {
-    console.error('Failed to write class notification to Firebase', error);
+    console.error('Failed to dispatch class notifications', error);
   }
 };
 
-const attachListener = <T>(collection: string, storageKey: string, onUpdate?: () => void): Unsubscribe => {
+const attachListener = <T>(
+  collection: string,
+  storageKey: string,
+  onUpdate?: () => void
+): Unsubscribe => {
   const collectionRef = ref(database, collection);
   const unsubscribe = onValue(
     collectionRef,
@@ -554,6 +573,23 @@ export const subscribeToRealtimeUpdates = (onUpdate?: () => void): Unsubscribe =
     attachListener<Lead>(DB_PATHS.LEADS, STORAGE_KEYS.LEADS, onUpdate),
     attachListener<FeeRecord>(DB_PATHS.FEES, STORAGE_KEYS.FEES, onUpdate),
   ];
+
+  // Also subscribe to Institute Settings updates
+  try {
+    const settingsRef = ref(database, DB_PATHS.INSTITUTE_SETTINGS);
+    const settingsUnsub = onValue(settingsRef, snapshot => {
+      if (snapshot.exists()) {
+        const val = snapshot.val();
+        if (val) {
+          localStorage.setItem(STORAGE_KEYS.INSTITUTE_SETTINGS, JSON.stringify(val));
+          if (onUpdate) onUpdate();
+        }
+      }
+    });
+    unsubscribes.push(settingsUnsub);
+  } catch {
+    // ignore
+  }
 
   return () => unsubscribes.forEach(u => u());
 };
@@ -667,13 +703,34 @@ export const changeStudentPassword = (studentId: string, newPassword: string): b
 };
 
 // Staff
-export const getStaff = (): Staff[] => getFromStorage<Staff>(STORAGE_KEYS.STAFF);
+export const getStaff = (): Staff[] => {
+  const rawList = getFromStorage<Staff>(STORAGE_KEYS.STAFF) || [];
+  // Defensively deduplicate by id and email to prevent dual cards in UI
+  const seenIds = new Set<string>();
+  const seenEmails = new Set<string>();
+  const uniqueStaff: Staff[] = [];
+  for (const s of rawList) {
+    if (!s || !s.id) continue;
+    const emailKey = (s.email || '').trim().toLowerCase();
+    if (seenIds.has(s.id) || (emailKey && seenEmails.has(emailKey))) {
+      continue;
+    }
+    seenIds.add(s.id);
+    if (emailKey) seenEmails.add(emailKey);
+    uniqueStaff.push(s);
+  }
+  return uniqueStaff;
+};
+
 export const addStaff = async (staff: Staff): Promise<void> => {
   try {
     const firebaseUid = await createFirebaseAuthUser(staff.email, staff.password);
     const staffRecord: Staff = { ...staff, firebaseUid };
     const allStaff = getStaff();
-    saveToStorage(STORAGE_KEYS.STAFF, [...allStaff, staffRecord]);
+    const filtered = allStaff.filter(
+      s => s.id !== staffRecord.id && s.email.trim().toLowerCase() !== staffRecord.email.trim().toLowerCase()
+    );
+    saveToStorage(STORAGE_KEYS.STAFF, [...filtered, staffRecord]);
     await writeItemToRealtime(DB_PATHS.STAFF, staffRecord.id, staffRecord);
   } catch (error) {
     console.error("Error adding staff:", error);
