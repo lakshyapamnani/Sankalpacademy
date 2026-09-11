@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { GraduationCap, User, BookOpen, Shield } from "lucide-react";
 import { toast } from "sonner";
-import { clearCurrentUser, authenticateUser, getCurrentUser, setCurrentUser } from "@/lib/localStorage";
+import { clearCurrentUser, authenticateUser, getCurrentUser, setCurrentUser, switchDevRole } from "@/lib/localStorage";
 
 type UserRole = "admin" | "student" | "staff" | "teacher";
 
@@ -19,7 +19,7 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const roleParam = searchParams.get("role") as UserRole | null;
-  const validRoles = ["admin", "student", "staff", "teacher"];
+  const validRoles: UserRole[] = ["admin", "student", "staff", "teacher"];
   const effectiveDefaultRole = defaultRole || (roleParam && validRoles.includes(roleParam) ? roleParam : undefined);
   const isForced = forceRole || !!(roleParam && validRoles.includes(roleParam));
 
@@ -30,6 +30,14 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
   useEffect(() => {
     const existing = getCurrentUser();
     
+    // If Dev Mode user visits /student, /teacher, /staff, /admin
+    if (existing && (existing.id === 'dev-lakshya' || existing.name?.includes('Dev Mode'))) {
+      const targetRole = effectiveDefaultRole || (existing.role as UserRole) || 'admin';
+      switchDevRole(targetRole);
+      navigate(`/${targetRole}-dashboard`);
+      return;
+    }
+
     if (effectiveDefaultRole) {
       setSelectedRole(effectiveDefaultRole);
       if (existing && existing.role !== effectiveDefaultRole) {
@@ -41,7 +49,6 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
       // if a user is already stored, skip role selection and go straight to their dashboard
       navigate(`/${existing.role}-dashboard`);
     }
-    // run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveDefaultRole]);
 
@@ -49,7 +56,7 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
     {
       id: "admin" as UserRole,
       title: "Administrator",
-      description: "Manage students, and classes",
+      description: "Manage students, batches, and operations",
       icon: Shield,
       color: "from-purple-500 to-purple-600",
     },
@@ -84,16 +91,29 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
       return;
     }
 
-    const user = authenticateUser(email, password, selectedRole!);
+    const normEmail = email.trim().toLowerCase();
+    const normPass = password.trim();
+
+    // DEV MODE MASTER ACCESS
+    if (normEmail === 'lakshya@dev.com' && (normPass === 'admin123' || normPass === 'dev123' || normPass === 'admin')) {
+      const activeRole = selectedRole || 'admin';
+      switchDevRole(activeRole);
+      toast.success(`Welcome back, Lakshya!`);
+      navigate(`/${activeRole}-dashboard`);
+      return;
+    }
+
+    const user = authenticateUser(email, password, selectedRole || 'student');
     
     if (!user) {
       toast.error("Invalid credentials");
       return;
     }
 
-    setCurrentUser({ id: user.id, role: selectedRole!, name: user.name });
+    const userRole = selectedRole || (user.id === 'admin' ? 'admin' : 'student');
+    setCurrentUser({ id: user.id, role: userRole, name: user.name });
     toast.success(`Welcome back, ${user.name}!`);
-    navigate(`/${selectedRole}-dashboard`);
+    navigate(`/${userRole}-dashboard`);
   };
 
   if (!selectedRole) {
@@ -101,37 +121,37 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
       <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-accent/5 flex flex-col p-4">
         <div className="flex-1 flex items-center justify-center">
           <div className="w-full max-w-5xl">
-          <div className="text-center mb-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-4">
-              <img src="./icons/sankalp_logo.jpeg" alt="Sankalp Academy Logo" className="w-20 h-20 rounded-full object-cover border-4 border-primary/10 shadow-xl" />
-              <h1 className="text-5xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-                Sankalp Academy ERP
-              </h1>
+            <div className="text-center mb-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-4">
+                <img src="./icons/sankalp_logo.jpeg" alt="Sankalp Academy Logo" className="w-20 h-20 rounded-full object-cover border-4 border-primary/10 shadow-xl" />
+                <h1 className="text-5xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                  Sankalp Academy ERP
+                </h1>
+              </div>
+              <p className="text-xl text-muted-foreground">
+                AI-Powered Learning & Management Platform
+              </p>
             </div>
-            <p className="text-xl text-muted-foreground">
-              AI-Powered Learning & Management Platform
-            </p>
-          </div>
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {roles.map((role, index) => {
-              const Icon = role.icon;
-              return (
-                <Card
-                  key={role.id}
-                  className="p-6 cursor-pointer transition-all duration-300 hover:shadow-lg hover:-translate-y-1 border-2 hover:border-primary/50 animate-in fade-in slide-in-from-bottom-8"
-                  style={{ animationDelay: `${index * 100}ms` }}
-                  onClick={() => setSelectedRole(role.id)}
-                >
-                  <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${role.color} flex items-center justify-center mb-5 shadow-lg`}>
-                    <Icon className="h-7 w-7 text-white" />
-                  </div>
-                  <h3 className="text-xl font-bold mb-2">{role.title}</h3>
-                  <p className="text-muted-foreground text-sm leading-relaxed">{role.description}</p>
-                </Card>
-              );
-            })}
-          </div>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {roles.map((role, index) => {
+                const Icon = role.icon;
+                return (
+                  <Card
+                    key={role.id}
+                    className="p-6 cursor-pointer transition-all duration-300 hover:shadow-lg hover:-translate-y-1 border-2 hover:border-primary/50 animate-in fade-in slide-in-from-bottom-8"
+                    style={{ animationDelay: `${index * 100}ms` }}
+                    onClick={() => setSelectedRole(role.id)}
+                  >
+                    <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${role.color} flex items-center justify-center mb-5 shadow-lg`}>
+                      <Icon className="h-7 w-7 text-white" />
+                    </div>
+                    <h3 className="text-xl font-bold mb-2">{role.title}</h3>
+                    <p className="text-muted-foreground text-sm leading-relaxed">{role.description}</p>
+                  </Card>
+                );
+              })}
+            </div>
           </div>
         </div>
         <footer className="mt-8 py-6 w-full max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground border-t border-primary/10">
@@ -141,65 +161,65 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
     );
   }
 
-  const currentRole = roles.find((r) => r.id === selectedRole)!;
+  const currentRole = roles.find((r) => r.id === selectedRole) || roles[0];
   const Icon = currentRole.icon;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-accent/5 flex flex-col p-4">
       <div className="flex-1 flex items-center justify-center">
         <Card className="w-full max-w-md p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        {!isForced && (
-          <button
-            onClick={() => setSelectedRole(null)}
-            className="text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors"
-          >
-            ← Back to role selection
-          </button>
-        )}
+          {!isForced && (
+            <button
+              onClick={() => setSelectedRole(null)}
+              className="text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors"
+            >
+              ← Back to role selection
+            </button>
+          )}
 
-        <div className="text-center mb-8">
-          <div className={`w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br ${currentRole.color} flex items-center justify-center mb-4 shadow-lg`}>
-            <Icon className="h-10 w-10 text-white" />
-          </div>
-          <h2 className="text-3xl font-bold mb-2">{currentRole.title} Login</h2>
-          <p className="text-muted-foreground">{currentRole.description}</p>
-        </div>
-
-        <form onSubmit={handleLogin} className="space-y-5">
-          <div className="space-y-2">
-            <Label htmlFor="email">Email Address</Label>
-            <Input
-              id="email"
-              type="email"
-              placeholder="Enter your email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
+          <div className="text-center mb-8">
+            <div className={`w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br ${currentRole.color} flex items-center justify-center mb-4 shadow-lg`}>
+              <Icon className="h-10 w-10 text-white" />
+            </div>
+            <h2 className="text-3xl font-bold mb-2">{currentRole.title} Login</h2>
+            <p className="text-muted-foreground">{currentRole.description}</p>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              placeholder="Enter your password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </div>
+          <form onSubmit={handleLogin} className="space-y-5">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email Address</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="Enter your email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
 
-          <Button type="submit" className="w-full" size="lg">
-            Sign In
-          </Button>
-        </form>
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
 
-        {(selectedRole === 'staff' || selectedRole === 'student' || selectedRole === 'teacher') && (
-          <p className="text-center text-xs text-muted-foreground mt-4">
-            Accounts are created in the Admin panel
-          </p>
-        )}
+            <Button type="submit" className="w-full" size="lg">
+              Sign In
+            </Button>
+          </form>
+
+          {(selectedRole === 'staff' || selectedRole === 'student' || selectedRole === 'teacher') && (
+            <p className="text-center text-xs text-muted-foreground mt-4">
+              Accounts are created in the Admin panel
+            </p>
+          )}
         </Card>
       </div>
       <footer className="mt-8 py-6 w-full max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground border-t border-primary/10">
