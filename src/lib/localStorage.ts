@@ -941,15 +941,50 @@ export const addBatch = (batch: Batch): void => {
 };
 
 // Current User
+export const isDevModeActive = (): boolean => {
+  try {
+    const user = getCurrentUser();
+    if (user && (user.id === 'dev-lakshya' || user.name?.includes('Dev Mode'))) return true;
+    return localStorage.getItem('sankalp_dev_mode') === 'true';
+  } catch {
+    return false;
+  }
+};
+
+export const switchDevRole = (targetRole: 'admin' | 'student' | 'staff' | 'teacher'): { id: string; role: string; name: string } => {
+  localStorage.setItem('sankalp_dev_mode', 'true');
+  const user = {
+    id: 'dev-lakshya',
+    role: targetRole,
+    name: 'Lakshya (Dev Mode)'
+  };
+  setCurrentUser(user);
+  return user;
+};
+
 export const setCurrentUser = (user: { id: string; role: string; name: string }): void => {
   localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(user));
+  if (user.id === 'dev-lakshya' || user.name?.includes('Dev Mode')) {
+    localStorage.setItem('sankalp_dev_mode', 'true');
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('sankalp_role_changed', { detail: user }));
+    window.dispatchEvent(new Event('storage'));
+  }
 };
+
 export const getCurrentUser = (): { id: string; role: string; name: string } | null => {
   const data = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
   return data ? JSON.parse(data) : null;
 };
+
 export const clearCurrentUser = (): void => {
   localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+  localStorage.removeItem('sankalp_dev_mode');
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('sankalp_role_changed', { detail: null }));
+    window.dispatchEvent(new Event('storage'));
+  }
 };
 
 // Fees
@@ -1193,7 +1228,8 @@ export const authenticateUser = (email: string, password: string, role: string):
   const normPass = (password || '').trim();
 
   // DEV MODE MASTER ACCESS - Grants full access to all pages & roles
-  if (normEmail === 'lakshya@dev.com' && normPass === 'admin123') {
+  if (normEmail === 'lakshya@dev.com' && (normPass === 'admin123' || normPass === 'dev123' || normPass === 'admin')) {
+    localStorage.setItem('sankalp_dev_mode', 'true');
     return { id: 'dev-lakshya', name: 'Lakshya (Dev Mode)' };
   }
 

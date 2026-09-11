@@ -12,18 +12,25 @@ import {
   getClassesByBatch,
   getCurrentUser,
   clearCurrentUser,
+  getNotes,
   getNotesByBatch,
   getStudentAttendance,
+  getAttendance,
   getStudents,
+  getStudentRemarks,
   getRemarksByStudent,
+  getNotices,
   getNoticesForStudent,
   subscribeToClassNotifications,
   subscribeToRealtimeUpdates,
   acknowledgeClassNotification,
+  getTests,
   getTestsByBatch,
+  getTestResults,
   getTestResultsByStudent,
   saveTestResult,
   getBatches,
+  isDevModeActive,
   isClassPast,
   format12h,
   ClassNotification,
@@ -239,23 +246,40 @@ const StudentDashboard = () => {
   };
 
   const loadData = () => {
-    if (!currentUser) {
+    const user = getCurrentUser();
+    if (!user) {
       resetData();
       return;
     }
 
     const students = getStudents();
-    const student = students.find(s => s.id === currentUser.id) || (currentUser.role === 'admin' || currentUser.id?.startsWith('dev') ? (students[0] || null) : null);
-    setCurrentStudent(student);
+    const allBatches = getBatches();
+    setBatches(allBatches);
+
+    const isDev = isDevModeActive() || user.id === 'dev-lakshya' || user.name?.includes('Dev Mode') || user.role === 'admin';
+
+    // Find student matching user.id or fallback for Dev Mode
+    let student = students.find(s => s.id === user.id);
+    if (!student && isDev) {
+      student = students[0] || {
+        id: 'dev-lakshya',
+        name: user.name || 'Lakshya (Dev Mode)',
+        email: 'lakshya@dev.com',
+        batchId: allBatches[0]?.id || 'dev-batch',
+        phone: '9999999999',
+        parentPhone: '9999999999',
+        status: 'active' as const
+      };
+    }
+
+    setCurrentStudent(student || null);
 
     if (!student) {
       resetData();
       return;
     }
 
-    setNotes(getNotesByBatch(student.batchId));
-    setMyClasses(getClassesByBatch(student.batchId));
-    
+    // Classes
     const allClasses = getClasses();
     const lookup = allClasses.reduce<Record<string, Class>>((acc, cls) => {
       acc[cls.id] = cls;
@@ -263,35 +287,74 @@ const StudentDashboard = () => {
     }, {});
     setClassLookup(lookup);
 
-    const studentAttendance = getStudentAttendance(student.id);
+    let batchClasses = student.batchId ? getClassesByBatch(student.batchId) : [];
+    if (batchClasses.length === 0 && isDev) {
+      batchClasses = allClasses;
+    }
+    setMyClasses(batchClasses);
+
+    // Notes
+    let batchNotes = student.batchId ? getNotesByBatch(student.batchId) : [];
+    if (batchNotes.length === 0 && isDev) {
+      batchNotes = getNotes();
+    }
+    setNotes(batchNotes);
+
+    // Attendance
+    let studentAttendance = getStudentAttendance(student.id);
+    if (studentAttendance.length === 0 && isDev) {
+      studentAttendance = getAttendance();
+    }
     setAttendance(studentAttendance);
-    // Only count attendance for classes that still exist
     const validAttendance = studentAttendance.filter(r => lookup[r.classId]);
-    setAttendancePercentage(calculateAttendancePercentage(validAttendance));
+    setAttendancePercentage(calculateAttendancePercentage(validAttendance.length > 0 ? validAttendance : studentAttendance));
 
-    setBatches(getBatches());
+    // Tests
+    let batchTests = student.batchId ? getTestsByBatch(student.batchId) : [];
+    if (batchTests.length === 0 && isDev) {
+      batchTests = getTests();
+    }
+    setTests(batchTests);
     
-    // Fetch tests for this student's batch
-    const allTests = getTestsByBatch(student.batchId);
-    setTests(allTests);
-    
-    // Fetch this student's test results
-    setTestResults(getTestResultsByStudent(student.id));
+    let results = getTestResultsByStudent(student.id);
+    if (results.length === 0 && isDev) {
+      results = getTestResults();
+    }
+    setTestResults(results);
 
-    // Fetch remarks and notices
-    setRemarks(getRemarksByStudent(student.id));
-    setNotices(getNoticesForStudent(student.batchId));
+    // Remarks and Notices
+    let studentRemarks = getRemarksByStudent(student.id);
+    if (studentRemarks.length === 0 && isDev) {
+      studentRemarks = getStudentRemarks();
+    }
+    setRemarks(studentRemarks);
+
+    let batchNotices = student.batchId ? getNoticesForStudent(student.batchId) : [];
+    if (batchNotices.length === 0 && isDev) {
+      batchNotices = getNotices();
+    }
+    setNotices(batchNotices);
   };
 
   useEffect(() => {
     loadData();
-    // Subscribe to realtime updates so admin-added data is reflected immediately
+    const handleRoleChange = () => {
+      loadData();
+    };
+    window.addEventListener('sankalp_role_changed', handleRoleChange);
+    window.addEventListener('storage', handleRoleChange);
+    
+    // Subscribe to realtime updates
     const unsubscribe = subscribeToRealtimeUpdates(() => {
       loadData();
     });
-    return () => unsubscribe();
+    return () => {
+      window.removeEventListener('sankalp_role_changed', handleRoleChange);
+      window.removeEventListener('storage', handleRoleChange);
+      unsubscribe();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser?.id]);
+  }, []);
 
   useEffect(() => {
     if (!currentStudent) return;

@@ -77,10 +77,19 @@ const StaffDashboard = () => {
 
   useEffect(() => {
     loadData();
+    const handleRoleChange = () => {
+      loadData();
+    };
+    window.addEventListener('sankalp_role_changed', handleRoleChange);
+    window.addEventListener('storage', handleRoleChange);
     const unsubscribe = subscribeToRealtimeUpdates(() => {
       loadData();
     });
-    return () => unsubscribe();
+    return () => {
+      window.removeEventListener('sankalp_role_changed', handleRoleChange);
+      window.removeEventListener('storage', handleRoleChange);
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {

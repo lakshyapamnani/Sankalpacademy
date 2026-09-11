@@ -56,6 +56,7 @@ import {
   addNotice,
   deleteNotice,
   subscribeToRealtimeUpdates,
+  isDevModeActive,
   Student,
   Class,
   Batch,
@@ -148,17 +149,28 @@ const TeacherDashboard = () => {
 
   useEffect(() => {
     loadData();
+    const handleRoleChange = () => {
+      loadData();
+    };
+    window.addEventListener('sankalp_role_changed', handleRoleChange);
+    window.addEventListener('storage', handleRoleChange);
     const unsubscribe = subscribeToRealtimeUpdates(() => {
       loadData();
     });
-    return () => unsubscribe();
+    return () => {
+      window.removeEventListener('sankalp_role_changed', handleRoleChange);
+      window.removeEventListener('storage', handleRoleChange);
+      unsubscribe();
+    };
   }, []);
 
   // Determine current teacher details
-  const currentTeacher = teachers.find(t => t.id === currentUser?.id);
-  const teacherSubjects = currentTeacher?.assignedSubjects || [];
-
-  const isFallbackTeacher = currentUser?.id === 'teacher' || currentUser?.name === 'Teacher';
+  const activeUser = getCurrentUser();
+  const currentTeacher = teachers.find(t => t.id === activeUser?.id);
+  const isFallbackTeacher = !currentTeacher || activeUser?.id === 'teacher' || activeUser?.role === 'admin' || activeUser?.id === 'dev-lakshya' || activeUser?.name?.includes('Dev Mode') || isDevModeActive();
+  const teacherSubjects = (currentTeacher?.assignedSubjects && currentTeacher.assignedSubjects.length > 0)
+    ? currentTeacher.assignedSubjects
+    : ['Physics', 'Chemistry', 'Mathematics', 'Biology', 'General'];
   
   const myClasses = classes.filter(c => {
     if (isFallbackTeacher) return true;
