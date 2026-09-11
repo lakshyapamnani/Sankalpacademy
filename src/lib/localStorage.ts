@@ -182,6 +182,37 @@ export interface Subject {
   name: string;
 }
 
+export type RemarkType = 'appreciation' | 'complaint';
+
+export interface StudentRemark {
+  id: string;
+  studentId: string;
+  studentName?: string;
+  batchId?: string;
+  batchName?: string;
+  type: RemarkType;
+  title: string;
+  description: string;
+  subject?: string;
+  authorId: string;
+  authorName: string;
+  authorRole: 'teacher' | 'admin' | 'staff';
+  createdAt: string;
+}
+
+export interface Notice {
+  id: string;
+  title: string;
+  content: string;
+  batchId?: string; // 'all' or batchId
+  batchIds?: string[];
+  authorId: string;
+  authorName: string;
+  authorRole: 'admin' | 'teacher' | 'staff';
+  priority?: 'normal' | 'important' | 'urgent';
+  createdAt: string;
+}
+
 // Delete functions
 export const deleteStudent = (studentId: string): boolean => {
   try {
@@ -263,6 +294,8 @@ const STORAGE_KEYS = {
   SUBJECTS: 'smartclass_subjects',
   LEADS: 'smartclass_leads',
   RECEIPT_COUNTER: 'smartclass_receipt_counter',
+  STUDENT_REMARKS: 'smartclass_student_remarks',
+  NOTICES: 'smartclass_notices',
 };
 
 const DB_PATHS = {
@@ -284,6 +317,8 @@ const DB_PATHS = {
   SUBJECTS: 'subjects',
   LEADS: 'leads',
   META: 'meta',
+  STUDENT_REMARKS: 'studentRemarks',
+  NOTICES: 'notices',
 };
 
 // Initialize default data
@@ -340,6 +375,14 @@ const initializeDefaultData = () => {
   if (!localStorage.getItem(STORAGE_KEYS.LEADS)) {
     localStorage.setItem(STORAGE_KEYS.LEADS, JSON.stringify([]));
   }
+
+  if (!localStorage.getItem(STORAGE_KEYS.STUDENT_REMARKS)) {
+    localStorage.setItem(STORAGE_KEYS.STUDENT_REMARKS, JSON.stringify([]));
+  }
+
+  if (!localStorage.getItem(STORAGE_KEYS.NOTICES)) {
+    localStorage.setItem(STORAGE_KEYS.NOTICES, JSON.stringify([]));
+  }
 };
 
 initializeDefaultData();
@@ -377,7 +420,7 @@ const fetchCollectionFromRealtime = async <T>(collection: string): Promise<T[] |
 };
 
 const syncRealtimeData = async () => {
-  const [students, classes, notes, attendance, batches, fees, tests, testResults, staffList, subjects, teachersList, leadsList] = await Promise.all([
+  const [students, classes, notes, attendance, batches, fees, tests, testResults, staffList, subjects, teachersList, leadsList, studentRemarksList, noticesList] = await Promise.all([
     fetchCollectionFromRealtime<Student>(DB_PATHS.STUDENTS),
     fetchCollectionFromRealtime<Class>(DB_PATHS.CLASSES),
     fetchCollectionFromRealtime<Note>(DB_PATHS.NOTES),
@@ -390,6 +433,8 @@ const syncRealtimeData = async () => {
     fetchCollectionFromRealtime<Subject>(DB_PATHS.SUBJECTS),
     fetchCollectionFromRealtime<Teacher>(DB_PATHS.TEACHERS),
     fetchCollectionFromRealtime<Lead>(DB_PATHS.LEADS),
+    fetchCollectionFromRealtime<StudentRemark>(DB_PATHS.STUDENT_REMARKS),
+    fetchCollectionFromRealtime<Notice>(DB_PATHS.NOTICES),
   ]);
 
   if (students) {
@@ -427,6 +472,12 @@ const syncRealtimeData = async () => {
   }
   if (leadsList) {
     saveToStorage(STORAGE_KEYS.LEADS, leadsList);
+  }
+  if (studentRemarksList) {
+    saveToStorage(STORAGE_KEYS.STUDENT_REMARKS, studentRemarksList);
+  }
+  if (noticesList) {
+    saveToStorage(STORAGE_KEYS.NOTICES, noticesList);
   }
 
   // Sync institute settings
@@ -572,6 +623,8 @@ export const subscribeToRealtimeUpdates = (onUpdate?: () => void): Unsubscribe =
     attachListener<Teacher>(DB_PATHS.TEACHERS, STORAGE_KEYS.TEACHERS, onUpdate),
     attachListener<Lead>(DB_PATHS.LEADS, STORAGE_KEYS.LEADS, onUpdate),
     attachListener<FeeRecord>(DB_PATHS.FEES, STORAGE_KEYS.FEES, onUpdate),
+    attachListener<StudentRemark>(DB_PATHS.STUDENT_REMARKS, STORAGE_KEYS.STUDENT_REMARKS, onUpdate),
+    attachListener<Notice>(DB_PATHS.NOTICES, STORAGE_KEYS.NOTICES, onUpdate),
   ];
 
   // Also subscribe to Institute Settings updates
@@ -1136,35 +1189,38 @@ export const saveTestResult = (result: TestResult): void => {
 
 // Authentication helper
 export const authenticateUser = (email: string, password: string, role: string): { id: string; name: string } | null => {
+  const normEmail = (email || '').trim().toLowerCase();
+  const normPass = (password || '').trim();
+
   if (role === 'admin') {
-    if ((email === 'admin@sankalpacademy.com' || email === 'admin@rctutorials.com') && password === 'admin123') {
+    if ((normEmail === 'admin@sankalpacademy.com' || normEmail === 'admin@rctutorials.com' || normEmail === 'admin') && normPass === 'admin123') {
       return { id: 'admin', name: 'Administrator' };
     }
     return null;
   }
 
   if (role === 'student') {
-    const student = getStudents().find(s => s.email === email && s.password === password);
+    const student = getStudents().find(s => (s.email || '').trim().toLowerCase() === normEmail && (s.password || '').trim() === normPass);
     return student ? { id: student.id, name: student.name } : null;
   }
 
   if (role === 'staff') {
-    const staffMember = getStaff().find(s => s.email === email && s.password === password);
+    const staffMember = getStaff().find(s => (s.email || '').trim().toLowerCase() === normEmail && (s.password || '').trim() === normPass);
     if (staffMember) return { id: staffMember.id, name: staffMember.name };
     
     // Fallback for default staff
-    if ((email === 'staff@sankalpacademy.com' || email === 'staff@rctutorials.com') && password === 'staff123') {
+    if ((normEmail === 'staff@sankalpacademy.com' || normEmail === 'staff@rctutorials.com' || normEmail === 'staff') && (normPass === 'staff123' || normPass === 'admin123')) {
       return { id: 'staff', name: 'Staff Member' };
     }
     return null;
   }
 
   if (role === 'teacher') {
-    const teacher = getTeachers().find(t => t.email === email && t.password === password);
+    const teacher = getTeachers().find(t => (t.email || '').trim().toLowerCase() === normEmail && (t.password || '').trim() === normPass);
     if (teacher) return { id: teacher.id, name: teacher.name };
 
     // Fallback default teacher
-    if ((email === 'teacher@sankalpacademy.com' || email === 'teacher@rctutorials.com') && password === 'teacher123') {
+    if ((normEmail === 'teacher@sankalpacademy.com' || normEmail === 'teacher@rctutorials.com' || normEmail === 'teacher') && (normPass === 'teacher123' || normPass === 'admin123')) {
       return { id: 'teacher', name: 'Teacher' };
     }
     return null;
@@ -1275,6 +1331,63 @@ export const deleteLead = (leadId: string): boolean => {
     return true;
   } catch (error) {
     console.error('Error deleting lead:', error);
+    return false;
+  }
+};
+
+// Student Remarks (Appreciation & Complaints) helpers
+export const getStudentRemarks = (): StudentRemark[] => getFromStorage<StudentRemark>(STORAGE_KEYS.STUDENT_REMARKS);
+
+export const getRemarksByStudent = (studentId: string): StudentRemark[] => {
+  return getStudentRemarks().filter(r => r.studentId === studentId);
+};
+
+export const addStudentRemark = async (remark: StudentRemark): Promise<void> => {
+  const remarks = getStudentRemarks();
+  saveToStorage(STORAGE_KEYS.STUDENT_REMARKS, [remark, ...remarks]);
+  void writeItemToRealtime(DB_PATHS.STUDENT_REMARKS, remark.id, remark);
+};
+
+export const deleteStudentRemark = async (remarkId: string): Promise<boolean> => {
+  try {
+    const remarks = getStudentRemarks();
+    saveToStorage(STORAGE_KEYS.STUDENT_REMARKS, remarks.filter(r => r.id !== remarkId));
+    void removeItemFromRealtime(DB_PATHS.STUDENT_REMARKS, remarkId);
+    return true;
+  } catch (error) {
+    console.error('Error deleting student remark:', error);
+    return false;
+  }
+};
+
+// Notices helpers
+export const getNotices = (): Notice[] => getFromStorage<Notice>(STORAGE_KEYS.NOTICES);
+
+export const getNoticesForStudent = (batchId?: string): Notice[] => {
+  const allNotices = getNotices();
+  if (!batchId) return allNotices;
+  return allNotices.filter(n => 
+    !n.batchId || 
+    n.batchId === 'all' || 
+    n.batchId === batchId || 
+    (n.batchIds && n.batchIds.includes(batchId))
+  );
+};
+
+export const addNotice = async (notice: Notice): Promise<void> => {
+  const notices = getNotices();
+  saveToStorage(STORAGE_KEYS.NOTICES, [notice, ...notices]);
+  void writeItemToRealtime(DB_PATHS.NOTICES, notice.id, notice);
+};
+
+export const deleteNotice = async (noticeId: string): Promise<boolean> => {
+  try {
+    const notices = getNotices();
+    saveToStorage(STORAGE_KEYS.NOTICES, notices.filter(n => n.id !== noticeId));
+    void removeItemFromRealtime(DB_PATHS.NOTICES, noticeId);
+    return true;
+  } catch (error) {
+    console.error('Error deleting notice:', error);
     return false;
   }
 };

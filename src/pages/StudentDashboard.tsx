@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Calendar, BookOpen, Brain, FileText, Home, Bot, UserCircle, MessageSquare, CheckSquare, LogOut } from "lucide-react";
+import { Calendar, BookOpen, Brain, FileText, Home, Bot, UserCircle, MessageSquare, CheckSquare, LogOut, Award, Star, AlertTriangle, Bell, Megaphone, Sparkles, Trophy, CheckCircle2, ArrowRight } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { toast } from "sonner";
@@ -15,6 +15,8 @@ import {
   getNotesByBatch,
   getStudentAttendance,
   getStudents,
+  getRemarksByStudent,
+  getNoticesForStudent,
   subscribeToClassNotifications,
   subscribeToRealtimeUpdates,
   acknowledgeClassNotification,
@@ -31,7 +33,9 @@ import {
   Student,
   Test,
   TestResult,
-  Batch
+  Batch,
+  StudentRemark,
+  Notice
 } from "@/lib/localStorage";
 import { registerForPushNotifications } from "@/lib/messaging";
 import { sendPromptToGemini } from "@/lib/gemini";
@@ -44,10 +48,11 @@ const calculateAttendancePercentage = (records: AttendanceRecord[]): number => {
   return Math.round((presentCount / records.length) * 100);
 };
 
-const tabOptions: { id: "home" | "attendance" | "notes" | "ai" | "tests" | "profile"; label: string; icon: LucideIcon }[] = [
+const tabOptions: { id: "home" | "attendance" | "notes" | "remarks" | "ai" | "tests" | "profile"; label: string; icon: LucideIcon }[] = [
   { id: "home", label: "Home", icon: Home },
   { id: "attendance", label: "Attendance", icon: Calendar },
   { id: "notes", label: "Notes", icon: BookOpen },
+  { id: "remarks", label: "Remarks", icon: MessageSquare },
   { id: "ai", label: "AI", icon: Bot },
   { id: "tests", label: "Tests", icon: CheckSquare },
   { id: "profile", label: "Profile", icon: UserCircle },
@@ -73,6 +78,9 @@ const StudentDashboard = () => {
   const [tests, setTests] = useState<Test[]>([]);
   const [testResults, setTestResults] = useState<TestResult[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
+  const [remarks, setRemarks] = useState<StudentRemark[]>([]);
+  const [notices, setNotices] = useState<Notice[]>([]);
+  const [remarkFilter, setRemarkFilter] = useState<'all' | 'appreciation' | 'complaint'>('all');
 
   // Test Taking State
   const [activeTakingTest, setActiveTakingTest] = useState<Test | null>(null);
@@ -80,7 +88,7 @@ const StudentDashboard = () => {
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, number>>({});
   const [testCompleted, setTestCompleted] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<"home" | "attendance" | "notes" | "ai" | "tests" | "profile">("home");
+  const [activeTab, setActiveTab] = useState<"home" | "attendance" | "notes" | "remarks" | "ai" | "tests" | "profile">("home");
 
   const subjectAttendanceBreakdown = useMemo(() => {
     const map: Record<string, { total: number; present: number; absent: number }> = {};
@@ -269,6 +277,10 @@ const StudentDashboard = () => {
     
     // Fetch this student's test results
     setTestResults(getTestResultsByStudent(student.id));
+
+    // Fetch remarks and notices
+    setRemarks(getRemarksByStudent(student.id));
+    setNotices(getNoticesForStudent(student.batchId));
   };
 
   useEffect(() => {
@@ -316,35 +328,115 @@ const StudentDashboard = () => {
     }, {});
   }, [notes]);
 
+  const appreciationsCount = remarks.filter(r => r.type === 'appreciation').length;
+  const complaintsCount = remarks.filter(r => r.type === 'complaint').length;
+
   const renderClassesCard = () => (
-    <Card className="p-6">
-      <h3 className="text-xl font-semibold mb-6">Lectures & Schedule</h3>
-      <div className="space-y-3">
-        {[...myClasses].sort((a, b) => {
-          const aPast = isClassPast(a);
-          const bPast = isClassPast(b);
-          if (aPast === bPast) return 0;
-          return aPast ? 1 : -1;
-        }).map(classItem => {
-          const isPast = isClassPast(classItem);
-          return (
-            <div key={classItem.id} className={`p-4 rounded-lg border transition-colors ${isPast ? 'bg-muted/50 opacity-60 border-muted' : 'bg-card hover:bg-accent/5'}`}>
-              <div className="flex items-center gap-2">
-                <p className="font-semibold">{classItem.name}</p>
-                {isPast && (
-                  <span className="text-[10px] font-semibold uppercase tracking-wider bg-muted-foreground/20 text-muted-foreground px-1.5 py-0.5 rounded">Completed</span>
-                )}
+    <div className="space-y-6">
+      {/* Academy Notices Banner / Section */}
+      {notices.length > 0 && (
+        <Card className="p-5 rounded-3xl bg-gradient-to-r from-primary/10 via-primary/5 to-accent/10 border-2 border-primary/20 space-y-4">
+          <div className="flex items-center justify-between">
+            <h4 className="text-base font-black text-primary flex items-center gap-2">
+              <Megaphone className="h-5 w-5 text-primary" /> Academy Notices & Announcements
+            </h4>
+            <span className="text-xs bg-primary/20 text-primary font-bold px-2.5 py-0.5 rounded-full">
+              {notices.length} New
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {notices.map(notice => (
+              <div
+                key={notice.id}
+                className={`p-4 rounded-2xl border bg-card shadow-sm flex flex-col justify-between ${
+                  notice.priority === 'urgent'
+                    ? 'border-red-500/40 bg-red-500/5'
+                    : notice.priority === 'important'
+                    ? 'border-amber-500/40 bg-amber-500/5'
+                    : 'border-border/60'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                      notice.priority === 'urgent'
+                        ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 animate-pulse'
+                        : notice.priority === 'important'
+                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+                        : 'bg-primary/10 text-primary'
+                    }`}>
+                      {notice.priority || 'Notice'}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground font-medium">
+                      {new Date(notice.createdAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <h5 className="font-bold text-sm text-foreground mb-1">{notice.title}</h5>
+                  <p className="text-xs text-foreground/80 whitespace-pre-wrap">{notice.content}</p>
+                </div>
+                <div className="text-[10px] text-muted-foreground pt-2 mt-2 border-t font-medium">
+                  Posted by <strong>{notice.authorName}</strong> ({notice.authorRole})
+                </div>
               </div>
-              <p className="text-sm text-muted-foreground">{classItem.subject}</p>
-              <p className="text-xs text-muted-foreground mt-1">{classItem.date} • {format12h(classItem.time)} - {format12h(classItem.endTime)}</p>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Quick Remarks Snapshot Banner */}
+      <Card className="p-5 rounded-3xl border bg-card flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+        <div className="flex items-center gap-4">
+          <div className="h-12 w-12 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
+            <MessageSquare className="h-6 w-6" />
+          </div>
+          <div>
+            <h4 className="font-black text-lg text-foreground">Teacher Remarks & Feedback</h4>
+            <div className="flex items-center gap-3 text-xs mt-0.5 font-bold">
+              <span className="text-emerald-600 dark:text-emerald-400">⭐ {appreciationsCount} Appreciations</span>
+              <span className="text-amber-600 dark:text-amber-400">⚠️ {complaintsCount} Observations / Complaints</span>
             </div>
-          );
-        })}
-        {myClasses.length === 0 && (
-          <p className="text-sm text-muted-foreground text-center py-4">No classes assigned yet.</p>
-        )}
-      </div>
-    </Card>
+          </div>
+        </div>
+        <Button 
+          onClick={() => setActiveTab('remarks')}
+          className="rounded-2xl font-bold text-xs gap-1.5 self-start sm:self-auto shadow-md"
+        >
+          <span>View All Remarks</span>
+          <ArrowRight className="h-4 w-4" />
+        </Button>
+      </Card>
+
+      {/* Lectures and Schedule */}
+      <Card className="p-6">
+        <h3 className="text-xl font-semibold mb-6">Lectures & Schedule</h3>
+        <div className="space-y-3">
+          {[...myClasses].sort((a, b) => {
+            const aPast = isClassPast(a);
+            const bPast = isClassPast(b);
+            if (aPast === bPast) return 0;
+            return aPast ? 1 : -1;
+          }).map(classItem => {
+            const isPast = isClassPast(classItem);
+            return (
+              <div key={classItem.id} className={`p-4 rounded-lg border transition-colors ${isPast ? 'bg-muted/50 opacity-60 border-muted' : 'bg-card hover:bg-accent/5'}`}>
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold">{classItem.name}</p>
+                  {isPast && (
+                    <span className="text-[10px] font-semibold uppercase tracking-wider bg-muted-foreground/20 text-muted-foreground px-1.5 py-0.5 rounded">Completed</span>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground">{classItem.subject}</p>
+                <p className="text-xs text-muted-foreground mt-1">{classItem.date} • {format12h(classItem.time)} - {format12h(classItem.endTime)}</p>
+              </div>
+            );
+          })}
+          {myClasses.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-4">No classes assigned yet.</p>
+          )}
+        </div>
+      </Card>
+    </div>
   );
 
   const renderNotesCard = () => (
@@ -485,11 +577,137 @@ const StudentDashboard = () => {
     );
   };
 
+  const renderRemarksCard = () => {
+    const filteredRemarks = remarks.filter(r => {
+      if (remarkFilter === 'all') return true;
+      return r.type === remarkFilter;
+    });
+
+    return (
+      <Card className="p-6 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b pb-6 gap-4">
+          <div>
+            <h3 className="text-2xl font-black text-primary flex items-center gap-2">
+              <MessageSquare className="h-6 w-6 text-primary" /> Teacher Remarks & Observations
+            </h3>
+            <p className="text-sm text-muted-foreground mt-1">
+              Feedback, appreciations, and behavioral remarks from your academy teachers and staff
+            </p>
+          </div>
+
+          {/* Quick Stats Pills */}
+          <div className="flex items-center gap-3">
+            <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 p-3 rounded-2xl flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-emerald-500/20 text-emerald-600 flex items-center justify-center font-black">
+                <Trophy className="h-5 w-5" />
+              </div>
+              <div>
+                <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">{appreciationsCount}</span>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Appreciations</p>
+              </div>
+            </div>
+
+            <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 p-3 rounded-2xl flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-amber-500/20 text-amber-600 flex items-center justify-center font-black">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div>
+                <span className="text-2xl font-black text-amber-600 dark:text-amber-400">{complaintsCount}</span>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Complaints</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Filter Switcher */}
+        <div className="flex items-center gap-2">
+          {(['all', 'appreciation', 'complaint'] as const).map(type => (
+            <button
+              key={type}
+              onClick={() => setRemarkFilter(type)}
+              className={`text-xs px-4 py-2 rounded-xl font-bold transition-all ${
+                remarkFilter === type
+                  ? 'bg-primary text-primary-foreground shadow-md'
+                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
+              }`}
+            >
+              {type === 'all' 
+                ? `All Remarks (${remarks.length})` 
+                : type === 'appreciation' 
+                ? `⭐ Appreciations (${appreciationsCount})` 
+                : `⚠️ Complaints / Observations (${complaintsCount})`}
+            </button>
+          ))}
+        </div>
+
+        {/* Remarks List */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {filteredRemarks.map(remark => (
+            <div
+              key={remark.id}
+              className={`p-5 rounded-3xl border-2 flex flex-col justify-between transition-all bg-card shadow-sm ${
+                remark.type === 'appreciation'
+                  ? 'border-emerald-500/30 bg-emerald-500/5 hover:border-emerald-500/60'
+                  : 'border-amber-500/30 bg-amber-500/5 hover:border-amber-500/60'
+              }`}
+            >
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-black uppercase tracking-wider px-3 py-1 rounded-full flex items-center gap-1.5 ${
+                      remark.type === 'appreciation'
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                        : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                    }`}>
+                      {remark.type === 'appreciation' ? <Star className="h-3.5 w-3.5 fill-current" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+                      {remark.type === 'appreciation' ? 'Appreciation' : 'Observation / Complaint'}
+                    </span>
+                    {remark.subject && (
+                      <span className="text-xs px-2.5 py-0.5 rounded-lg bg-muted font-bold text-muted-foreground">
+                        {remark.subject}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[11px] text-muted-foreground font-medium">
+                    {new Date(remark.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </span>
+                </div>
+
+                <h4 className="text-lg font-bold text-foreground mb-2">{remark.title}</h4>
+                <p className="text-sm text-foreground/85 whitespace-pre-wrap leading-relaxed">{remark.description}</p>
+              </div>
+
+              <div className="mt-4 pt-3 border-t border-border/60 flex items-center justify-between text-xs text-muted-foreground font-medium">
+                <span>Teacher: <strong className="text-foreground">{remark.authorName}</strong> ({remark.authorRole})</span>
+                <span>{new Date(remark.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
+            </div>
+          ))}
+
+          {filteredRemarks.length === 0 && (
+            <div className="col-span-full py-16 text-center text-muted-foreground space-y-3">
+              <Sparkles className="h-12 w-12 mx-auto text-primary/30" />
+              <p className="font-bold text-lg text-foreground">
+                {remarkFilter === 'complaint' 
+                  ? "Great job! No complaints or negative remarks recorded." 
+                  : "No remarks recorded yet."}
+              </p>
+              <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                Feedback given by your subject teachers during lectures and tests will appear here.
+              </p>
+            </div>
+          )}
+        </div>
+      </Card>
+    );
+  };
+
   const renderTabContent = () => {
     switch(activeTab) {
       case "home": return renderClassesCard();
       case "attendance": return renderAttendanceSection();
       case "notes": return renderNotesCard();
+      case "remarks": return renderRemarksCard();
       case "ai": return (
         <Card className="p-6">
           <div className="p-4 rounded-lg bg-gradient-to-br from-primary/10 to-accent/10 border border-primary/20">
@@ -727,7 +945,7 @@ const StudentDashboard = () => {
 
       {/* Instagram-style Bottom Nav for Mobile */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-card border-t border-border/40 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)] z-40 supports-[backdrop-filter]:bg-card/80 backdrop-blur-lg">
-        <div className="flex items-center justify-around px-3 py-2">
+        <div className="flex items-center justify-around px-2 py-1.5">
           {tabOptions.filter(tab => tab.id !== 'ai').map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -736,15 +954,20 @@ const StudentDashboard = () => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className="flex flex-col items-center gap-1 p-2 min-w-[45px] transition-colors"
+                className="flex flex-col items-center gap-0.5 p-1 min-w-[50px] transition-colors relative"
               >
-                <div className={`p-1 rounded-xl transition-all duration-300 ${isActive ? 'bg-primary/10' : ''}`}>
+                <div className={`p-1.5 rounded-xl transition-all duration-300 ${isActive ? 'bg-primary/10' : ''}`}>
                   <Icon 
                     strokeWidth={isActive ? 2.5 : 2} 
-                    className={`h-[22px] w-[22px] ${isActive ? "text-primary" : "text-muted-foreground"}`} 
+                    className={`h-[20px] w-[20px] ${isActive ? "text-primary" : "text-muted-foreground"}`} 
                   />
                 </div>
-                <div className={`h-1 w-1 rounded-full transition-all duration-300 mt-0.5 ${isActive ? "bg-primary" : "bg-transparent"}`} />
+                <span className={`text-[9px] font-bold ${isActive ? "text-primary" : "text-muted-foreground"}`}>
+                  {tab.label}
+                </span>
+                {tab.id === 'remarks' && remarks.length > 0 && (
+                  <span className="absolute top-1 right-2 h-2 w-2 rounded-full bg-primary ring-2 ring-background" />
+                )}
               </button>
             );
           })}

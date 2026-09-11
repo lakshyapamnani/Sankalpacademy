@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Calendar, ClipboardCheck, Plus, AlertTriangle, FileText, Trash2, ExternalLink, Clock, CheckCircle2, UserCheck } from "lucide-react";
+import { Calendar, ClipboardCheck, Plus, AlertTriangle, FileText, Trash2, ExternalLink, Clock, CheckCircle2, UserCheck, Search, MessageSquare, Bell, Star, AlertCircle, Award, ThumbsUp, ThumbsDown, Megaphone, Send, Filter, Check } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -21,27 +21,40 @@ import {
   getNotes,
   addNote,
   deleteNote,
+  getStudentRemarks,
+  addStudentRemark,
+  deleteStudentRemark,
+  getNotices,
+  addNotice,
+  deleteNotice,
   subscribeToRealtimeUpdates,
   Student,
   Class,
   Batch,
   Teacher,
   Note,
+  StudentRemark,
+  Notice,
+  RemarkType,
 } from "@/lib/localStorage";
 
-const tabOptions: { id: "classes" | "attendance" | "notes"; label: string; icon: LucideIcon }[] = [
-  { id: "classes", label: "My Classes", icon: Calendar },
-  { id: "attendance", label: "Take Attendance", icon: ClipboardCheck },
-  { id: "notes", label: "Batch Notes", icon: FileText },
+const tabOptions: { id: "classes" | "attendance" | "notes" | "remarks" | "notices"; label: string; icon: LucideIcon }[] = [
+  { id: "classes", label: "Classes", icon: Calendar },
+  { id: "attendance", label: "Attendance", icon: ClipboardCheck },
+  { id: "notes", label: "Notes", icon: FileText },
+  { id: "remarks", label: "Student Remarks", icon: MessageSquare },
+  { id: "notices", label: "Notices", icon: Bell },
 ];
 
 const TeacherDashboard = () => {
-  const [activeTab, setActiveTab] = useState<"classes" | "attendance" | "notes">("classes");
+  const [activeTab, setActiveTab] = useState<"classes" | "attendance" | "notes" | "remarks" | "notices">("classes");
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
+  const [remarks, setRemarks] = useState<StudentRemark[]>([]);
+  const [notices, setNotices] = useState<Notice[]>([]);
   const [selectedAttendanceBatch, setSelectedAttendanceBatch] = useState<string | null>(null);
   const [selectedClassForAttendance, setSelectedClassForAttendance] = useState<Class | null>(null);
   const [dailyAttendance, setDailyAttendance] = useState<Record<string, boolean>>({}); // studentId -> isAbsent
@@ -54,6 +67,23 @@ const TeacherDashboard = () => {
   const [noteLink, setNoteLink] = useState('');
   const [selectedNoteBatches, setSelectedNoteBatches] = useState<string[]>([]);
   const [noteSubject, setNoteSubject] = useState('');
+
+  // Remarks State
+  const [studentSearch, setStudentSearch] = useState('');
+  const [selectedStudentForRemark, setSelectedStudentForRemark] = useState<Student | null>(null);
+  const [remarkType, setRemarkType] = useState<RemarkType>('appreciation');
+  const [remarkTitle, setRemarkTitle] = useState('');
+  const [remarkDescription, setRemarkDescription] = useState('');
+  const [remarkSubject, setRemarkSubject] = useState('');
+  const [remarkFilter, setRemarkFilter] = useState<'all' | 'appreciation' | 'complaint'>('all');
+  const [isSubmittingRemark, setIsSubmittingRemark] = useState(false);
+
+  // Notice State
+  const [isAddNoticeOpen, setIsAddNoticeOpen] = useState(false);
+  const [noticeTitle, setNoticeTitle] = useState('');
+  const [noticeContent, setNoticeContent] = useState('');
+  const [noticeBatch, setNoticeBatch] = useState('all');
+  const [noticePriority, setNoticePriority] = useState<'normal' | 'important' | 'urgent'>('normal');
 
   const currentUser = getCurrentUser();
 
@@ -80,6 +110,8 @@ const TeacherDashboard = () => {
     setBatches(getBatches());
     setTeachers(getTeachers());
     setNotes(getNotes());
+    setRemarks(getStudentRemarks());
+    setNotices(getNotices());
   };
 
   useEffect(() => {
@@ -663,6 +695,655 @@ const TeacherDashboard = () => {
     </Card>
   );
 
+  const handleSaveRemark = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedStudentForRemark) {
+      toast.error("Please search and select a student first");
+      return;
+    }
+    if (!remarkTitle.trim() || !remarkDescription.trim()) {
+      toast.error("Please provide a title and detailed remark description");
+      return;
+    }
+
+    setIsSubmittingRemark(true);
+    try {
+      const studentBatch = batches.find(b => b.id === selectedStudentForRemark.batchId);
+      const newRemark: StudentRemark = {
+        id: Date.now().toString(),
+        studentId: selectedStudentForRemark.id,
+        studentName: selectedStudentForRemark.name,
+        batchId: selectedStudentForRemark.batchId,
+        batchName: studentBatch?.name || 'Unknown Batch',
+        type: remarkType,
+        title: remarkTitle.trim(),
+        description: remarkDescription.trim(),
+        subject: remarkSubject.trim() || teacherSubjects[0] || 'General',
+        authorId: currentUser?.id || 'teacher',
+        authorName: currentUser?.name || 'Teacher',
+        authorRole: 'teacher',
+        createdAt: new Date().toISOString(),
+      };
+
+      await addStudentRemark(newRemark);
+      toast.success(
+        remarkType === 'appreciation' 
+          ? `⭐ Appreciation added for ${selectedStudentForRemark.name}!` 
+          : `⚠️ Complaint/Observation recorded for ${selectedStudentForRemark.name}!`
+      );
+
+      setRemarkTitle('');
+      setRemarkDescription('');
+      setRemarkSubject('');
+      loadData();
+    } catch (err: any) {
+      console.error("Failed to add remark:", err);
+      toast.error("Failed to save remark: " + (err.message || "Unknown error"));
+    } finally {
+      setIsSubmittingRemark(false);
+    }
+  };
+
+  const handleDeleteRemark = async (remarkId: string) => {
+    if (await deleteStudentRemark(remarkId)) {
+      toast.success("Remark deleted");
+      loadData();
+    } else {
+      toast.error("Failed to delete remark");
+    }
+  };
+
+  const handleSaveNotice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!noticeTitle.trim() || !noticeContent.trim()) {
+      toast.error("Please fill in both notice title and description");
+      return;
+    }
+
+    try {
+      const newNotice: Notice = {
+        id: Date.now().toString(),
+        title: noticeTitle.trim(),
+        content: noticeContent.trim(),
+        batchId: noticeBatch,
+        authorId: currentUser?.id || 'teacher',
+        authorName: currentUser?.name || 'Teacher',
+        authorRole: 'teacher',
+        priority: noticePriority,
+        createdAt: new Date().toISOString(),
+      };
+
+      await addNotice(newNotice);
+      toast.success("Notice published to students tab & synced with Firebase!");
+      setIsAddNoticeOpen(false);
+      setNoticeTitle('');
+      setNoticeContent('');
+      setNoticeBatch('all');
+      setNoticePriority('normal');
+      loadData();
+    } catch (err: any) {
+      console.error("Failed to add notice:", err);
+      toast.error("Failed to post notice: " + (err.message || "Unknown error"));
+    }
+  };
+
+  const handleDeleteNotice = async (noticeId: string) => {
+    if (await deleteNotice(noticeId)) {
+      toast.success("Notice deleted");
+      loadData();
+    } else {
+      toast.error("Failed to delete notice");
+    }
+  };
+
+  const filteredStudents = students.filter(s => {
+    const q = studentSearch.toLowerCase().trim();
+    if (!q) return true;
+    const batch = batches.find(b => b.id === s.batchId);
+    return (
+      (s.name || '').toLowerCase().includes(q) ||
+      (s.email || '').toLowerCase().includes(q) ||
+      (s.phoneNo && s.phoneNo.includes(q)) ||
+      (s.studentClass && s.studentClass.toLowerCase().includes(q)) ||
+      (batch && batch.name.toLowerCase().includes(q))
+    );
+  });
+
+  const selectedStudentRemarks = selectedStudentForRemark 
+    ? remarks.filter(r => r.studentId === selectedStudentForRemark.id)
+    : [];
+
+  const teacherRemarksGiven = remarks.filter(r => 
+    r.authorId === currentUser?.id || isFallbackTeacher
+  );
+
+  const renderRemarks = () => (
+    <div className="space-y-6">
+      <Card className="p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4 border-b pb-6">
+          <div>
+            <h3 className="text-2xl font-black text-primary flex items-center gap-2">
+              <MessageSquare className="h-6 w-6 text-primary" /> Student Remarks & Feedback
+            </h3>
+            <p className="text-sm text-muted-foreground mt-1">
+              Search a student to add complaints or appreciations. Remarks are instantly visible in the student's dashboard and admin records.
+            </p>
+          </div>
+        </div>
+
+        {/* Search Bar for Student Selection */}
+        <div className="space-y-4 mb-8">
+          <Label className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
+            1. Search & Select Student
+          </Label>
+          <div className="relative">
+            <Search className="absolute left-4 top-3.5 h-5 w-5 text-muted-foreground" />
+            <Input
+              value={studentSearch}
+              onChange={(e) => setStudentSearch(e.target.value)}
+              placeholder="Search by student name, batch, phone, email, or class..."
+              className="h-12 pl-12 rounded-2xl border-2 border-primary/20 focus:border-primary text-base"
+            />
+          </div>
+
+          {/* Student Selection Chips/List */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 max-h-60 overflow-y-auto p-1">
+            {filteredStudents.map(student => {
+              const batch = batches.find(b => b.id === student.batchId);
+              const isSelected = selectedStudentForRemark?.id === student.id;
+              const studentAppreciations = remarks.filter(r => r.studentId === student.id && r.type === 'appreciation').length;
+              const studentComplaints = remarks.filter(r => r.studentId === student.id && r.type === 'complaint').length;
+
+              return (
+                <div
+                  key={student.id}
+                  onClick={() => {
+                    setSelectedStudentForRemark(student);
+                    setRemarkSubject(teacherSubjects[0] || 'General');
+                  }}
+                  className={`p-3.5 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                    isSelected 
+                      ? 'border-primary bg-primary/10 shadow-md ring-2 ring-primary/30' 
+                      : 'border-muted hover:border-primary/40 bg-card'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className={`h-9 w-9 rounded-full flex items-center justify-center font-bold text-sm ${
+                        isSelected ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'
+                      }`}>
+                        {student.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="font-bold text-sm text-foreground leading-tight">{student.name}</p>
+                        <p className="text-[11px] text-muted-foreground">{batch?.name || 'No Batch'}</p>
+                      </div>
+                    </div>
+                    {isSelected && (
+                      <span className="h-5 w-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs">
+                        <Check className="h-3 w-3 stroke-[3]" />
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 mt-2.5 pt-2 border-t text-[10px] font-bold">
+                    <span className="text-emerald-600 dark:text-emerald-400">⭐ {studentAppreciations}</span>
+                    <span className="text-amber-600 dark:text-amber-400">⚠️ {studentComplaints}</span>
+                  </div>
+                </div>
+              );
+            })}
+            {filteredStudents.length === 0 && (
+              <div className="col-span-full py-8 text-center text-muted-foreground text-sm">
+                No students match "{studentSearch}"
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Selected Student Active Form */}
+        {selectedStudentForRemark ? (
+          <div className="p-6 rounded-3xl border-2 border-primary/20 bg-primary/5 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-primary/15 pb-4">
+              <div>
+                <span className="text-xs font-black uppercase tracking-wider text-primary">Target Student</span>
+                <h4 className="text-2xl font-black text-foreground">{selectedStudentForRemark.name}</h4>
+                <p className="text-xs text-muted-foreground">
+                  {batches.find(b => b.id === selectedStudentForRemark.batchId)?.name || 'Unassigned Batch'} • {selectedStudentForRemark.studentClass || 'Class'} • {selectedStudentForRemark.email}
+                </p>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setSelectedStudentForRemark(null)}
+                className="rounded-xl border-muted text-xs self-start sm:self-auto"
+              >
+                Change Student
+              </Button>
+            </div>
+
+            <form onSubmit={handleSaveRemark} className="space-y-5">
+              {/* Type Switcher: Appreciation vs Complaint */}
+              <div>
+                <Label className="font-bold text-sm mb-2 block">Select Remark Type</Label>
+                <div className="grid grid-cols-2 gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setRemarkType('appreciation')}
+                    className={`p-4 rounded-2xl border-2 flex items-center justify-center gap-3 transition-all font-black text-sm ${
+                      remarkType === 'appreciation'
+                        ? 'border-emerald-500 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 shadow-md ring-2 ring-emerald-500/20'
+                        : 'border-muted hover:border-emerald-500/40 bg-card text-muted-foreground'
+                    }`}
+                  >
+                    <Award className="h-5 w-5 text-emerald-600" />
+                    <span>Appreciation / Praise ⭐</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRemarkType('complaint')}
+                    className={`p-4 rounded-2xl border-2 flex items-center justify-center gap-3 transition-all font-black text-sm ${
+                      remarkType === 'complaint'
+                        ? 'border-amber-500 bg-amber-500/15 text-amber-700 dark:text-amber-300 shadow-md ring-2 ring-amber-500/20'
+                        : 'border-muted hover:border-amber-500/40 bg-card text-muted-foreground'
+                    }`}
+                  >
+                    <AlertTriangle className="h-5 w-5 text-amber-600" />
+                    <span>Complaint / Observation ⚠️</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Preset Title Pills */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-muted-foreground">Quick Title Suggestions</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {(remarkType === 'appreciation' ? [
+                    "Outstanding Performance",
+                    "Active Class Participation",
+                    "Excellent Homework Submission",
+                    "High Test Score",
+                    "Disciplined & Attentive",
+                    "Helpful to Classmates",
+                  ] : [
+                    "Incomplete Homework",
+                    "Late Arrival to Class",
+                    "Disruptive Behavior",
+                    "Low Test Score - Needs Revision",
+                    "Missing Study Notes",
+                    "Irregular Attendance",
+                  ]).map((tag) => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => setRemarkTitle(tag)}
+                      className={`text-xs px-3 py-1 rounded-full border transition-all ${
+                        remarkTitle === tag
+                          ? (remarkType === 'appreciation' ? 'bg-emerald-600 text-white font-bold' : 'bg-amber-600 text-white font-bold')
+                          : 'bg-card hover:bg-muted text-foreground'
+                      }`}
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="md:col-span-2 space-y-2">
+                  <Label htmlFor="remark-title" className="font-bold">Remark Title *</Label>
+                  <Input
+                    id="remark-title"
+                    value={remarkTitle}
+                    onChange={(e) => setRemarkTitle(e.target.value)}
+                    placeholder={remarkType === 'appreciation' ? "e.g., Exceptional answers in Mathematics" : "e.g., Did not submit homework assignment"}
+                    required
+                    className="h-12 rounded-xl"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="remark-subject" className="font-bold">Subject / Category</Label>
+                  <Input
+                    id="remark-subject"
+                    value={remarkSubject}
+                    onChange={(e) => setRemarkSubject(e.target.value)}
+                    placeholder="e.g. Physics / General"
+                    className="h-12 rounded-xl"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="remark-desc" className="font-bold">Detailed Feedback / Notes for Student & Admin *</Label>
+                <textarea
+                  id="remark-desc"
+                  rows={3}
+                  value={remarkDescription}
+                  onChange={(e) => setRemarkDescription(e.target.value)}
+                  placeholder={remarkType === 'appreciation' 
+                    ? "Share specific achievements, improvement, or positive behaviour..." 
+                    : "Describe the issue or observation clearly and action required from student..."}
+                  required
+                  className="w-full p-3 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              <Button
+                type="submit"
+                disabled={isSubmittingRemark}
+                className={`w-full h-14 rounded-2xl font-black text-lg shadow-lg gap-2 ${
+                  remarkType === 'appreciation' 
+                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20' 
+                    : 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/20'
+                }`}
+              >
+                <Send className="h-5 w-5" />
+                {isSubmittingRemark 
+                  ? "Saving Remark..." 
+                  : `Submit ${remarkType === 'appreciation' ? 'Appreciation' : 'Complaint'} for ${selectedStudentForRemark.name}`}
+              </Button>
+            </form>
+
+            {/* Selected Student's Remarks Timeline */}
+            <div className="pt-6 border-t border-primary/20 space-y-4">
+              <div className="flex items-center justify-between">
+                <h5 className="font-black text-lg text-foreground flex items-center gap-2">
+                  <span>Past Remarks for {selectedStudentForRemark.name}</span>
+                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-primary/10 text-primary font-bold">
+                    {selectedStudentRemarks.length}
+                  </span>
+                </h5>
+              </div>
+
+              <div className="space-y-3">
+                {selectedStudentRemarks.map(r => (
+                  <div 
+                    key={r.id} 
+                    className={`p-4 rounded-2xl border-2 flex flex-col justify-between gap-2 bg-card ${
+                      r.type === 'appreciation' 
+                        ? 'border-emerald-500/30 bg-emerald-500/5' 
+                        : 'border-amber-500/30 bg-amber-500/5'
+                    }`}
+                  >
+                    <div className="flex justify-between items-start gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-black uppercase tracking-wider ${
+                          r.type === 'appreciation' 
+                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' 
+                            : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                        }`}>
+                          {r.type === 'appreciation' ? '⭐ Appreciation' : '⚠️ Complaint'}
+                        </span>
+                        {r.subject && (
+                          <span className="text-xs px-2 py-0.5 rounded-md bg-muted font-bold text-muted-foreground">
+                            {r.subject}
+                          </span>
+                        )}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDeleteRemark(r.id)}
+                        className="h-7 w-7 text-destructive/70 hover:text-destructive hover:bg-destructive/10 rounded-lg"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+
+                    <div>
+                      <h6 className="font-bold text-base text-foreground">{r.title}</h6>
+                      <p className="text-sm text-foreground/80 mt-1 whitespace-pre-wrap">{r.description}</p>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-2 border-t">
+                      <span>By: <strong>{r.authorName}</strong> ({r.authorRole})</span>
+                      <span>{new Date(r.createdAt).toLocaleDateString()} at {new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                  </div>
+                ))}
+                {selectedStudentRemarks.length === 0 && (
+                  <p className="text-xs text-muted-foreground italic py-3 text-center">
+                    No remarks recorded yet for {selectedStudentForRemark.name}.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="p-8 text-center rounded-3xl border-2 border-dashed border-primary/20 bg-accent/20">
+            <UserCheck className="h-10 w-10 mx-auto mb-2 text-primary/40" />
+            <p className="font-bold text-foreground">No Student Selected</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Select a student from the list above to record an appreciation or complaint.
+            </p>
+          </div>
+        )}
+
+        {/* Global Recent Remarks History Feed */}
+        <div className="mt-10 pt-8 border-t space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <h4 className="text-lg font-black text-foreground flex items-center gap-2">
+              <Clock className="h-5 w-5 text-primary" /> All Remarks Added By You ({teacherRemarksGiven.length})
+            </h4>
+            <div className="flex items-center gap-2">
+              {(['all', 'appreciation', 'complaint'] as const).map(type => (
+                <button
+                  key={type}
+                  onClick={() => setRemarkFilter(type)}
+                  className={`text-xs px-3 py-1.5 rounded-xl font-bold capitalize transition-all ${
+                    remarkFilter === type 
+                      ? 'bg-primary text-primary-foreground shadow-sm' 
+                      : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                  }`}
+                >
+                  {type === 'all' ? 'All' : type === 'appreciation' ? '⭐ Appreciations' : '⚠️ Complaints'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {teacherRemarksGiven
+              .filter(r => remarkFilter === 'all' || r.type === remarkFilter)
+              .map(r => (
+                <div
+                  key={r.id}
+                  className={`p-4 rounded-2xl border-2 bg-card flex flex-col justify-between gap-2 shadow-sm ${
+                    r.type === 'appreciation' ? 'border-emerald-500/20 hover:border-emerald-500/40' : 'border-amber-500/20 hover:border-amber-500/40'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                        r.type === 'appreciation' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                      }`}>
+                        {r.type === 'appreciation' ? '⭐ Appreciation' : '⚠️ Complaint'}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDeleteRemark(r.id)}
+                        className="h-7 w-7 text-destructive/70 hover:text-destructive rounded-lg"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                    <p className="font-bold text-base text-foreground">{r.studentName || 'Student'}</p>
+                    <p className="text-xs text-primary font-semibold mb-2">{r.title}</p>
+                    <p className="text-xs text-foreground/80 line-clamp-3 mb-2">{r.description}</p>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground pt-2 border-t flex justify-between">
+                    <span>{r.batchName || 'Batch'}</span>
+                    <span>{new Date(r.createdAt).toLocaleDateString()}</span>
+                  </div>
+                </div>
+              ))}
+            {teacherRemarksGiven.length === 0 && (
+              <div className="col-span-full py-8 text-center text-muted-foreground text-sm">
+                You have not added any student remarks yet.
+              </div>
+            )}
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+
+  const renderNotices = () => (
+    <Card className="p-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4 border-b pb-6">
+        <div>
+          <h3 className="text-2xl font-black text-primary flex items-center gap-2">
+            <Bell className="h-6 w-6 text-primary" /> Academy Notices & Announcements
+          </h3>
+          <p className="text-sm text-muted-foreground mt-1">
+            Broadcast announcements to student dashboards in realtime
+          </p>
+        </div>
+        <Dialog open={isAddNoticeOpen} onOpenChange={setIsAddNoticeOpen}>
+          <DialogTrigger asChild>
+            <Button className="h-12 px-6 rounded-2xl font-bold gap-2 shadow-lg shadow-primary/20">
+              <Plus className="h-5 w-5" /> Post Notice
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-black flex items-center gap-2">
+                <Megaphone className="h-6 w-6 text-primary" /> Post Notice for Students
+              </DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleSaveNotice} className="space-y-4 pt-4">
+              <div className="space-y-2">
+                <Label htmlFor="notice-title" className="font-bold">Notice Title *</Label>
+                <Input
+                  id="notice-title"
+                  placeholder="e.g. Extra Physics Doubt Session on Sunday"
+                  value={noticeTitle}
+                  onChange={(e) => setNoticeTitle(e.target.value)}
+                  required
+                  className="h-12 rounded-xl"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="notice-batch" className="font-bold">Target Audience</Label>
+                <Select value={noticeBatch} onValueChange={setNoticeBatch}>
+                  <SelectTrigger className="h-12 rounded-xl">
+                    <SelectValue placeholder="Select target batch" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">📢 All Batches / All Students</SelectItem>
+                    {batches.map(b => (
+                      <SelectItem key={b.id} value={b.id}>Batch: {b.name} ({b.year})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="notice-priority" className="font-bold">Priority</Label>
+                <Select value={noticePriority} onValueChange={(val: any) => setNoticePriority(val)}>
+                  <SelectTrigger className="h-12 rounded-xl">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="normal">Normal Announcement</SelectItem>
+                    <SelectItem value="important">Important Notice ⚠️</SelectItem>
+                    <SelectItem value="urgent">Urgent / Action Required 🚨</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="notice-content" className="font-bold">Notice Details / Message *</Label>
+                <textarea
+                  id="notice-content"
+                  rows={4}
+                  placeholder="Type the announcement details for students..."
+                  value={noticeContent}
+                  onChange={(e) => setNoticeContent(e.target.value)}
+                  required
+                  className="w-full p-3 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              <Button type="submit" className="w-full h-14 rounded-2xl font-black text-lg shadow-xl shadow-primary/20 mt-4">
+                Publish Notice
+              </Button>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {notices.map(notice => {
+          const targetBatchName = notice.batchId === 'all' || !notice.batchId
+            ? 'All Students'
+            : batches.find(b => b.id === notice.batchId)?.name || 'Specific Batch';
+          const canDelete = notice.authorId === currentUser?.id || isFallbackTeacher;
+
+          return (
+            <div
+              key={notice.id}
+              className={`p-5 rounded-2xl border-2 bg-card hover:shadow-lg transition-all flex flex-col justify-between ${
+                notice.priority === 'urgent'
+                  ? 'border-red-500/40 bg-red-500/5'
+                  : notice.priority === 'important'
+                  ? 'border-amber-500/40 bg-amber-500/5'
+                  : 'border-primary/20'
+              }`}
+            >
+              <div>
+                <div className="flex justify-between items-start mb-2 gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
+                      notice.priority === 'urgent'
+                        ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 animate-pulse'
+                        : notice.priority === 'important'
+                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+                        : 'bg-primary/10 text-primary'
+                    }`}>
+                      {notice.priority || 'Announcement'}
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted font-bold">
+                      {targetBatchName}
+                    </span>
+                  </div>
+
+                  {canDelete && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDeleteNotice(notice.id)}
+                      className="h-8 w-8 text-destructive hover:bg-destructive/10 rounded-xl shrink-0"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+
+                <h4 className="text-lg font-bold text-foreground mb-2">{notice.title}</h4>
+                <p className="text-sm text-foreground/85 whitespace-pre-wrap mb-4">{notice.content}</p>
+              </div>
+
+              <div className="text-[11px] text-muted-foreground pt-3 border-t flex items-center justify-between">
+                <span>By: <strong>{notice.authorName}</strong> ({notice.authorRole})</span>
+                <span>{new Date(notice.createdAt).toLocaleDateString()}</span>
+              </div>
+            </div>
+          );
+        })}
+
+        {notices.length === 0 && (
+          <div className="col-span-full py-12 text-center text-muted-foreground">
+            <Bell className="h-12 w-12 mx-auto mb-3 text-muted-foreground/30" />
+            <p className="font-bold">No notices posted yet</p>
+            <p className="text-sm">Click "Post Notice" to send announcements to students.</p>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+
   return (
     <DashboardLayout role="teacher" title="Teacher Dashboard">
       <div className="hidden lg:flex items-center gap-3 mb-8">
@@ -688,11 +1369,13 @@ const TeacherDashboard = () => {
         {activeTab === "classes" && renderClasses()}
         {activeTab === "attendance" && renderAttendance()}
         {activeTab === "notes" && renderNotes()}
+        {activeTab === "remarks" && renderRemarks()}
+        {activeTab === "notices" && renderNotices()}
       </div>
 
       {/* Bottom Nav for Mobile */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-card border-t border-border/40 shadow-lg z-40 backdrop-blur-lg">
-        <div className="flex items-center justify-around px-6 py-2">
+        <div className="flex items-center justify-around px-2 py-2">
           {tabOptions.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -701,12 +1384,12 @@ const TeacherDashboard = () => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className="flex flex-col items-center gap-1 p-2 min-w-[80px] transition-colors"
+                className="flex flex-col items-center gap-0.5 p-1 min-w-[60px] transition-colors"
               >
-                <div className={`p-2 rounded-xl transition-all duration-300 ${isActive ? 'bg-primary/10' : ''}`}>
+                <div className={`p-1.5 rounded-xl transition-all duration-300 ${isActive ? 'bg-primary/10' : ''}`}>
                   <Icon
                     strokeWidth={isActive ? 2.5 : 2}
-                    className={`h-6 w-6 ${isActive ? "text-primary" : "text-muted-foreground"}`}
+                    className={`h-5 w-5 ${isActive ? "text-primary" : "text-muted-foreground"}`}
                   />
                 </div>
                 <span className={`text-[10px] font-bold ${isActive ? "text-primary" : "text-muted-foreground"}`}>{tab.label}</span>

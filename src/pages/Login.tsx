@@ -113,21 +113,21 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-6">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {roles.map((role, index) => {
               const Icon = role.icon;
               return (
                 <Card
                   key={role.id}
-                  className="p-8 cursor-pointer transition-all duration-300 hover:shadow-lg hover:-translate-y-1 border-2 hover:border-primary/50 animate-in fade-in slide-in-from-bottom-8"
+                  className="p-6 cursor-pointer transition-all duration-300 hover:shadow-lg hover:-translate-y-1 border-2 hover:border-primary/50 animate-in fade-in slide-in-from-bottom-8"
                   style={{ animationDelay: `${index * 100}ms` }}
                   onClick={() => setSelectedRole(role.id)}
                 >
-                  <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${role.color} flex items-center justify-center mb-6 shadow-lg`}>
-                    <Icon className="h-8 w-8 text-white" />
+                  <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${role.color} flex items-center justify-center mb-5 shadow-lg`}>
+                    <Icon className="h-7 w-7 text-white" />
                   </div>
-                  <h3 className="text-2xl font-bold mb-2">{role.title}</h3>
-                  <p className="text-muted-foreground">{role.description}</p>
+                  <h3 className="text-xl font-bold mb-2">{role.title}</h3>
+                  <p className="text-muted-foreground text-sm leading-relaxed">{role.description}</p>
                 </Card>
               );
             })}
@@ -165,7 +165,7 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
           <p className="text-muted-foreground">{currentRole.description}</p>
         </div>
 
-        <form onSubmit={handleLogin} className="space-y-6">
+        <form onSubmit={handleLogin} className="space-y-5">
           <div className="space-y-2">
             <Label htmlFor="email">Email Address</Label>
             <Input
@@ -196,7 +196,7 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
         </form>
 
         {(selectedRole === 'staff' || selectedRole === 'student' || selectedRole === 'teacher') && (
-          <p className="text-center text-sm text-muted-foreground mt-6">
+          <p className="text-center text-xs text-muted-foreground mt-4">
             Accounts are created in the Admin panel
           </p>
         )}

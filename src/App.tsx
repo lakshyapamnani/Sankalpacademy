@@ -25,7 +25,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       {isElectron ? (
-        <HashRouter>
+        <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Routes>
             <Route path="/" element={<Navigate to="/admin" replace />} />
             <Route path="/admin" element={<Login defaultRole="admin" forceRole={true} />} />
@@ -46,7 +46,7 @@ const App = () => (
           </Routes>
         </HashRouter>
       ) : (
-        <BrowserRouter>
+        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Routes>
             <Route path="/" element={<Navigate to="/student" replace />} />
             <Route path="/student" element={<Login defaultRole="student" forceRole={true} />} />

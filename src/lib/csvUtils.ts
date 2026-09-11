@@ -142,7 +142,7 @@ export function downloadStudentCSVTemplate() {
     "Password",
     "Phone Number",
     "Parent WhatsApp",
-    "College Name",
+    "School Name",
     "Class/Grade",
     "WhatsApp Number",
     "Date of Birth"
@@ -156,7 +156,7 @@ export function downloadStudentCSVTemplate() {
       "rahul123",
       "9876543210",
       "9876543211",
-      "National College",
+      "Delhi Public School",
       "12th Science",
       "9876543210",
       "2006-05-15"

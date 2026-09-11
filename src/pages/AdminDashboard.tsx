@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit, ArrowLeft, Search, Download, MessageSquare, Eye, TrendingUp, FileText, Trash2, GraduationCap, LogIn, Key, Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Layers, Settings, Image, PenTool, Building, Save } from "lucide-react";
+import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit, ArrowLeft, Search, Download, MessageSquare, Eye, TrendingUp, FileText, Trash2, GraduationCap, LogIn, Key, Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Layers, Settings, Image, PenTool, Building, Save, Bell, Megaphone, Award, AlertTriangle, Star, ThumbsUp, ThumbsDown, Send, Filter, Check, Clock, ExternalLink } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -52,6 +52,7 @@ import {
   deleteNote,
   getTeachers,
   addTeacher,
+  updateTeacher,
   deleteTeacher,
   getAttendance,
   Student,
@@ -76,6 +77,15 @@ import {
   addLead,
   updateLead,
   deleteLead,
+  getStudentRemarks,
+  addStudentRemark,
+  deleteStudentRemark,
+  getNotices,
+  addNotice,
+  deleteNotice,
+  StudentRemark,
+  Notice,
+  RemarkType,
   setCurrentUser,
 } from "@/lib/localStorage";
 import FeesDashboardOverview from "@/components/fees/FeesDashboardOverview";
@@ -164,7 +174,7 @@ const AdminDashboard = () => {
     return `${year}-${month}-${day}`;
   };
 
-  const [activeTab, setActiveTab] = useState<'batches' | 'students' | 'leads' | 'staff' | 'teachers' | 'classes' | 'fees' | 'tests' | 'attendance' | 'birthdays' | 'notes' | 'settings'>('students');
+  const [activeTab, setActiveTab] = useState<'batches' | 'students' | 'leads' | 'staff' | 'teachers' | 'classes' | 'fees' | 'tests' | 'attendance' | 'birthdays' | 'notes' | 'remarks' | 'notices' | 'settings'>('students');
   const [currentDateStr, setCurrentDateStr] = useState<string>('');
 
   useEffect(() => {
@@ -198,6 +208,29 @@ const AdminDashboard = () => {
   const [noteSubject, setNoteSubject] = useState('');
   const [openDialog, setOpenDialog] = useState<string | null>(null);
   const [selectedReportBatch, setSelectedReportBatch] = useState<string | null>(null);
+
+  // Remarks & Notices State
+  const [remarks, setRemarks] = useState<StudentRemark[]>([]);
+  const [notices, setNotices] = useState<Notice[]>([]);
+
+  // Remarks Tab State
+  const [adminRemarksSearch, setAdminRemarksSearch] = useState('');
+  const [adminRemarksTypeFilter, setAdminRemarksTypeFilter] = useState<'all' | 'appreciation' | 'complaint'>('all');
+  const [adminRemarksBatchFilter, setAdminRemarksBatchFilter] = useState('all');
+  const [isAddAdminRemarkOpen, setIsAddAdminRemarkOpen] = useState(false);
+  const [selectedStudentForAdminRemark, setSelectedStudentForAdminRemark] = useState<Student | null>(null);
+  const [adminRemarkStudentSearch, setAdminRemarkStudentSearch] = useState('');
+  const [adminRemarkType, setAdminRemarkType] = useState<RemarkType>('appreciation');
+  const [adminRemarkTitle, setAdminRemarkTitle] = useState('');
+  const [adminRemarkDescription, setAdminRemarkDescription] = useState('');
+  const [adminRemarkSubject, setAdminRemarkSubject] = useState('');
+
+  // Notices Tab State
+  const [isAddAdminNoticeOpen, setIsAddAdminNoticeOpen] = useState(false);
+  const [adminNoticeTitle, setAdminNoticeTitle] = useState('');
+  const [adminNoticeContent, setAdminNoticeContent] = useState('');
+  const [adminNoticeBatch, setAdminNoticeBatch] = useState('all');
+  const [adminNoticePriority, setAdminNoticePriority] = useState<'normal' | 'important' | 'urgent'>('normal');
 
   // Fees State
   const [selectedStudentForFees, setSelectedStudentForFees] = useState<Student | null>(null);
@@ -427,6 +460,8 @@ const AdminDashboard = () => {
     setNotes(getNotes());
     setTeachersState(getTeachers());
     setLeads(getLeads());
+    setRemarks(getStudentRemarks());
+    setNotices(getNotices());
 
     const records = await getFeeRecords();
     setAllFeeRecords(records || []);
@@ -2636,34 +2671,39 @@ const AdminDashboard = () => {
   const handleEditTeacher = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!editingTeacher) return;
-    const formData = new FormData(e.currentTarget);
-    const name = formData.get('name') as string;
-    const password = formData.get('password') as string;
+    try {
+      const formData = new FormData(e.currentTarget);
+      const name = formData.get('name') as string;
+      const password = formData.get('password') as string;
 
-    if (!name.trim()) {
-      toast.error("Teacher name is required");
-      return;
+      if (!name || !name.trim()) {
+        toast.error("Teacher name is required");
+        return;
+      }
+
+      const finalSubjects = [...editTeacherSubjectSelection];
+      if (editCustomTeacherSubject.trim() && !finalSubjects.includes(editCustomTeacherSubject.trim())) {
+        finalSubjects.push(editCustomTeacherSubject.trim());
+      }
+
+      const updates: Partial<Teacher> = {
+        name: name.trim(),
+        assignedSubjects: finalSubjects,
+      };
+      if (password && password.trim()) {
+        updates.password = password.trim();
+      }
+
+      updateTeacher(editingTeacher.id, updates);
+      toast.success("Teacher updated successfully");
+      setEditingTeacher(null);
+      setEditTeacherSubjectSelection([]);
+      setEditCustomTeacherSubject('');
+      loadData();
+    } catch (error: any) {
+      console.error("Error updating teacher:", error);
+      toast.error(error.message || "Failed to update teacher");
     }
-
-    const finalSubjects = [...editTeacherSubjectSelection];
-    if (editCustomTeacherSubject.trim() && !finalSubjects.includes(editCustomTeacherSubject.trim())) {
-      finalSubjects.push(editCustomTeacherSubject.trim());
-    }
-
-    const updates: Partial<Teacher> = {
-      name,
-      assignedSubjects: finalSubjects,
-    };
-    if (password && password.trim()) {
-      updates.password = password.trim();
-    }
-
-    updateTeacher(editingTeacher.id, updates);
-    toast.success("Teacher updated successfully");
-    setEditingTeacher(null);
-    setEditTeacherSubjectSelection([]);
-    setEditCustomTeacherSubject('');
-    loadData();
   };
 
   const handleDeleteTeacher = (teacherId: string) => {
@@ -2811,9 +2851,104 @@ const AdminDashboard = () => {
     { id: 'attendance', label: 'Reports', icon: BarChart3, action: () => setActiveTab('attendance') },
     { id: 'tests', label: 'Tests', icon: CheckSquare, action: () => setActiveTab('tests') },
     { id: 'notes', label: 'Notes', icon: FileText, action: () => setActiveTab('notes') },
+    { id: 'remarks', label: 'Remarks', icon: MessageSquare, action: () => setActiveTab('remarks') },
+    { id: 'notices', label: 'Notices', icon: Bell, action: () => setActiveTab('notices') },
     { id: 'birthdays', label: 'Birthdays', icon: Cake, action: () => setActiveTab('birthdays') },
     { id: 'settings', label: 'Settings', icon: Settings, action: () => setActiveTab('settings') },
   ];
+
+  const handleSaveAdminRemark = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedStudentForAdminRemark) {
+      toast.error("Please search and select a student first");
+      return;
+    }
+    if (!adminRemarkTitle.trim() || !adminRemarkDescription.trim()) {
+      toast.error("Please fill in remark title and description");
+      return;
+    }
+
+    try {
+      const studentBatch = batches.find(b => b.id === selectedStudentForAdminRemark.batchId);
+      const newRemark: StudentRemark = {
+        id: Date.now().toString(),
+        studentId: selectedStudentForAdminRemark.id,
+        studentName: selectedStudentForAdminRemark.name,
+        batchId: selectedStudentForAdminRemark.batchId,
+        batchName: studentBatch?.name || 'Unknown Batch',
+        type: adminRemarkType,
+        title: adminRemarkTitle.trim(),
+        description: adminRemarkDescription.trim(),
+        subject: adminRemarkSubject.trim() || 'General',
+        authorId: 'admin',
+        authorName: 'Admin Office',
+        authorRole: 'admin',
+        createdAt: new Date().toISOString(),
+      };
+
+      await addStudentRemark(newRemark);
+      toast.success(`${adminRemarkType === 'appreciation' ? '⭐ Appreciation' : '⚠️ Complaint'} saved for ${selectedStudentForAdminRemark.name}!`);
+      setIsAddAdminRemarkOpen(false);
+      setSelectedStudentForAdminRemark(null);
+      setAdminRemarkTitle('');
+      setAdminRemarkDescription('');
+      setAdminRemarkSubject('');
+      loadData();
+    } catch (err: any) {
+      toast.error("Failed to add remark: " + (err.message || "Unknown error"));
+    }
+  };
+
+  const handleDeleteAdminRemark = async (remarkId: string) => {
+    if (await deleteStudentRemark(remarkId)) {
+      toast.success("Remark deleted");
+      loadData();
+    } else {
+      toast.error("Failed to delete remark");
+    }
+  };
+
+  const handleSaveAdminNotice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminNoticeTitle.trim() || !adminNoticeContent.trim()) {
+      toast.error("Please fill in both notice title and message");
+      return;
+    }
+
+    try {
+      const newNotice: Notice = {
+        id: Date.now().toString(),
+        title: adminNoticeTitle.trim(),
+        content: adminNoticeContent.trim(),
+        batchId: adminNoticeBatch,
+        authorId: 'admin',
+        authorName: 'Admin Office',
+        authorRole: 'admin',
+        priority: adminNoticePriority,
+        createdAt: new Date().toISOString(),
+      };
+
+      await addNotice(newNotice);
+      toast.success("Notice broadcasted to student portals & synced with Firebase!");
+      setIsAddAdminNoticeOpen(false);
+      setAdminNoticeTitle('');
+      setAdminNoticeContent('');
+      setAdminNoticeBatch('all');
+      setAdminNoticePriority('normal');
+      loadData();
+    } catch (err: any) {
+      toast.error("Failed to post notice: " + (err.message || "Unknown error"));
+    }
+  };
+
+  const handleDeleteAdminNotice = async (noticeId: string) => {
+    if (await deleteNotice(noticeId)) {
+      toast.success("Notice deleted");
+      loadData();
+    } else {
+      toast.error("Failed to delete notice");
+    }
+  };
 
   return (
     <>
@@ -2900,8 +3035,8 @@ const AdminDashboard = () => {
                             <Input id="student-parentWhatsApp" name="parentWhatsApp" placeholder="Include country code e.g. 91..." />
                           </div>
                           <div>
-                            <Label htmlFor="student-collegeName">College Name</Label>
-                            <Input id="student-collegeName" name="collegeName" />
+                            <Label htmlFor="student-collegeName">School Name</Label>
+                            <Input id="student-collegeName" name="collegeName" placeholder="School Name" />
                           </div>
                           <div>
                             <Label htmlFor="student-class">Class/Grade</Label>
@@ -2954,7 +3089,7 @@ const AdminDashboard = () => {
                             </div>
                             <div className="text-[11px] text-muted-foreground bg-background/80 p-2.5 rounded-lg border font-mono space-y-1">
                               <p className="font-bold text-foreground font-sans">Supported Headers:</p>
-                              <p>Full Name, Email, Batch Name, Password, Phone Number, Parent WhatsApp, College Name, Class/Grade, WhatsApp Number, Date of Birth</p>
+                              <p>Full Name, Email, Batch Name, Password, Phone Number, Parent WhatsApp, School Name, Class/Grade, WhatsApp Number, Date of Birth</p>
                               <p className="text-emerald-600 dark:text-emerald-400 font-sans italic pt-1">
                                 💡 Tip: If a batch specified in the CSV does not exist, it will be created automatically!
                               </p>
@@ -3097,7 +3232,7 @@ const AdminDashboard = () => {
                           </div>
                           <div>
                             <Label htmlFor="edit-student-email">Email</Label>
-                            <Input id="edit-student-email" name="email" type="email" defaultValue={editingStudent.email} required disabled title="Email cannot be changed" />
+                            <Input id="edit-student-email" name="email" type="email" defaultValue={editingStudent.email} required />
                           </div>
                           <div>
                             <Label htmlFor="edit-student-phoneNo">Phone Number</Label>
@@ -3108,8 +3243,8 @@ const AdminDashboard = () => {
                             <Input id="edit-student-parentWhatsApp" name="parentWhatsApp" defaultValue={editingStudent.parentWhatsApp} />
                           </div>
                           <div>
-                            <Label htmlFor="edit-student-collegeName">College Name</Label>
-                            <Input id="edit-student-collegeName" name="collegeName" defaultValue={editingStudent.collegeName} />
+                            <Label htmlFor="edit-student-collegeName">School Name</Label>
+                            <Input id="edit-student-collegeName" name="collegeName" placeholder="School Name" defaultValue={editingStudent.collegeName} />
                           </div>
                           <div>
                             <Label htmlFor="edit-student-class">Class/Grade</Label>
@@ -3211,7 +3346,7 @@ const AdminDashboard = () => {
                             </div>
                             <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                               {student.collegeName && (
-                                <p className="col-span-2"><span className="font-medium">College:</span> {student.collegeName}</p>
+                                <p className="col-span-2"><span className="font-medium">School:</span> {student.collegeName}</p>
                               )}
                               {student.parentWhatsApp && (
                                 <p className="col-span-2"><span className="font-medium">Parent WA:</span> {student.parentWhatsApp}</p>
@@ -3459,7 +3594,7 @@ const AdminDashboard = () => {
                                 <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
                                   {student.studentClass && <span>Class: <strong className="text-foreground">{student.studentClass}</strong></span>}
                                   <span>Batch: <strong className="text-foreground">{batch?.name || 'Unknown'}</strong></span>
-                                  {student.collegeName && <span>College: <strong className="text-foreground">{student.collegeName}</strong></span>}
+                                  {student.collegeName && <span>School: <strong className="text-foreground">{student.collegeName}</strong></span>}
                                 </div>
                               </div>
                               <div className="flex gap-2">
@@ -3984,8 +4119,8 @@ const AdminDashboard = () => {
                               <Input id="lead-course" name="course" placeholder="e.g. 12th Physics & Maths / NEET batch" />
                             </div>
                             <div>
-                              <Label htmlFor="lead-college">College / School Name</Label>
-                              <Input id="lead-college" name="collegeName" placeholder="e.g. St. Xavier's College" />
+                              <Label htmlFor="lead-college">School Name</Label>
+                              <Input id="lead-college" name="collegeName" placeholder="e.g. St. Xavier's School" />
                             </div>
                             <div>
                               <Label htmlFor="lead-parent">Parent Phone / WhatsApp</Label>
@@ -4087,7 +4222,7 @@ const AdminDashboard = () => {
 
                               <div className="space-y-1 my-3 text-xs">
                                 {lead.course && <p><span className="font-semibold">Interested Course:</span> {lead.course}</p>}
-                                {lead.collegeName && <p><span className="font-semibold">College/School:</span> {lead.collegeName}</p>}
+                                {lead.collegeName && <p><span className="font-semibold">School:</span> {lead.collegeName}</p>}
                                 {lead.phoneNo && <p><span className="font-semibold">Phone:</span> 📞 {lead.phoneNo}</p>}
                                 {lead.parentWhatsApp && <p><span className="font-semibold">Parent Contact:</span> 💬 {lead.parentWhatsApp}</p>}
                                 {lead.notes && <p className="text-muted-foreground italic bg-muted/30 p-2 rounded-md border mt-2">"{lead.notes}"</p>}
@@ -4151,8 +4286,8 @@ const AdminDashboard = () => {
                           <Input id="edit-lead-course" name="course" defaultValue={editingLead.course} />
                         </div>
                         <div>
-                          <Label htmlFor="edit-lead-college">College / School Name</Label>
-                          <Input id="edit-lead-college" name="collegeName" defaultValue={editingLead.collegeName} />
+                          <Label htmlFor="edit-lead-college">School Name</Label>
+                          <Input id="edit-lead-college" name="collegeName" placeholder="School Name" defaultValue={editingLead.collegeName} />
                         </div>
                         <div>
                           <Label htmlFor="edit-lead-parent">Parent Phone / WhatsApp</Label>
@@ -4220,8 +4355,8 @@ const AdminDashboard = () => {
 
                         <div className="grid grid-cols-2 gap-4">
                           <div>
-                            <Label htmlFor="convert-collegeName">College / School Name</Label>
-                            <Input id="convert-collegeName" name="collegeName" defaultValue={convertingLead.collegeName} />
+                            <Label htmlFor="convert-collegeName">School Name</Label>
+                            <Input id="convert-collegeName" name="collegeName" placeholder="School Name" defaultValue={convertingLead.collegeName} />
                           </div>
                           <div>
                             <Label htmlFor="convert-course">Course / Class</Label>
@@ -4689,7 +4824,7 @@ const AdminDashboard = () => {
                                       <div className="flex justify-between items-start border-b pb-4">
                                         <div>
                                           <h3 className="text-2xl font-bold">{selectedStudentForFees.name}</h3>
-                                          <p className="text-sm text-muted-foreground">{selectedStudentForFees.collegeName || "No College specified"} • {selectedStudentForFees.studentClass || "No Class specified"}</p>
+                                          <p className="text-sm text-muted-foreground">{selectedStudentForFees.collegeName || "No School specified"} • {selectedStudentForFees.studentClass || "No Class specified"}</p>
                                         </div>
                                         
                                         {feeRecord && (
@@ -7896,6 +8031,415 @@ const AdminDashboard = () => {
                 </form>
               </div>
             )}
+
+            {/* REMARKS TAB */}
+            {activeTab === 'remarks' && (
+              <div className="space-y-6">
+                <Card className="p-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4 border-b pb-6">
+                    <div>
+                      <h3 className="text-2xl font-black text-primary flex items-center gap-2">
+                        <MessageSquare className="h-6 w-6 text-primary" /> Student Remarks & Observations
+                      </h3>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Track, review, and add teacher/staff feedback, appreciations, and complaints for all students.
+                      </p>
+                    </div>
+
+                    <Dialog open={isAddAdminRemarkOpen} onOpenChange={setIsAddAdminRemarkOpen}>
+                      <DialogTrigger asChild>
+                        <Button className="h-12 px-6 rounded-2xl font-bold gap-2 shadow-lg shadow-primary/20">
+                          <Plus className="h-5 w-5" /> Add Student Remark
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
+                        <DialogHeader>
+                          <DialogTitle className="text-2xl font-black flex items-center gap-2">
+                            <MessageSquare className="h-6 w-6 text-primary" /> Add Remark for Student
+                          </DialogTitle>
+                        </DialogHeader>
+                        <form onSubmit={handleSaveAdminRemark} className="space-y-5 pt-4">
+                          {/* Student search & select inside dialog */}
+                          <div className="space-y-2">
+                            <Label className="font-bold">Select Target Student *</Label>
+                            <div className="relative">
+                              <Search className="absolute left-3.5 top-3 h-4 w-4 text-muted-foreground" />
+                              <Input
+                                value={adminRemarkStudentSearch}
+                                onChange={(e) => setAdminRemarkStudentSearch(e.target.value)}
+                                placeholder="Search student by name or batch..."
+                                className="h-10 pl-10 rounded-xl"
+                              />
+                            </div>
+                            <div className="max-h-36 overflow-y-auto p-1 border rounded-xl space-y-1">
+                              {students
+                                .filter(s => {
+                                  const q = adminRemarkStudentSearch.toLowerCase().trim();
+                                  if (!q) return true;
+                                  return (s.name || '').toLowerCase().includes(q) || (s.email || '').toLowerCase().includes(q);
+                                })
+                                .map(s => {
+                                  const isSel = selectedStudentForAdminRemark?.id === s.id;
+                                  const b = batches.find(x => x.id === s.batchId);
+                                  return (
+                                    <div
+                                      key={s.id}
+                                      onClick={() => setSelectedStudentForAdminRemark(s)}
+                                      className={`p-2 rounded-lg cursor-pointer flex items-center justify-between text-xs transition-colors ${
+                                        isSel ? 'bg-primary text-primary-foreground font-bold' : 'hover:bg-muted'
+                                      }`}
+                                    >
+                                      <span>{s.name} ({b?.name || 'No Batch'})</span>
+                                      {isSel && <Check className="h-4 w-4" />}
+                                    </div>
+                                  );
+                                })}
+                            </div>
+                            {selectedStudentForAdminRemark && (
+                              <p className="text-xs text-emerald-600 dark:text-emerald-400 font-bold">
+                                Selected: {selectedStudentForAdminRemark.name} ({batches.find(b => b.id === selectedStudentForAdminRemark.batchId)?.name || 'Batch'})
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Type toggle */}
+                          <div>
+                            <Label className="font-bold text-sm mb-2 block">Remark Type</Label>
+                            <div className="grid grid-cols-2 gap-3">
+                              <button
+                                type="button"
+                                onClick={() => setAdminRemarkType('appreciation')}
+                                className={`p-3 rounded-xl border-2 flex items-center justify-center gap-2 font-bold text-xs transition-all ${
+                                  adminRemarkType === 'appreciation'
+                                    ? 'border-emerald-500 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-2 ring-emerald-500/20'
+                                    : 'border-muted hover:border-emerald-500/40 text-muted-foreground'
+                                }`}
+                              >
+                                <Award className="h-4 w-4 text-emerald-600" />
+                                <span>⭐ Appreciation</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setAdminRemarkType('complaint')}
+                                className={`p-3 rounded-xl border-2 flex items-center justify-center gap-2 font-bold text-xs transition-all ${
+                                  adminRemarkType === 'complaint'
+                                    ? 'border-amber-500 bg-amber-500/15 text-amber-700 dark:text-amber-300 ring-2 ring-amber-500/20'
+                                    : 'border-muted hover:border-amber-500/40 text-muted-foreground'
+                                }`}
+                              >
+                                <AlertTriangle className="h-4 w-4 text-amber-600" />
+                                <span>⚠️ Complaint / Observation</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-3">
+                            <div className="col-span-2 space-y-1.5">
+                              <Label htmlFor="admin-remark-title" className="font-bold">Title *</Label>
+                              <Input
+                                id="admin-remark-title"
+                                value={adminRemarkTitle}
+                                onChange={(e) => setAdminRemarkTitle(e.target.value)}
+                                placeholder="e.g. Excellent Progress in Exams"
+                                required
+                                className="h-11 rounded-xl"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label htmlFor="admin-remark-subj" className="font-bold">Subject</Label>
+                              <Input
+                                id="admin-remark-subj"
+                                value={adminRemarkSubject}
+                                onChange={(e) => setAdminRemarkSubject(e.target.value)}
+                                placeholder="General"
+                                className="h-11 rounded-xl"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <Label htmlFor="admin-remark-desc" className="font-bold">Description *</Label>
+                            <textarea
+                              id="admin-remark-desc"
+                              rows={3}
+                              value={adminRemarkDescription}
+                              onChange={(e) => setAdminRemarkDescription(e.target.value)}
+                              placeholder="Type the detailed remarks..."
+                              required
+                              className="w-full p-3 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                            />
+                          </div>
+
+                          <Button type="submit" className="w-full h-12 rounded-xl font-bold shadow-lg">
+                            Save & Sync Remark
+                          </Button>
+                        </form>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+
+                  {/* Filter & Search Bar */}
+                  <div className="flex flex-col sm:flex-row items-center gap-3 mb-6">
+                    <div className="relative flex-1 w-full">
+                      <Search className="absolute left-3.5 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        value={adminRemarksSearch}
+                        onChange={(e) => setAdminRemarksSearch(e.target.value)}
+                        placeholder="Search remarks by student, teacher, title, or batch..."
+                        className="h-11 pl-10 rounded-xl"
+                      />
+                    </div>
+
+                    <Select value={adminRemarksBatchFilter} onValueChange={setAdminRemarksBatchFilter}>
+                      <SelectTrigger className="h-11 w-full sm:w-48 rounded-xl">
+                        <SelectValue placeholder="All Batches" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Batches</SelectItem>
+                        {batches.map(b => (
+                          <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    <div className="flex items-center gap-1.5 w-full sm:w-auto">
+                      {(['all', 'appreciation', 'complaint'] as const).map(type => (
+                        <button
+                          key={type}
+                          onClick={() => setAdminRemarksTypeFilter(type)}
+                          className={`text-xs px-3 py-2.5 rounded-xl font-bold transition-all flex-1 sm:flex-none ${
+                            adminRemarksTypeFilter === type
+                              ? 'bg-primary text-primary-foreground shadow-sm'
+                              : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                          }`}
+                        >
+                          {type === 'all' ? 'All' : type === 'appreciation' ? '⭐ Appreciations' : '⚠️ Complaints'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Remarks Cards Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {remarks
+                      .filter(r => {
+                        const q = adminRemarksSearch.toLowerCase().trim();
+                        const matchesQuery = !q || 
+                          (r.studentName || '').toLowerCase().includes(q) ||
+                          (r.title || '').toLowerCase().includes(q) ||
+                          (r.authorName || '').toLowerCase().includes(q) ||
+                          (r.batchName || '').toLowerCase().includes(q);
+                        const matchesType = adminRemarksTypeFilter === 'all' || r.type === adminRemarksTypeFilter;
+                        const matchesBatch = adminRemarksBatchFilter === 'all' || r.batchId === adminRemarksBatchFilter;
+                        return matchesQuery && matchesType && matchesBatch;
+                      })
+                      .map(r => (
+                        <div
+                          key={r.id}
+                          className={`p-5 rounded-3xl border-2 bg-card flex flex-col justify-between shadow-sm transition-all ${
+                            r.type === 'appreciation'
+                              ? 'border-emerald-500/20 hover:border-emerald-500/50 bg-emerald-500/5'
+                              : 'border-amber-500/20 hover:border-amber-500/50 bg-amber-500/5'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
+                                r.type === 'appreciation' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                              }`}>
+                                {r.type === 'appreciation' ? '⭐ Appreciation' : '⚠️ Complaint'}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDeleteAdminRemark(r.id)}
+                                className="h-7 w-7 text-destructive/70 hover:text-destructive rounded-lg"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+
+                            <h4 className="font-bold text-base text-foreground mb-0.5">{r.studentName || 'Student'}</h4>
+                            <p className="text-xs text-primary font-bold mb-2">{r.title}</p>
+                            <p className="text-xs text-foreground/80 whitespace-pre-wrap leading-relaxed mb-4">{r.description}</p>
+                          </div>
+
+                          <div className="pt-3 border-t text-[11px] text-muted-foreground flex items-center justify-between font-medium">
+                            <span>By: <strong>{r.authorName}</strong> ({r.authorRole})</span>
+                            <span>{new Date(r.createdAt).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                      ))}
+
+                    {remarks.length === 0 && (
+                      <div className="col-span-full py-16 text-center text-muted-foreground">
+                        <MessageSquare className="h-12 w-12 mx-auto mb-3 text-muted-foreground/30" />
+                        <p className="font-bold text-foreground">No student remarks recorded yet</p>
+                        <p className="text-xs mt-1">Teachers and staff can add remarks directly from their dashboards, or click "Add Student Remark" above.</p>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              </div>
+            )}
+
+            {/* NOTICES TAB */}
+            {activeTab === 'notices' && (
+              <div className="space-y-6">
+                <Card className="p-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4 border-b pb-6">
+                    <div>
+                      <h3 className="text-2xl font-black text-primary flex items-center gap-2">
+                        <Bell className="h-6 w-6 text-primary" /> Academy Notices & Announcements
+                      </h3>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Broadcast announcements and notifications to student dashboards in real-time.
+                      </p>
+                    </div>
+
+                    <Dialog open={isAddAdminNoticeOpen} onOpenChange={setIsAddAdminNoticeOpen}>
+                      <DialogTrigger asChild>
+                        <Button className="h-12 px-6 rounded-2xl font-bold gap-2 shadow-lg shadow-primary/20">
+                          <Plus className="h-5 w-5" /> Create Academy Notice
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
+                        <DialogHeader>
+                          <DialogTitle className="text-2xl font-black flex items-center gap-2">
+                            <Megaphone className="h-6 w-6 text-primary" /> Publish Notice to Students
+                          </DialogTitle>
+                        </DialogHeader>
+                        <form onSubmit={handleSaveAdminNotice} className="space-y-4 pt-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="admin-notice-title" className="font-bold">Notice Title *</Label>
+                            <Input
+                              id="admin-notice-title"
+                              placeholder="e.g. Schedule Update for Sunday Test / Fee Due Reminder"
+                              value={adminNoticeTitle}
+                              onChange={(e) => setAdminNoticeTitle(e.target.value)}
+                              required
+                              className="h-12 rounded-xl"
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="admin-notice-batch" className="font-bold">Target Audience</Label>
+                            <Select value={adminNoticeBatch} onValueChange={setAdminNoticeBatch}>
+                              <SelectTrigger className="h-12 rounded-xl">
+                                <SelectValue placeholder="Select target batch" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="all">📢 All Batches / All Students</SelectItem>
+                                {batches.map(b => (
+                                  <SelectItem key={b.id} value={b.id}>Batch: {b.name} ({b.year})</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="admin-notice-priority" className="font-bold">Priority Level</Label>
+                            <Select value={adminNoticePriority} onValueChange={(val: any) => setAdminNoticePriority(val)}>
+                              <SelectTrigger className="h-12 rounded-xl">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="normal">Normal Announcement</SelectItem>
+                                <SelectItem value="important">Important Notice ⚠️</SelectItem>
+                                <SelectItem value="urgent">Urgent / Action Required 🚨</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="admin-notice-content" className="font-bold">Notice Content / Message *</Label>
+                            <textarea
+                              id="admin-notice-content"
+                              rows={4}
+                              placeholder="Type the message for students..."
+                              value={adminNoticeContent}
+                              onChange={(e) => setAdminNoticeContent(e.target.value)}
+                              required
+                              className="w-full p-3 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                            />
+                          </div>
+
+                          <Button type="submit" className="w-full h-14 rounded-2xl font-black text-lg shadow-xl shadow-primary/20 mt-4">
+                            Publish & Sync Notice
+                          </Button>
+                        </form>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+
+                  {/* Notices Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {notices.map(notice => {
+                      const targetBatchName = notice.batchId === 'all' || !notice.batchId
+                        ? 'All Students'
+                        : batches.find(b => b.id === notice.batchId)?.name || 'Specific Batch';
+
+                      return (
+                        <div
+                          key={notice.id}
+                          className={`p-5 rounded-3xl border-2 bg-card hover:shadow-lg transition-all flex flex-col justify-between ${
+                            notice.priority === 'urgent'
+                              ? 'border-red-500/40 bg-red-500/5'
+                              : notice.priority === 'important'
+                              ? 'border-amber-500/40 bg-amber-500/5'
+                              : 'border-primary/20'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex justify-between items-start mb-2 gap-2">
+                              <div className="flex items-center gap-1.5">
+                                <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
+                                  notice.priority === 'urgent'
+                                    ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 animate-pulse'
+                                    : notice.priority === 'important'
+                                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+                                    : 'bg-primary/10 text-primary'
+                                }`}>
+                                  {notice.priority || 'Announcement'}
+                                </span>
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted font-bold">
+                                  {targetBatchName}
+                                </span>
+                              </div>
+
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDeleteAdminNotice(notice.id)}
+                                className="h-8 w-8 text-destructive hover:bg-destructive/10 rounded-xl shrink-0"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+
+                            <h4 className="text-lg font-bold text-foreground mb-2">{notice.title}</h4>
+                            <p className="text-sm text-foreground/85 whitespace-pre-wrap mb-4">{notice.content}</p>
+                          </div>
+
+                          <div className="text-[11px] text-muted-foreground pt-3 border-t flex items-center justify-between font-medium">
+                            <span>Posted by: <strong>{notice.authorName}</strong> ({notice.authorRole})</span>
+                            <span>{new Date(notice.createdAt).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {notices.length === 0 && (
+                      <div className="col-span-full py-16 text-center text-muted-foreground">
+                        <Bell className="h-12 w-12 mx-auto mb-3 text-muted-foreground/30" />
+                        <p className="font-bold text-foreground">No notices posted yet</p>
+                        <p className="text-xs mt-1">Click "Create Academy Notice" to broadcast announcements to students.</p>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              </div>
+            )}
           </div>
         {/* Installment Schedule Popup Dialog */}
         <Dialog open={isInstallmentModalOpen} onOpenChange={setIsInstallmentModalOpen}>
@@ -8990,7 +9534,7 @@ const AdminDashboard = () => {
                   <tbody>
                     <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Name:</td><td className="font-semibold">{receiptData.student.name}</td></tr>
                     <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Phone:</td><td>{receiptData.student.phoneNo || 'N/A'}</td></tr>
-                    <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">College:</td><td>{receiptData.student.collegeName || 'N/A'}</td></tr>
+                    <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">School:</td><td>{receiptData.student.collegeName || 'N/A'}</td></tr>
                     <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Standard / Grade:</td><td className="font-medium">{receiptData.student.studentClass || batches.find(b => b.id === receiptData.student.batchId)?.name || 'N/A'}</td></tr>
                   </tbody>
                 </table>
@@ -9177,7 +9721,7 @@ const AdminDashboard = () => {
                       <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Name:</td><td className="font-semibold">{student.name}</td></tr>
                       <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Phone:</td><td>{student.phoneNo || 'N/A'}</td></tr>
                       <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Email:</td><td>{student.email || 'N/A'}</td></tr>
-                      <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">College/Class:</td><td>{student.collegeName || 'N/A'} {student.studentClass ? `(${student.studentClass})` : ''}</td></tr>
+                      <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">School/Class:</td><td>{student.collegeName || 'N/A'} {student.studentClass ? `(${student.studentClass})` : ''}</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -9857,7 +10401,7 @@ const AdminDashboard = () => {
                     <tbody>
                       <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Name:</td><td className="font-semibold">{student.name}</td></tr>
                       <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Phone:</td><td>{student.phoneNo || 'N/A'}</td></tr>
-                      <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">College:</td><td>{student.collegeName || 'N/A'}</td></tr>
+                      <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">School:</td><td>{student.collegeName || 'N/A'}</td></tr>
                       <tr><td className="pr-3 py-0.5 text-gray-500 whitespace-nowrap">Class:</td><td>{student.studentClass || 'N/A'}</td></tr>
                     </tbody>
                   </table>
