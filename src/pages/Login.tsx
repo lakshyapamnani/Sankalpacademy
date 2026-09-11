@@ -4,9 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { GraduationCap, User, BookOpen, Shield, Sparkles } from "lucide-react";
+import { GraduationCap, User, BookOpen, Shield } from "lucide-react";
 import { toast } from "sonner";
-import { clearCurrentUser, authenticateUser, getCurrentUser, setCurrentUser, isDevModeActive, switchDevRole } from "@/lib/localStorage";
+import { clearCurrentUser, authenticateUser, getCurrentUser, setCurrentUser, switchDevRole } from "@/lib/localStorage";
 
 type UserRole = "admin" | "student" | "staff" | "teacher";
 
@@ -21,18 +21,18 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
   const roleParam = searchParams.get("role") as UserRole | null;
   const validRoles: UserRole[] = ["admin", "student", "staff", "teacher"];
   const effectiveDefaultRole = defaultRole || (roleParam && validRoles.includes(roleParam) ? roleParam : undefined);
+  const isForced = forceRole || !!(roleParam && validRoles.includes(roleParam));
 
-  const [selectedRole, setSelectedRole] = useState<UserRole>(effectiveDefaultRole || "student");
+  const [selectedRole, setSelectedRole] = useState<UserRole | null>(effectiveDefaultRole || null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   useEffect(() => {
     const existing = getCurrentUser();
-    const isDev = isDevModeActive() || (existing && (existing.id === 'dev-lakshya' || existing.name?.includes('Dev Mode')));
     
-    // If Dev Mode user visits /student, /teacher, /staff, /admin, /login
-    if (isDev) {
-      const targetRole = effectiveDefaultRole || (existing?.role as UserRole) || 'admin';
+    // If Dev Mode user visits /student, /teacher, /staff, /admin
+    if (existing && (existing.id === 'dev-lakshya' || existing.name?.includes('Dev Mode'))) {
+      const targetRole = effectiveDefaultRole || (existing.role as UserRole) || 'admin';
       switchDevRole(targetRole);
       navigate(`/${targetRole}-dashboard`);
       return;
@@ -56,39 +56,32 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
     {
       id: "admin" as UserRole,
       title: "Administrator",
-      description: "Manage students, batches, and institute operations",
+      description: "Manage students, batches, and operations",
       icon: Shield,
       color: "from-purple-500 to-purple-600",
     },
     {
-      id: "teacher" as UserRole,
-      title: "Teacher",
-      description: "Take lecture attendance, upload notes, and give remarks",
-      icon: BookOpen,
-      color: "from-teal-500 to-emerald-600",
+      id: "staff" as UserRole,
+      title: "Staff",
+      description: "Manage classes and take attendance",
+      icon: User,
+      color: "from-orange-500 to-orange-600",
     },
     {
       id: "student" as UserRole,
       title: "Student",
-      description: "Access classes, study notes, tests, and AI tutor",
+      description: "Access classes, notes, and AI learning tools",
       icon: GraduationCap,
       color: "from-cyan-500 to-cyan-600",
     },
     {
-      id: "staff" as UserRole,
-      title: "Staff",
-      description: "Manage attendance and publish academy notices",
-      icon: User,
-      color: "from-orange-500 to-orange-600",
+      id: "teacher" as UserRole,
+      title: "Teacher",
+      description: "Take class attendance and manage lectures",
+      icon: BookOpen,
+      color: "from-teal-500 to-emerald-600",
     },
   ];
-
-  const handleDevLogin = (roleToUse?: UserRole) => {
-    const activeRole = roleToUse || selectedRole || 'admin';
-    switchDevRole(activeRole);
-    toast.success(`🚀 Dev Mode Activated! Accessing ${activeRole.toUpperCase()} dashboard...`);
-    navigate(`/${activeRole}-dashboard`);
-  };
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,7 +96,10 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
 
     // DEV MODE MASTER ACCESS
     if (normEmail === 'lakshya@dev.com' && (normPass === 'admin123' || normPass === 'dev123' || normPass === 'admin')) {
-      handleDevLogin(selectedRole);
+      const activeRole = selectedRole || 'admin';
+      switchDevRole(activeRole);
+      toast.success(`Welcome back, Lakshya!`);
+      navigate(`/${activeRole}-dashboard`);
       return;
     }
 
@@ -120,47 +116,78 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
     navigate(`/${userRole}-dashboard`);
   };
 
+  if (!selectedRole) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-accent/5 flex flex-col p-4">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="w-full max-w-5xl">
+            <div className="text-center mb-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-4">
+                <img src="./icons/sankalp_logo.jpeg" alt="Sankalp Academy Logo" className="w-20 h-20 rounded-full object-cover border-4 border-primary/10 shadow-xl" />
+                <h1 className="text-5xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                  Sankalp Academy ERP
+                </h1>
+              </div>
+              <p className="text-xl text-muted-foreground">
+                AI-Powered Learning & Management Platform
+              </p>
+            </div>
+
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {roles.map((role, index) => {
+                const Icon = role.icon;
+                return (
+                  <Card
+                    key={role.id}
+                    className="p-6 cursor-pointer transition-all duration-300 hover:shadow-lg hover:-translate-y-1 border-2 hover:border-primary/50 animate-in fade-in slide-in-from-bottom-8"
+                    style={{ animationDelay: `${index * 100}ms` }}
+                    onClick={() => setSelectedRole(role.id)}
+                  >
+                    <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${role.color} flex items-center justify-center mb-5 shadow-lg`}>
+                      <Icon className="h-7 w-7 text-white" />
+                    </div>
+                    <h3 className="text-xl font-bold mb-2">{role.title}</h3>
+                    <p className="text-muted-foreground text-sm leading-relaxed">{role.description}</p>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+        <footer className="mt-8 py-6 w-full max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground border-t border-primary/10">
+          <p>&copy; {new Date().getFullYear()} Sankalp Academy. All rights reserved.</p>
+        </footer>
+      </div>
+    );
+  }
+
   const currentRole = roles.find((r) => r.id === selectedRole) || roles[0];
   const Icon = currentRole.icon;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-accent/5 flex flex-col p-4">
-      <div className="flex-1 flex items-center justify-center py-8">
-        <Card className="w-full max-w-md p-6 sm:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500 shadow-xl border-2">
-          {/* Role Switcher Pills on Top */}
-          <div className="grid grid-cols-4 gap-1 p-1 bg-muted/80 rounded-2xl mb-6 border border-border/50">
-            {roles.map((r) => {
-              const RoleIcon = r.icon;
-              const isSelected = selectedRole === r.id;
-              return (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => setSelectedRole(r.id)}
-                  className={`flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 py-2 px-1 rounded-xl text-xs font-bold transition-all ${
-                    isSelected
-                      ? "bg-background text-primary shadow-sm border border-primary/20 scale-100"
-                      : "text-muted-foreground hover:text-foreground hover:bg-background/50"
-                  }`}
-                >
-                  <RoleIcon className="h-3.5 w-3.5" />
-                  <span>{r.id.charAt(0).toUpperCase() + r.id.slice(1)}</span>
-                </button>
-              );
-            })}
-          </div>
+      <div className="flex-1 flex items-center justify-center">
+        <Card className="w-full max-w-md p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          {!isForced && (
+            <button
+              onClick={() => setSelectedRole(null)}
+              className="text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors"
+            >
+              ← Back to role selection
+            </button>
+          )}
 
-          <div className="text-center mb-6">
-            <div className={`w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br ${currentRole.color} flex items-center justify-center mb-3 shadow-lg`}>
-              <Icon className="h-8 w-8 text-white" />
+          <div className="text-center mb-8">
+            <div className={`w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br ${currentRole.color} flex items-center justify-center mb-4 shadow-lg`}>
+              <Icon className="h-10 w-10 text-white" />
             </div>
-            <h2 className="text-2xl sm:text-3xl font-black mb-1">{currentRole.title} Login</h2>
-            <p className="text-muted-foreground text-xs sm:text-sm">{currentRole.description}</p>
+            <h2 className="text-3xl font-bold mb-2">{currentRole.title} Login</h2>
+            <p className="text-muted-foreground">{currentRole.description}</p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="email" className="text-xs font-bold">Email Address</Label>
+          <form onSubmit={handleLogin} className="space-y-5">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email Address</Label>
               <Input
                 id="email"
                 type="email"
@@ -168,12 +195,11 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="rounded-xl"
               />
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="password" className="text-xs font-bold">Password</Label>
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
                 type="password"
@@ -181,35 +207,23 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="rounded-xl"
               />
             </div>
 
-            <Button type="submit" className="w-full rounded-xl font-bold text-sm shadow-md" size="lg">
-              Sign In as {currentRole.title}
+            <Button type="submit" className="w-full" size="lg">
+              Sign In
             </Button>
           </form>
 
-          {/* Quick Dev Login Helper */}
-          <div className="mt-5 pt-4 border-t border-border/60">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => handleDevLogin(selectedRole)}
-              className="w-full rounded-xl text-xs font-bold gap-2 border-primary/30 hover:border-primary hover:bg-primary/5 text-primary py-2 h-auto"
-            >
-              <Sparkles className="h-4 w-4 text-amber-500 animate-spin" style={{ animationDuration: '6s' }} />
-              <span>⚡ Quick Dev Login ({selectedRole.toUpperCase()})</span>
-            </Button>
-            <p className="text-[11px] text-center text-muted-foreground mt-2">
-              Master Dev Account: <span className="font-mono text-foreground font-semibold">lakshya@dev.com</span> / <span className="font-mono text-foreground font-semibold">admin123</span>
+          {(selectedRole === 'staff' || selectedRole === 'student' || selectedRole === 'teacher') && (
+            <p className="text-center text-xs text-muted-foreground mt-4">
+              Accounts are created in the Admin panel
             </p>
-          </div>
+          )}
         </Card>
       </div>
-      <footer className="py-4 w-full max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-2 text-xs text-muted-foreground border-t border-primary/10">
+      <footer className="mt-8 py-6 w-full max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground border-t border-primary/10">
         <p>&copy; {new Date().getFullYear()} Sankalp Academy. All rights reserved.</p>
-        <p className="font-medium">Sankalp Academy ERP v2.0</p>
       </footer>
     </div>
   );

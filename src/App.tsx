@@ -13,8 +13,6 @@ import BatchDetails from "./pages/BatchDetails";
 import AppDownloadPage from "./pages/AppDownloadPage";
 import NotFound from "./pages/NotFound";
 
-import DevModeFloatingSwitcher from "./components/DevModeFloatingSwitcher";
-
 const queryClient = new QueryClient();
 
 const isElectron = typeof window !== 'undefined' && (
@@ -29,7 +27,6 @@ const App = () => (
       <Sonner />
       {isElectron ? (
         <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-          <DevModeFloatingSwitcher />
           <Routes>
             <Route path="/" element={<Navigate to="/admin" replace />} />
             <Route path="/admin" element={<Login defaultRole="admin" forceRole={true} />} />
@@ -60,7 +57,6 @@ const App = () => (
         </HashRouter>
       ) : (
         <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-          <DevModeFloatingSwitcher />
           <Routes>
             <Route path="/" element={<Navigate to="/student" replace />} />
             <Route path="/student" element={<Login defaultRole="student" forceRole={true} />} />
