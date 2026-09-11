@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { 
@@ -13,11 +13,7 @@ import {
   Smartphone, 
   Share2, 
   Check, 
-  ArrowRight, 
-  Sparkles,
-  Layers,
-  Zap,
-  Bell
+  Sparkles
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -33,7 +29,7 @@ const appConfigs = {
     title: "Sankalp Student App",
     badge: "Student Portal & Learning App",
     tagline: "Your all-in-one companion for classes, test series, study notes, teacher remarks, and academy notices.",
-    apkPath: "/downloads/Sankalp_Student.apk",
+    apkPath: "/Sankalp_Student.apk",
     apkFileName: "Sankalp_Student.apk",
     webPath: "/student",
     version: "v1.2.0 Release",
@@ -56,7 +52,7 @@ const appConfigs = {
     title: "Sankalp Teachers App",
     badge: "Faculty & Educator Portal",
     tagline: "Effortlessly manage lectures, mark daily batch attendance, share study notes, and provide student feedback.",
-    apkPath: "/downloads/Sankalp_Teachers.apk",
+    apkPath: "/Sankalp_Teachers.apk",
     apkFileName: "Sankalp_Teachers.apk",
     webPath: "/teacher",
     version: "v1.2.0 Release",
@@ -79,7 +75,7 @@ const appConfigs = {
     title: "Sankalp Staff App",
     badge: "Administration & Operations App",
     tagline: "Streamline institute batch management, take daily attendance, and broadcast academy-wide notices.",
-    apkPath: "/downloads/Sankalp_Staff.apk",
+    apkPath: "/Sankalp_Staff.apk",
     apkFileName: "Sankalp_Staff.apk",
     webPath: "/staff",
     version: "v1.2.0 Release",
@@ -104,16 +100,74 @@ const AppDownloadPage = ({ appType }: AppDownloadPageProps) => {
   const config = appConfigs[appType] || appConfigs.student;
   const Icon = config.icon;
   const [copied, setCopied] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
-  const handleDownload = () => {
-    toast.success(`Starting download: ${config.apkFileName}`);
-    // Trigger download via anchor
-    const link = document.createElement("a");
-    link.href = config.apkPath;
-    link.download = config.apkFileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleDownload = async () => {
+    setIsDownloading(true);
+    const toastId = toast.loading(`Preparing ${config.apkFileName}...`);
+    
+    // List of candidate paths where the APK is located
+    const candidateUrls = [
+      `/${config.apkFileName}`,
+      `/downloads/${config.apkFileName}`,
+      `./${config.apkFileName}`,
+      `./downloads/${config.apkFileName}`,
+      `/${appType}app/${config.apkFileName}`
+    ];
+
+    try {
+      let binaryBlob: Blob | null = null;
+
+      for (const url of candidateUrls) {
+        try {
+          const response = await fetch(url, { method: "GET" });
+          const contentType = (response.headers.get("content-type") || "").toLowerCase();
+          
+          // Verify that response is binary and not an SPA HTML fallback
+          if (response.ok && !contentType.includes("text/html")) {
+            const blob = await response.blob();
+            if (blob.size > 100000) { // Real APK is ~4.3MB
+              binaryBlob = blob;
+              break;
+            }
+          }
+        } catch {
+          // try next path
+        }
+      }
+
+      if (binaryBlob) {
+        const blobUrl = window.URL.createObjectURL(binaryBlob);
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = config.apkFileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 30000);
+        toast.success(`Download started: ${config.apkFileName} (${(binaryBlob.size / (1024 * 1024)).toFixed(1)} MB)`, { id: toastId });
+      } else {
+        // Direct anchor fallback
+        const a = document.createElement("a");
+        a.href = `/${config.apkFileName}`;
+        a.download = config.apkFileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        toast.success(`Download started: ${config.apkFileName}`, { id: toastId });
+      }
+    } catch {
+      // Direct browser navigation fallback
+      const a = document.createElement("a");
+      a.href = `/${config.apkFileName}`;
+      a.download = config.apkFileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      toast.success(`Download started: ${config.apkFileName}`, { id: toastId });
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   const handleCopyLink = () => {
@@ -135,7 +189,6 @@ const AppDownloadPage = ({ appType }: AppDownloadPageProps) => {
               alt="Sankalp Academy" 
               className="w-10 h-10 rounded-full object-cover border border-primary/20 shadow-md"
               onError={(e) => {
-                // fallback if relative path differs
                 (e.target as HTMLImageElement).src = "/icons/sankalp_logo.jpeg";
               }}
             />
@@ -202,17 +255,20 @@ const AppDownloadPage = ({ appType }: AppDownloadPageProps) => {
         {/* Primary Download & Action Card */}
         <Card className="p-6 sm:p-8 rounded-3xl border-2 border-primary/20 shadow-xl bg-card/80 backdrop-blur-xl max-w-2xl mx-auto mb-12">
           <div className="flex flex-col sm:flex-row gap-4">
-            <Button
-              size="lg"
+            <button
+              type="button"
+              disabled={isDownloading}
               onClick={handleDownload}
-              className={`flex-1 h-16 rounded-2xl bg-gradient-to-r ${config.color} hover:opacity-95 text-white font-black text-base shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center justify-center gap-3`}
+              className={`flex-1 h-16 rounded-2xl bg-gradient-to-r ${config.color} hover:opacity-95 text-white font-black text-base shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center justify-center gap-3 cursor-pointer disabled:opacity-75`}
             >
-              <Download className="h-6 w-6 animate-bounce" />
+              <Download className={`h-6 w-6 ${isDownloading ? 'animate-spin' : 'animate-bounce'}`} />
               <div className="text-left">
-                <div className="text-xs font-normal opacity-90 leading-none">Download Official APK</div>
+                <div className="text-xs font-normal opacity-90 leading-none">
+                  {isDownloading ? "Downloading Binary APK..." : "Download Official APK"}
+                </div>
                 <div className="text-base font-extrabold">{config.apkFileName} ({config.size})</div>
               </div>
-            </Button>
+            </button>
 
             <Button
               variant="outline"
@@ -225,11 +281,29 @@ const AppDownloadPage = ({ appType }: AppDownloadPageProps) => {
             </Button>
           </div>
 
-          <div className="mt-4 pt-4 border-t border-border/60 flex items-center justify-between text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-              Direct High-Speed Download
-            </span>
+          {/* Direct Mirrors & Share */}
+          <div className="mt-5 pt-4 border-t border-border/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="flex items-center gap-1">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                Direct links:
+              </span>
+              <a 
+                href={`/${config.apkFileName}`} 
+                download={config.apkFileName} 
+                className="px-2 py-0.5 rounded bg-muted hover:bg-muted/80 text-foreground font-mono font-bold transition-colors"
+              >
+                /{config.apkFileName}
+              </a>
+              <a 
+                href={`/downloads/${config.apkFileName}`} 
+                download={config.apkFileName} 
+                className="px-2 py-0.5 rounded bg-muted hover:bg-muted/80 text-foreground font-mono font-bold transition-colors"
+              >
+                /downloads/{config.apkFileName}
+              </a>
+            </div>
+
             <button
               onClick={handleCopyLink}
               className="flex items-center gap-1 hover:text-foreground font-semibold transition-colors"
@@ -278,7 +352,7 @@ const AppDownloadPage = ({ appType }: AppDownloadPageProps) => {
               </div>
               <h4 className="font-bold text-sm">Download APK</h4>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Click the Download button above. If browser warns about unknown file, tap <strong>"Download anyway"</strong>.
+                Click the Download button above. If browser warns about file security, tap <strong>"Download anyway"</strong>.
               </p>
             </div>
 
