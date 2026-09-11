@@ -52,9 +52,6 @@ import {
   getStudentRemarks,
   addStudentRemark,
   deleteStudentRemark,
-  getNotices,
-  addNotice,
-  deleteNotice,
   subscribeToRealtimeUpdates,
   isDevModeActive,
   Student,
@@ -63,27 +60,24 @@ import {
   Teacher,
   Note,
   StudentRemark,
-  Notice,
   RemarkType,
 } from "@/lib/localStorage";
 
-const tabOptions: { id: "classes" | "attendance" | "notes" | "remarks" | "notices"; label: string; icon: LucideIcon }[] = [
+const tabOptions: { id: "classes" | "attendance" | "notes" | "remarks"; label: string; icon: LucideIcon }[] = [
   { id: "classes", label: "Classes", icon: Calendar },
   { id: "attendance", label: "Attendance", icon: ClipboardCheck },
   { id: "notes", label: "Notes", icon: FileText },
   { id: "remarks", label: "Student Remarks", icon: MessageSquare },
-  { id: "notices", label: "Notices", icon: Bell },
 ];
 
 const TeacherDashboard = () => {
-  const [activeTab, setActiveTab] = useState<"classes" | "attendance" | "notes" | "remarks" | "notices">("classes");
+  const [activeTab, setActiveTab] = useState<"classes" | "attendance" | "notes" | "remarks">("classes");
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [remarks, setRemarks] = useState<StudentRemark[]>([]);
-  const [notices, setNotices] = useState<Notice[]>([]);
   const [selectedAttendanceBatch, setSelectedAttendanceBatch] = useState<string | null>(null);
   const [selectedClassForAttendance, setSelectedClassForAttendance] = useState<Class | null>(null);
   const [dailyAttendance, setDailyAttendance] = useState<Record<string, boolean>>({}); // studentId -> isAbsent
@@ -111,13 +105,6 @@ const TeacherDashboard = () => {
   const [remarkFilter, setRemarkFilter] = useState<'all' | 'appreciation' | 'complaint'>('all');
   const [isSubmittingRemark, setIsSubmittingRemark] = useState(false);
 
-  // Notice State
-  const [isAddNoticeOpen, setIsAddNoticeOpen] = useState(false);
-  const [noticeTitle, setNoticeTitle] = useState('');
-  const [noticeContent, setNoticeContent] = useState('');
-  const [noticeBatch, setNoticeBatch] = useState('all');
-  const [noticePriority, setNoticePriority] = useState<'normal' | 'important' | 'urgent'>('normal');
-
   const currentUser = getCurrentUser();
 
   // Returns YYYY-MM-DD in local timezone
@@ -144,7 +131,6 @@ const TeacherDashboard = () => {
     setTeachers(getTeachers());
     setNotes(getNotes());
     setRemarks(getStudentRemarks());
-    setNotices(getNotices());
   };
 
   useEffect(() => {
@@ -856,49 +842,6 @@ const TeacherDashboard = () => {
     setIsViewHistoryModalOpen(true);
   };
 
-  const handleSaveNotice = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!noticeTitle.trim() || !noticeContent.trim()) {
-      toast.error("Please fill in both notice title and description");
-      return;
-    }
-
-    try {
-      const newNotice: Notice = {
-        id: Date.now().toString(),
-        title: noticeTitle.trim(),
-        content: noticeContent.trim(),
-        batchId: noticeBatch,
-        authorId: currentUser?.id || 'teacher',
-        authorName: currentUser?.name || 'Teacher',
-        authorRole: 'teacher',
-        priority: noticePriority,
-        createdAt: new Date().toISOString(),
-      };
-
-      await addNotice(newNotice);
-      toast.success("Notice published to students tab & synced with Firebase!");
-      setIsAddNoticeOpen(false);
-      setNoticeTitle('');
-      setNoticeContent('');
-      setNoticeBatch('all');
-      setNoticePriority('normal');
-      loadData();
-    } catch (err: any) {
-      console.error("Failed to add notice:", err);
-      toast.error("Failed to post notice: " + (err.message || "Unknown error"));
-    }
-  };
-
-  const handleDeleteNotice = async (noticeId: string) => {
-    if (await deleteNotice(noticeId)) {
-      toast.success("Notice deleted");
-      loadData();
-    } else {
-      toast.error("Failed to delete notice");
-    }
-  };
-
   const filteredStudents = students.filter(s => {
     if (remarkBatchFilter !== 'all' && s.batchId !== remarkBatchFilter) return false;
     const q = studentSearch.toLowerCase().trim();
@@ -1464,162 +1407,6 @@ const TeacherDashboard = () => {
     </div>
   );
 
-  const renderNotices = () => (
-    <Card className="p-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4 border-b pb-6">
-        <div>
-          <h3 className="text-2xl font-black text-primary flex items-center gap-2">
-            <Bell className="h-6 w-6 text-primary" /> Academy Notices & Announcements
-          </h3>
-          <p className="text-sm text-muted-foreground mt-1">
-            Broadcast announcements to student dashboards in realtime
-          </p>
-        </div>
-        <Dialog open={isAddNoticeOpen} onOpenChange={setIsAddNoticeOpen}>
-          <DialogTrigger asChild>
-            <Button className="h-12 px-6 rounded-2xl font-bold gap-2 shadow-lg shadow-primary/20">
-              <Plus className="h-5 w-5" /> Post Notice
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="text-2xl font-black flex items-center gap-2">
-                <Megaphone className="h-6 w-6 text-primary" /> Post Notice for Students
-              </DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSaveNotice} className="space-y-4 pt-4">
-              <div className="space-y-2">
-                <Label htmlFor="notice-title" className="font-bold">Notice Title *</Label>
-                <Input
-                  id="notice-title"
-                  placeholder="e.g. Extra Physics Doubt Session on Sunday"
-                  value={noticeTitle}
-                  onChange={(e) => setNoticeTitle(e.target.value)}
-                  required
-                  className="h-12 rounded-xl"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="notice-batch" className="font-bold">Target Audience</Label>
-                <Select value={noticeBatch} onValueChange={setNoticeBatch}>
-                  <SelectTrigger className="h-12 rounded-xl">
-                    <SelectValue placeholder="Select target batch" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">📢 All Batches / All Students</SelectItem>
-                    {batches.map(b => (
-                      <SelectItem key={b.id} value={b.id}>Batch: {b.name} ({b.year})</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="notice-priority" className="font-bold">Priority</Label>
-                <Select value={noticePriority} onValueChange={(val: any) => setNoticePriority(val)}>
-                  <SelectTrigger className="h-12 rounded-xl">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="normal">Normal Announcement</SelectItem>
-                    <SelectItem value="important">Important Notice ⚠️</SelectItem>
-                    <SelectItem value="urgent">Urgent / Action Required 🚨</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="notice-content" className="font-bold">Notice Details / Message *</Label>
-                <textarea
-                  id="notice-content"
-                  rows={4}
-                  placeholder="Type the announcement details for students..."
-                  value={noticeContent}
-                  onChange={(e) => setNoticeContent(e.target.value)}
-                  required
-                  className="w-full p-3 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-
-              <Button type="submit" className="w-full h-14 rounded-2xl font-black text-lg shadow-xl shadow-primary/20 mt-4">
-                Publish Notice
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {notices.map(notice => {
-          const targetBatchName = notice.batchId === 'all' || !notice.batchId
-            ? 'All Students'
-            : batches.find(b => b.id === notice.batchId)?.name || 'Specific Batch';
-          const canDelete = notice.authorId === currentUser?.id || isFallbackTeacher;
-
-          return (
-            <div
-              key={notice.id}
-              className={`p-5 rounded-2xl border-2 bg-card hover:shadow-lg transition-all flex flex-col justify-between ${
-                notice.priority === 'urgent'
-                  ? 'border-red-500/40 bg-red-500/5'
-                  : notice.priority === 'important'
-                  ? 'border-amber-500/40 bg-amber-500/5'
-                  : 'border-primary/20'
-              }`}
-            >
-              <div>
-                <div className="flex justify-between items-start mb-2 gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
-                      notice.priority === 'urgent'
-                        ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 animate-pulse'
-                        : notice.priority === 'important'
-                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
-                        : 'bg-primary/10 text-primary'
-                    }`}>
-                      {notice.priority || 'Announcement'}
-                    </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted font-bold">
-                      {targetBatchName}
-                    </span>
-                  </div>
-
-                  {canDelete && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleDeleteNotice(notice.id)}
-                      className="h-8 w-8 text-destructive hover:bg-destructive/10 rounded-xl shrink-0"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-
-                <h4 className="text-lg font-bold text-foreground mb-2">{notice.title}</h4>
-                <p className="text-sm text-foreground/85 whitespace-pre-wrap mb-4">{notice.content}</p>
-              </div>
-
-              <div className="text-[11px] text-muted-foreground pt-3 border-t flex items-center justify-between">
-                <span>By: <strong>{notice.authorName}</strong> ({notice.authorRole})</span>
-                <span>{new Date(notice.createdAt).toLocaleDateString()}</span>
-              </div>
-            </div>
-          );
-        })}
-
-        {notices.length === 0 && (
-          <div className="col-span-full py-12 text-center text-muted-foreground">
-            <Bell className="h-12 w-12 mx-auto mb-3 text-muted-foreground/30" />
-            <p className="font-bold">No notices posted yet</p>
-            <p className="text-sm">Click "Post Notice" to send announcements to students.</p>
-          </div>
-        )}
-      </div>
-    </Card>
-  );
-
   return (
     <DashboardLayout role="teacher" title="Teacher Dashboard">
       <div className="hidden lg:flex items-center gap-3 mb-8">
@@ -1646,7 +1433,6 @@ const TeacherDashboard = () => {
         {activeTab === "attendance" && renderAttendance()}
         {activeTab === "notes" && renderNotes()}
         {activeTab === "remarks" && renderRemarks()}
-        {activeTab === "notices" && renderNotices()}
       </div>
 
       {/* Bottom Nav for Mobile */}

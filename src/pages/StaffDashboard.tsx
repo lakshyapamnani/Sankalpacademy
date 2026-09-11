@@ -1,13 +1,9 @@
 import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar, ClipboardCheck, Home, Plus, Bell, Megaphone, Trash2 } from "lucide-react";
+import { Calendar, ClipboardCheck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import {
   getStudents,
@@ -16,38 +12,25 @@ import {
   getCurrentUser,
   markAttendance,
   getAttendance,
-  getNotices,
-  addNotice,
-  deleteNotice,
   subscribeToRealtimeUpdates,
   Student,
   Class,
   Batch,
-  Notice,
 } from "@/lib/localStorage";
 
-const tabOptions: { id: "classes" | "attendance" | "notices"; label: string; icon: LucideIcon }[] = [
+const tabOptions: { id: "classes" | "attendance"; label: string; icon: LucideIcon }[] = [
   { id: "classes", label: "Classes", icon: Calendar },
   { id: "attendance", label: "Attendance", icon: ClipboardCheck },
-  { id: "notices", label: "Notices", icon: Bell },
 ];
 
 const StaffDashboard = () => {
-  const [activeTab, setActiveTab] = useState<"classes" | "attendance" | "notices">("classes");
+  const [activeTab, setActiveTab] = useState<"classes" | "attendance">("classes");
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
-  const [notices, setNotices] = useState<Notice[]>([]);
   const [selectedAttendanceBatch, setSelectedAttendanceBatch] = useState<string | null>(null);
   const [dailyAttendance, setDailyAttendance] = useState<Record<string, boolean>>({}); // studentId -> isAbsent
   const [currentDateStr, setCurrentDateStr] = useState<string>('');
-
-  // Notice State
-  const [isAddNoticeOpen, setIsAddNoticeOpen] = useState(false);
-  const [noticeTitle, setNoticeTitle] = useState('');
-  const [noticeContent, setNoticeContent] = useState('');
-  const [noticeBatch, setNoticeBatch] = useState('all');
-  const [noticePriority, setNoticePriority] = useState<'normal' | 'important' | 'urgent'>('normal');
 
   const currentUser = getCurrentUser();
 
@@ -72,7 +55,6 @@ const StaffDashboard = () => {
     setStudents(getStudents());
     setClasses(getClasses());
     setBatches(getBatches());
-    setNotices(getNotices());
   };
 
   useEffect(() => {
@@ -327,205 +309,6 @@ const StaffDashboard = () => {
     </Card>
   );
 
-  const handleSaveNotice = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!noticeTitle.trim() || !noticeContent.trim()) {
-      toast.error("Please fill in both notice title and description");
-      return;
-    }
-
-    try {
-      const newNotice: Notice = {
-        id: Date.now().toString(),
-        title: noticeTitle.trim(),
-        content: noticeContent.trim(),
-        batchId: noticeBatch,
-        authorId: currentUser?.id || 'staff',
-        authorName: currentUser?.name || 'Staff',
-        authorRole: 'staff',
-        priority: noticePriority,
-        createdAt: new Date().toISOString(),
-      };
-
-      await addNotice(newNotice);
-      toast.success("Notice published to students tab & synced with Firebase!");
-      setIsAddNoticeOpen(false);
-      setNoticeTitle('');
-      setNoticeContent('');
-      setNoticeBatch('all');
-      setNoticePriority('normal');
-      loadData();
-    } catch (err: any) {
-      console.error("Failed to add notice:", err);
-      toast.error("Failed to post notice: " + (err.message || "Unknown error"));
-    }
-  };
-
-  const handleDeleteNotice = async (noticeId: string) => {
-    if (await deleteNotice(noticeId)) {
-      toast.success("Notice deleted");
-      loadData();
-    } else {
-      toast.error("Failed to delete notice");
-    }
-  };
-
-  const renderNotices = () => (
-    <Card className="p-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4 border-b pb-6">
-        <div>
-          <h3 className="text-2xl font-black text-primary flex items-center gap-2">
-            <Bell className="h-6 w-6 text-primary" /> Academy Notices & Announcements
-          </h3>
-          <p className="text-sm text-muted-foreground mt-1">
-            Broadcast fee reminders, schedules, and general announcements to students
-          </p>
-        </div>
-        <Dialog open={isAddNoticeOpen} onOpenChange={setIsAddNoticeOpen}>
-          <DialogTrigger asChild>
-            <Button className="h-12 px-6 rounded-2xl font-bold gap-2 shadow-lg shadow-primary/20">
-              <Plus className="h-5 w-5" /> Post Notice
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="text-2xl font-black flex items-center gap-2">
-                <Megaphone className="h-6 w-6 text-primary" /> Post Notice for Students
-              </DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSaveNotice} className="space-y-4 pt-4">
-              <div className="space-y-2">
-                <Label htmlFor="staff-notice-title" className="font-bold">Notice Title *</Label>
-                <Input
-                  id="staff-notice-title"
-                  placeholder="e.g. Academy Holiday on Monday / Fee Due Reminder"
-                  value={noticeTitle}
-                  onChange={(e) => setNoticeTitle(e.target.value)}
-                  required
-                  className="h-12 rounded-xl"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="staff-notice-batch" className="font-bold">Target Audience</Label>
-                <Select value={noticeBatch} onValueChange={setNoticeBatch}>
-                  <SelectTrigger className="h-12 rounded-xl">
-                    <SelectValue placeholder="Select target batch" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">📢 All Batches / All Students</SelectItem>
-                    {batches.map(b => (
-                      <SelectItem key={b.id} value={b.id}>Batch: {b.name} ({b.year})</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="staff-notice-priority" className="font-bold">Priority</Label>
-                <Select value={noticePriority} onValueChange={(val: any) => setNoticePriority(val)}>
-                  <SelectTrigger className="h-12 rounded-xl">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="normal">Normal Announcement</SelectItem>
-                    <SelectItem value="important">Important Notice ⚠️</SelectItem>
-                    <SelectItem value="urgent">Urgent / Action Required 🚨</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="staff-notice-content" className="font-bold">Notice Details / Message *</Label>
-                <textarea
-                  id="staff-notice-content"
-                  rows={4}
-                  placeholder="Type the announcement message..."
-                  value={noticeContent}
-                  onChange={(e) => setNoticeContent(e.target.value)}
-                  required
-                  className="w-full p-3 rounded-xl border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-
-              <Button type="submit" className="w-full h-14 rounded-2xl font-black text-lg shadow-xl shadow-primary/20 mt-4">
-                Publish Notice
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {notices.map(notice => {
-          const targetBatchName = notice.batchId === 'all' || !notice.batchId
-            ? 'All Students'
-            : batches.find(b => b.id === notice.batchId)?.name || 'Specific Batch';
-          const canDelete = notice.authorId === currentUser?.id || currentUser?.role === 'staff' || currentUser?.name === 'Staff';
-
-          return (
-            <div
-              key={notice.id}
-              className={`p-5 rounded-2xl border-2 bg-card hover:shadow-lg transition-all flex flex-col justify-between ${
-                notice.priority === 'urgent'
-                  ? 'border-red-500/40 bg-red-500/5'
-                  : notice.priority === 'important'
-                  ? 'border-amber-500/40 bg-amber-500/5'
-                  : 'border-primary/20'
-              }`}
-            >
-              <div>
-                <div className="flex justify-between items-start mb-2 gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
-                      notice.priority === 'urgent'
-                        ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 animate-pulse'
-                        : notice.priority === 'important'
-                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
-                        : 'bg-primary/10 text-primary'
-                    }`}>
-                      {notice.priority || 'Announcement'}
-                    </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted font-bold">
-                      {targetBatchName}
-                    </span>
-                  </div>
-
-                  {canDelete && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleDeleteNotice(notice.id)}
-                      className="h-8 w-8 text-destructive hover:bg-destructive/10 rounded-xl shrink-0"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-
-                <h4 className="text-lg font-bold text-foreground mb-2">{notice.title}</h4>
-                <p className="text-sm text-foreground/85 whitespace-pre-wrap mb-4">{notice.content}</p>
-              </div>
-
-              <div className="text-[11px] text-muted-foreground pt-3 border-t flex items-center justify-between">
-                <span>By: <strong>{notice.authorName}</strong> ({notice.authorRole})</span>
-                <span>{new Date(notice.createdAt).toLocaleDateString()}</span>
-              </div>
-            </div>
-          );
-        })}
-
-        {notices.length === 0 && (
-          <div className="col-span-full py-12 text-center text-muted-foreground">
-            <Bell className="h-12 w-12 mx-auto mb-3 text-muted-foreground/30" />
-            <p className="font-bold">No notices posted yet</p>
-            <p className="text-sm">Click "Post Notice" to send announcements to students.</p>
-          </div>
-        )}
-      </div>
-    </Card>
-  );
-
   return (
     <DashboardLayout role="staff" title="Staff Dashboard">
       <div className="hidden lg:flex items-center gap-3 mb-8">
@@ -550,7 +333,6 @@ const StaffDashboard = () => {
       <div className="pb-24 lg:pb-0">
         {activeTab === "classes" && renderClasses()}
         {activeTab === "attendance" && renderAttendance()}
-        {activeTab === "notices" && renderNotices()}
       </div>
 
       {/* Bottom Nav for Mobile */}
