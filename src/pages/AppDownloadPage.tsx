@@ -112,7 +112,8 @@ const AppDownloadPage = ({ appType }: AppDownloadPageProps) => {
       `/downloads/${config.apkFileName}`,
       `./${config.apkFileName}`,
       `./downloads/${config.apkFileName}`,
-      `/${appType}app/${config.apkFileName}`
+      `/${appType}app/${config.apkFileName}`,
+      `/${appType}/${config.apkFileName}`
     ];
 
     try {
@@ -120,13 +121,13 @@ const AppDownloadPage = ({ appType }: AppDownloadPageProps) => {
 
       for (const url of candidateUrls) {
         try {
-          const response = await fetch(url, { method: "GET" });
+          const response = await fetch(url, { method: "GET", cache: "no-cache" });
           const contentType = (response.headers.get("content-type") || "").toLowerCase();
           
           // Verify that response is binary and not an SPA HTML fallback
-          if (response.ok && !contentType.includes("text/html")) {
+          if (response.ok && !contentType.includes("text/html") && !contentType.includes("text/plain")) {
             const blob = await response.blob();
-            if (blob.size > 100000) { // Real APK is ~4.3MB
+            if (blob.size > 50000) { // Real APK is ~4.3MB (never < 50KB)
               binaryBlob = blob;
               break;
             }
@@ -137,27 +138,29 @@ const AppDownloadPage = ({ appType }: AppDownloadPageProps) => {
       }
 
       if (binaryBlob) {
-        const blobUrl = window.URL.createObjectURL(binaryBlob);
+        const apkBlob = new Blob([await binaryBlob.arrayBuffer()], { 
+          type: "application/vnd.android.package-archive" 
+        });
+        const blobUrl = window.URL.createObjectURL(apkBlob);
         const a = document.createElement("a");
         a.href = blobUrl;
         a.download = config.apkFileName;
+        a.setAttribute("type", "application/vnd.android.package-archive");
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 30000);
-        toast.success(`Download started: ${config.apkFileName} (${(binaryBlob.size / (1024 * 1024)).toFixed(1)} MB)`, { id: toastId });
+        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 60000);
+        toast.success(`Download started: ${config.apkFileName} (${(apkBlob.size / (1024 * 1024)).toFixed(1)} MB)`, { id: toastId });
       } else {
-        // Direct anchor fallback
         const a = document.createElement("a");
         a.href = `/${config.apkFileName}`;
         a.download = config.apkFileName;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        toast.success(`Download started: ${config.apkFileName}`, { id: toastId });
+        toast.success(`Initiating download for ${config.apkFileName}...`, { id: toastId });
       }
     } catch {
-      // Direct browser navigation fallback
       const a = document.createElement("a");
       a.href = `/${config.apkFileName}`;
       a.download = config.apkFileName;

@@ -30,6 +30,10 @@ dist-electron/
 # Binaries & Scratch Files
 *.exe
 *.apk
+!public/*.apk
+!public/**/*.apk
+!staff/*.apk
+!student/*.apk
 scratch/
 temp.js
 *.patch
