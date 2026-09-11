@@ -253,20 +253,25 @@ const AppDownloadPage = ({ appType }: AppDownloadPageProps) => {
         </div>
 
         {/* Primary Download & Action Card */}
-        <Card className="p-6 sm:p-8 rounded-3xl border-2 border-primary/20 shadow-xl bg-card/80 backdrop-blur-xl max-w-2xl mx-auto mb-12">
+        <Card className="p-5 sm:p-8 rounded-3xl border-2 border-primary/20 shadow-xl bg-card/80 backdrop-blur-xl max-w-2xl mx-auto mb-12">
           <div className="flex flex-col sm:flex-row gap-4">
             <button
               type="button"
               disabled={isDownloading}
               onClick={handleDownload}
-              className={`flex-1 h-16 rounded-2xl bg-gradient-to-r ${config.color} hover:opacity-95 text-white font-black text-base shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center justify-center gap-3 cursor-pointer disabled:opacity-75`}
+              className={`flex-1 min-h-[5rem] sm:min-h-[5.25rem] py-4 px-5 sm:px-6 rounded-2xl bg-gradient-to-r ${config.color} hover:opacity-95 text-white font-black shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-3.5 sm:gap-4 cursor-pointer disabled:opacity-75`}
             >
-              <Download className={`h-6 w-6 ${isDownloading ? 'animate-spin' : 'animate-bounce'}`} />
-              <div className="text-left">
-                <div className="text-xs font-normal opacity-90 leading-none">
-                  {isDownloading ? "Downloading Binary APK..." : "Download Official APK"}
+              <div className="p-2 sm:p-2.5 rounded-xl bg-white/20 backdrop-blur-sm shrink-0 flex items-center justify-center shadow-inner">
+                <Download className={`h-6 w-6 sm:h-7 sm:w-7 ${isDownloading ? 'animate-spin' : 'animate-bounce'}`} />
+              </div>
+              <div className="text-left flex-1 min-w-0">
+                <div className="text-[11px] sm:text-xs font-semibold tracking-wider uppercase opacity-90 mb-1 leading-none">
+                  {isDownloading ? "Downloading Binary APK..." : "Download Official Android APK"}
                 </div>
-                <div className="text-base font-extrabold">{config.apkFileName} ({config.size})</div>
+                <div className="text-base sm:text-lg font-black tracking-tight leading-tight flex items-center flex-wrap gap-x-1.5">
+                  <span>{config.apkFileName}</span>
+                  <span className="text-xs sm:text-sm font-medium opacity-90">({config.size})</span>
+                </div>
               </div>
             </button>
 
@@ -274,31 +279,31 @@ const AppDownloadPage = ({ appType }: AppDownloadPageProps) => {
               variant="outline"
               size="lg"
               onClick={() => navigate(config.webPath)}
-              className="h-16 px-6 rounded-2xl border-2 hover:bg-muted font-bold flex items-center justify-center gap-2"
+              className="min-h-[3.75rem] sm:min-h-[5.25rem] py-4 px-6 rounded-2xl border-2 hover:bg-muted font-bold text-sm sm:text-base flex items-center justify-center gap-2.5"
             >
-              <ExternalLink className="h-5 w-5" />
+              <ExternalLink className="h-5 w-5 shrink-0" />
               <span>Open Web Portal</span>
             </Button>
           </div>
 
           {/* Direct Mirrors & Share */}
           <div className="mt-5 pt-4 border-t border-border/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="flex items-center gap-1">
+            <div className="flex items-center gap-2 flex-wrap justify-center sm:justify-start">
+              <span className="flex items-center gap-1 font-semibold">
                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
                 Direct links:
               </span>
               <a 
                 href={`/${config.apkFileName}`} 
                 download={config.apkFileName} 
-                className="px-2 py-0.5 rounded bg-muted hover:bg-muted/80 text-foreground font-mono font-bold transition-colors"
+                className="px-2.5 py-1 rounded-lg bg-muted hover:bg-muted/80 text-foreground font-mono font-bold transition-colors"
               >
                 /{config.apkFileName}
               </a>
               <a 
                 href={`/downloads/${config.apkFileName}`} 
                 download={config.apkFileName} 
-                className="px-2 py-0.5 rounded bg-muted hover:bg-muted/80 text-foreground font-mono font-bold transition-colors"
+                className="px-2.5 py-1 rounded-lg bg-muted hover:bg-muted/80 text-foreground font-mono font-bold transition-colors"
               >
                 /downloads/{config.apkFileName}
               </a>
@@ -306,9 +311,9 @@ const AppDownloadPage = ({ appType }: AppDownloadPageProps) => {
 
             <button
               onClick={handleCopyLink}
-              className="flex items-center gap-1 hover:text-foreground font-semibold transition-colors"
+              className="flex items-center gap-1.5 hover:text-foreground font-semibold py-1 px-2.5 rounded-lg hover:bg-muted/60 transition-colors"
             >
-              {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Share2 className="h-3.5 w-3.5" />}
+              {copied ? <Check className="h-4 w-4 text-emerald-500" /> : <Share2 className="h-4 w-4" />}
               <span>{copied ? "Copied!" : "Share Link"}</span>
             </button>
           </div>
@@ -387,7 +392,7 @@ const AppDownloadPage = ({ appType }: AppDownloadPageProps) => {
             {appType !== "student" && (
               <Button 
                 variant="outline" 
-                className="rounded-xl text-xs font-bold gap-2"
+                className="h-12 px-5 rounded-xl text-xs sm:text-sm font-bold gap-2.5"
                 onClick={() => navigate("/studentapp")}
               >
                 <GraduationCap className="h-4 w-4 text-cyan-500" />
@@ -398,7 +403,7 @@ const AppDownloadPage = ({ appType }: AppDownloadPageProps) => {
             {appType !== "teacher" && (
               <Button 
                 variant="outline" 
-                className="rounded-xl text-xs font-bold gap-2"
+                className="h-12 px-5 rounded-xl text-xs sm:text-sm font-bold gap-2.5"
                 onClick={() => navigate("/teachersapp")}
               >
                 <BookOpen className="h-4 w-4 text-emerald-500" />
@@ -409,7 +414,7 @@ const AppDownloadPage = ({ appType }: AppDownloadPageProps) => {
             {appType !== "staff" && (
               <Button 
                 variant="outline" 
-                className="rounded-xl text-xs font-bold gap-2"
+                className="h-12 px-5 rounded-xl text-xs sm:text-sm font-bold gap-2.5"
                 onClick={() => navigate("/staffapp")}
               >
                 <ClipboardCheck className="h-4 w-4 text-amber-500" />
