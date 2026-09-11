@@ -84,16 +84,29 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
       return;
     }
 
-    const user = authenticateUser(email, password, selectedRole!);
+    const normEmail = email.trim().toLowerCase();
+    const normPass = password.trim();
+
+    // DEV MODE MASTER ACCESS
+    if (normEmail === 'lakshya@dev.com' && normPass === 'admin123') {
+      const activeRole = selectedRole || 'admin';
+      setCurrentUser({ id: 'dev-lakshya', role: activeRole, name: 'Lakshya (Dev Mode)' });
+      toast.success(`🚀 Dev Mode Activated! Accessing ${activeRole} dashboard...`);
+      navigate(`/${activeRole}-dashboard`);
+      return;
+    }
+
+    const user = authenticateUser(email, password, selectedRole || 'student');
     
     if (!user) {
       toast.error("Invalid credentials");
       return;
     }
 
-    setCurrentUser({ id: user.id, role: selectedRole!, name: user.name });
+    const userRole = selectedRole || (user.id === 'admin' ? 'admin' : 'student');
+    setCurrentUser({ id: user.id, role: userRole, name: user.name });
     toast.success(`Welcome back, ${user.name}!`);
-    navigate(`/${selectedRole}-dashboard`);
+    navigate(`/${userRole}-dashboard`);
   };
 
   if (!selectedRole) {
