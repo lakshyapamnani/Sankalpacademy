@@ -33,7 +33,7 @@ const appConfigs = {
     apkFileName: "Sankalp_Student.apk",
     webPath: "/student",
     version: "v1.2.0 Release",
-    size: "4.1 MB",
+    size: "51.8 MB",
     compatibility: "Android 8.0+",
     color: "from-cyan-500 to-blue-600",
     glowColor: "rgba(6, 182, 212, 0.25)",
@@ -56,7 +56,7 @@ const appConfigs = {
     apkFileName: "Sankalp_Teachers.apk",
     webPath: "/teacher",
     version: "v1.2.0 Release",
-    size: "4.1 MB",
+    size: "52.1 MB",
     compatibility: "Android 8.0+",
     color: "from-teal-500 to-emerald-600",
     glowColor: "rgba(16, 185, 129, 0.25)",
@@ -64,10 +64,10 @@ const appConfigs = {
     features: [
       { title: "Lecture Scheduling", desc: "View today's upcoming lectures, timings, and assigned batches." },
       { title: "Fast Attendance Marking", desc: "Mark present/absent with 1-tap registers for all batch students." },
-      { title: "Student Remarks System", desc: "Search any student and record appreciations or complaints." },
+      { title: "Student Remarks System", desc: "Search any student and record appreciations or complaints in popup." },
+      { title: "WhatsApp Parent Alerts", desc: "Instantly notify parents about remarks with pre-filled WhatsApp." },
       { title: "Study Material Uploads", desc: "Distribute batch-specific notes, syllabus, and study resources." },
-      { title: "Broadcast Notices", desc: "Publish urgent announcements and class alerts with real-time sync." },
-      { title: "Real-time Firebase Sync", desc: "Instant offline-first synchronization across mobile and web." }
+      { title: "Broadcast Notices", desc: "Publish urgent announcements and class alerts with real-time sync." }
     ]
   },
   staff: {
@@ -79,7 +79,7 @@ const appConfigs = {
     apkFileName: "Sankalp_Staff.apk",
     webPath: "/staff",
     version: "v1.2.0 Release",
-    size: "4.1 MB",
+    size: "51.8 MB",
     compatibility: "Android 8.0+",
     color: "from-orange-500 to-amber-600",
     glowColor: "rgba(245, 158, 11, 0.25)",
