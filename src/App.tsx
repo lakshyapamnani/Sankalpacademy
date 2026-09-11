@@ -10,6 +10,7 @@ import StudentDashboard from "./pages/StudentDashboard";
 import StaffDashboard from "./pages/StaffDashboard";
 import TeacherDashboard from "./pages/TeacherDashboard";
 import BatchDetails from "./pages/BatchDetails";
+import AppDownloadPage from "./pages/AppDownloadPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -42,6 +43,15 @@ const App = () => (
             <Route path="/student-dashboard" element={<StudentDashboard />} />
             <Route path="/staff-dashboard" element={<StaffDashboard />} />
             <Route path="/teacher-dashboard" element={<TeacherDashboard />} />
+            {/* App Download Portals */}
+            <Route path="/studentapp" element={<AppDownloadPage appType="student" />} />
+            <Route path="/student-app" element={<AppDownloadPage appType="student" />} />
+            <Route path="/teachersapp" element={<AppDownloadPage appType="teacher" />} />
+            <Route path="/teacherapp" element={<AppDownloadPage appType="teacher" />} />
+            <Route path="/teacher-app" element={<AppDownloadPage appType="teacher" />} />
+            <Route path="/teachers-app" element={<AppDownloadPage appType="teacher" />} />
+            <Route path="/staffapp" element={<AppDownloadPage appType="staff" />} />
+            <Route path="/staff-app" element={<AppDownloadPage appType="staff" />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </HashRouter>
@@ -64,6 +74,15 @@ const App = () => (
             <Route path="/student-dashboard" element={<StudentDashboard />} />
             <Route path="/staff-dashboard" element={<StaffDashboard />} />
             <Route path="/teacher-dashboard" element={<TeacherDashboard />} />
+            {/* App Download Portals */}
+            <Route path="/studentapp" element={<AppDownloadPage appType="student" />} />
+            <Route path="/student-app" element={<AppDownloadPage appType="student" />} />
+            <Route path="/teachersapp" element={<AppDownloadPage appType="teacher" />} />
+            <Route path="/teacherapp" element={<AppDownloadPage appType="teacher" />} />
+            <Route path="/teacher-app" element={<AppDownloadPage appType="teacher" />} />
+            <Route path="/teachers-app" element={<AppDownloadPage appType="teacher" />} />
+            <Route path="/staffapp" element={<AppDownloadPage appType="staff" />} />
+            <Route path="/staff-app" element={<AppDownloadPage appType="staff" />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
