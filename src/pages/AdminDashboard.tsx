@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit, ArrowLeft, Search, Download, MessageSquare, Eye, TrendingUp, FileText, Trash2, GraduationCap, LogIn, Key, Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Layers, Settings, Image, PenTool, Building, Save, Bell, Megaphone, Award, AlertTriangle, Star, ThumbsUp, ThumbsDown, Send, Filter, Check, Clock, ExternalLink } from "lucide-react";
+import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit, ArrowLeft, Search, Download, MessageSquare, Eye, TrendingUp, FileText, Trash2, GraduationCap, LogIn, Key, Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Layers, Settings, Image, PenTool, Building, Save, Bell, Megaphone, Award, AlertTriangle, Star, ThumbsUp, ThumbsDown, Send, Filter, Check, Clock, ExternalLink, DoorOpen, RotateCcw } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -12,6 +13,7 @@ import { toast } from "sonner";
 import DashboardLayout, { SidebarItem } from "@/components/DashboardLayout";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { parseStudentCSV, downloadStudentCSVTemplate, ParsedCSVStudent } from "@/lib/csvUtils";
+import { AdminTimetableBuilder } from "@/components/timetable/AdminTimetableBuilder";
 import {
   getStudents,
   getClasses,
@@ -55,6 +57,8 @@ import {
   updateTeacher,
   deleteTeacher,
   getAttendance,
+  getTimetableLectures,
+  TimetableLecture,
   Student,
   Class,
   Batch,
@@ -87,6 +91,10 @@ import {
   Notice,
   RemarkType,
   setCurrentUser,
+  getRooms,
+  addRoom,
+  deleteRoom,
+  resetRoomsToDefault,
 } from "@/lib/localStorage";
 import FeesDashboardOverview from "@/components/fees/FeesDashboardOverview";
 
@@ -174,7 +182,7 @@ const AdminDashboard = () => {
     return `${year}-${month}-${day}`;
   };
 
-  const [activeTab, setActiveTab] = useState<'batches' | 'students' | 'leads' | 'staff' | 'teachers' | 'classes' | 'fees' | 'tests' | 'attendance' | 'birthdays' | 'notes' | 'remarks' | 'notices' | 'settings'>('students');
+  const [activeTab, setActiveTab] = useState<'batches' | 'students' | 'leads' | 'staff' | 'teachers' | 'classes' | 'timetable' | 'fees' | 'tests' | 'attendance' | 'birthdays' | 'notes' | 'remarks' | 'notices' | 'settings'>('students');
   const [currentDateStr, setCurrentDateStr] = useState<string>('');
 
   useEffect(() => {
@@ -193,6 +201,7 @@ const AdminDashboard = () => {
   const [teachers, setTeachersState] = useState<Teacher[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [timetableLectures, setTimetableLectures] = useState<TimetableLecture[]>([]);
   const [leadSearch, setLeadSearch] = useState<string>('');
   const [leadStatusFilter, setLeadStatusFilter] = useState<string>('all');
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
@@ -381,6 +390,11 @@ const AdminDashboard = () => {
   const [settingsSignature, setSettingsSignature] = useState<string>(instituteSettings.signature || '');
   const [isSavingSettings, setIsSavingSettings] = useState<boolean>(false);
 
+  // Classroom / Room Settings State
+  const [roomsList, setRoomsList] = useState<string[]>(() => getRooms());
+  const [newRoomInput, setNewRoomInput] = useState<string>('');
+  const [isAddingRoom, setIsAddingRoom] = useState<boolean>(false);
+
   // Keep settings form in sync when instituteSettings updates
   useEffect(() => {
     const current = getInstituteSettings();
@@ -436,11 +450,18 @@ const AdminDashboard = () => {
 
   useEffect(() => {
     loadData();
+    const handleTimetableChange = () => {
+      loadData();
+    };
+    window.addEventListener('sankalp_timetable_changed', handleTimetableChange);
     // Subscribe to realtime updates
     const unsubscribe = subscribeToRealtimeUpdates(() => {
       loadData();
     });
-    return () => unsubscribe();
+    return () => {
+      window.removeEventListener('sankalp_timetable_changed', handleTimetableChange);
+      unsubscribe();
+    };
   }, []);
 
   const isClassPassed = (classItem: Class) => {
@@ -462,6 +483,8 @@ const AdminDashboard = () => {
     setLeads(getLeads());
     setRemarks(getStudentRemarks());
     setNotices(getNotices());
+    setTimetableLectures(getTimetableLectures());
+    setRoomsList(getRooms());
 
     const records = await getFeeRecords();
     setAllFeeRecords(records || []);
@@ -2620,6 +2643,49 @@ const AdminDashboard = () => {
     }
   };
 
+  // Classroom / Room Settings Handlers
+  const handleAddRoom = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const trimmed = newRoomInput.trim();
+    if (!trimmed) {
+      toast.error('Please enter a classroom name or room number');
+      return;
+    }
+    setIsAddingRoom(true);
+    try {
+      const updated = await addRoom(trimmed);
+      setRoomsList(updated);
+      setNewRoomInput('');
+      toast.success(`Room "${trimmed}" added successfully!`);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to add room');
+    } finally {
+      setIsAddingRoom(false);
+    }
+  };
+
+  const handleDeleteRoom = async (roomName: string) => {
+    try {
+      const updated = await deleteRoom(roomName);
+      setRoomsList(updated);
+      toast.success(`Room "${roomName}" removed successfully.`);
+    } catch (err) {
+      console.error('Failed to remove room:', err);
+      toast.error('Failed to remove room');
+    }
+  };
+
+  const handleResetRooms = async () => {
+    try {
+      const reset = await resetRoomsToDefault();
+      setRoomsList(reset);
+      toast.success('Room list reset to standard defaults');
+    } catch (err) {
+      console.error('Failed to reset rooms:', err);
+      toast.error('Failed to reset rooms');
+    }
+  };
+
   // Teacher CRUD handlers
   const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null);
   const [teacherSubjectSelection, setTeacherSubjectSelection] = useState<string[]>([]);
@@ -2845,6 +2911,7 @@ const AdminDashboard = () => {
     { id: 'leads', label: 'Leads', icon: UserPlus, action: () => setActiveTab('leads') },
     { id: 'staff', label: 'Staff', icon: ClipboardCheck, action: () => setActiveTab('staff') },
     { id: 'teachers', label: 'Teachers', icon: GraduationCap, action: () => setActiveTab('teachers') },
+    { id: 'timetable', label: 'Timetable', icon: Clock, action: () => setActiveTab('timetable') },
     { id: 'classes', label: 'Classes', icon: Calendar, action: () => setActiveTab('classes') },
     { id: 'batches', label: 'Batches', icon: BookOpen, action: () => setActiveTab('batches') },
     { id: 'fees', label: 'Fees Mgmt', icon: IndianRupee, action: () => setActiveTab('fees') },
@@ -6836,7 +6903,16 @@ const AdminDashboard = () => {
                     <h3 className="text-xl font-semibold">Classes</h3>
                     <p className="text-sm text-muted-foreground">Manage your {classes.length} classes</p>
                   </div>
-                  <Dialog open={openDialog === "class"} onOpenChange={(open) => setOpenDialog(open ? "class" : null)}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setActiveTab('timetable')}
+                      className="flex items-center gap-2 rounded-xl font-bold"
+                    >
+                      <Clock className="h-4 w-4 text-primary" />
+                      <span>Weekly Timetable</span>
+                    </Button>
+                    <Dialog open={openDialog === "class"} onOpenChange={(open) => setOpenDialog(open ? "class" : null)}>
                     <DialogTrigger asChild>
                       <Button className="flex items-center gap-2">
                         <Plus className="h-4 w-4" />
@@ -6960,6 +7036,7 @@ const AdminDashboard = () => {
                     </DialogContent>
                   </Dialog>
                 </div>
+              </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {classes.map((classItem) => {
@@ -7020,6 +7097,15 @@ const AdminDashboard = () => {
               </Card>
             )}
 
+            {activeTab === 'timetable' && (
+              <AdminTimetableBuilder
+                batches={batches}
+                subjects={subjects}
+                teachers={teachers}
+                timetableLectures={timetableLectures}
+                onDataChange={loadData}
+              />
+            )}
             
             {activeTab === 'batches' && (
               <Card className="p-6">
@@ -7805,10 +7891,10 @@ const AdminDashboard = () => {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
                     <h3 className="text-2xl font-black text-primary flex items-center gap-2.5">
-                      <Settings className="h-7 w-7 text-primary" /> Institute & Receipt Settings
+                      <Settings className="h-7 w-7 text-primary" /> Settings & Configurations
                     </h3>
                     <p className="text-sm text-muted-foreground mt-1">
-                      Customize institute branding, fee receipt logo, and authorized signature across all receipts and reports.
+                      Customize institute branding, fee receipt details, and configure classrooms & room numbers.
                     </p>
                   </div>
                 </div>
@@ -8029,6 +8115,103 @@ const AdminDashboard = () => {
                     </Button>
                   </div>
                 </form>
+
+                {/* Classroom & Room Numbers Settings Card */}
+                <Card className="p-6 rounded-2xl border shadow-sm space-y-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-4">
+                    <div>
+                      <div className="flex items-center gap-2.5">
+                        <h4 className="text-lg font-bold text-foreground flex items-center gap-2">
+                          <DoorOpen className="h-5 w-5 text-primary" /> Classrooms & Room Numbers
+                        </h4>
+                        <Badge variant="secondary" className="font-semibold text-xs px-2.5 py-0.5">
+                          {roomsList.length} Active {roomsList.length === 1 ? 'Room' : 'Rooms'}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Configure classrooms, lecture halls, and labs available for weekly timetable scheduling and class sessions.
+                      </p>
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleResetRooms}
+                      className="text-xs font-semibold gap-1.5 self-start sm:self-auto hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
+                      title="Reset room list to standard institute defaults"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" /> Reset to Defaults
+                    </Button>
+                  </div>
+
+                  {/* Add Room Input Form */}
+                  <form onSubmit={handleAddRoom} className="flex flex-col sm:flex-row gap-3">
+                    <div className="relative flex-1">
+                      <DoorOpen className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        type="text"
+                        placeholder="e.g. Room 101, Science Lab 2, Hall C..."
+                        value={newRoomInput}
+                        onChange={(e) => setNewRoomInput(e.target.value)}
+                        className="pl-10 h-11 text-sm rounded-xl font-medium"
+                      />
+                    </div>
+                    <Button
+                      type="submit"
+                      disabled={isAddingRoom || !newRoomInput.trim()}
+                      className="h-11 px-6 font-bold rounded-xl gap-2 shadow-sm shrink-0"
+                    >
+                      <Plus className="h-4 w-4" /> Add Room
+                    </Button>
+                  </form>
+
+                  {/* Configured Rooms Grid */}
+                  {roomsList.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                      {roomsList.map((room) => (
+                        <div
+                          key={room}
+                          className="flex items-center justify-between p-3.5 rounded-xl border bg-card/60 hover:bg-accent/20 hover:border-primary/30 transition-all group"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                            <div className="h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                              <DoorOpen className="h-4 w-4" />
+                            </div>
+                            <span className="font-semibold text-sm text-foreground truncate" title={room}>
+                              {room}
+                            </span>
+                          </div>
+
+                          <DeleteDialog
+                            title="Remove Room"
+                            description={`Are you sure you want to remove "${room}"? Lectures already assigned to this room will keep their room label, but this room will no longer appear in timetable room selectors.`}
+                            onDelete={() => handleDeleteRoom(room)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-10 border-2 border-dashed rounded-xl bg-accent/10 space-y-3">
+                      <DoorOpen className="h-10 w-10 mx-auto text-muted-foreground/40" />
+                      <div>
+                        <p className="font-semibold text-sm text-foreground">No classrooms configured</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Add a room using the input above or restore the standard institute default list.
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleResetRooms}
+                        className="text-xs font-semibold gap-1.5"
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" /> Restore Default Rooms
+                      </Button>
+                    </div>
+                  )}
+                </Card>
               </div>
             )}
 

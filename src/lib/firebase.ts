@@ -7,6 +7,7 @@ import { getMessaging, isSupported as isMessagingSupported } from "firebase/mess
 export const firebaseConfig = {
   apiKey: "AIzaSyDF3rJgsecEClcC6Qm9ziVaDvGV5a8BWE8",
   authDomain: "sankalpacademy-4c3c4.firebaseapp.com",
+  databaseURL: "https://sankalpacademy-4c3c4-default-rtdb.firebaseio.com",
   projectId: "sankalpacademy-4c3c4",
   storageBucket: "sankalpacademy-4c3c4.firebasestorage.app",
   messagingSenderId: "235601051753",

@@ -156,6 +156,9 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
         </div>
         <footer className="mt-8 py-6 w-full max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground border-t border-primary/10">
           <p>&copy; {new Date().getFullYear()} Sankalp Academy. All rights reserved.</p>
+          <a href="/sankalpweb/index.html" className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline">
+            <span>📱 Download Mobile Apps (APK Store)</span>
+          </a>
         </footer>
       </div>
     );
@@ -224,6 +227,9 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
       </div>
       <footer className="mt-8 py-6 w-full max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground border-t border-primary/10">
         <p>&copy; {new Date().getFullYear()} Sankalp Academy. All rights reserved.</p>
+        <a href="/sankalpweb/index.html" className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline">
+          <span>📱 Download Mobile Apps (APK Store)</span>
+        </a>
       </footer>
     </div>
   );

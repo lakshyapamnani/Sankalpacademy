@@ -33,7 +33,7 @@ const appConfigs = {
     apkFileName: "Sankalp_Student.apk",
     webPath: "/student",
     version: "v1.2.0 Release",
-    size: "51.8 MB",
+    size: "61.4 MB",
     compatibility: "Android 8.0+",
     color: "from-cyan-500 to-blue-600",
     glowColor: "rgba(6, 182, 212, 0.25)",
@@ -56,7 +56,7 @@ const appConfigs = {
     apkFileName: "Sankalp_Teachers.apk",
     webPath: "/teacher",
     version: "v1.2.0 Release",
-    size: "52.1 MB",
+    size: "31.6 MB",
     compatibility: "Android 8.0+",
     color: "from-teal-500 to-emerald-600",
     glowColor: "rgba(16, 185, 129, 0.25)",
@@ -79,7 +79,7 @@ const appConfigs = {
     apkFileName: "Sankalp_Staff.apk",
     webPath: "/staff",
     version: "v1.2.0 Release",
-    size: "51.8 MB",
+    size: "31.6 MB",
     compatibility: "Android 8.0+",
     color: "from-orange-500 to-amber-600",
     glowColor: "rgba(245, 158, 11, 0.25)",
@@ -110,6 +110,7 @@ const AppDownloadPage = ({ appType }: AppDownloadPageProps) => {
     const candidateUrls = [
       `/${config.apkFileName}`,
       `/downloads/${config.apkFileName}`,
+      `/sankalpweb/${config.apkFileName}`,
       `./${config.apkFileName}`,
       `./downloads/${config.apkFileName}`,
       `/${appType}app/${config.apkFileName}`,
@@ -424,6 +425,14 @@ const AppDownloadPage = ({ appType }: AppDownloadPageProps) => {
                 <span>Staff App (APK)</span>
               </Button>
             )}
+
+            <a 
+              href="/sankalpweb/index.html" 
+              className="inline-flex items-center justify-center h-12 px-5 rounded-xl text-xs sm:text-sm font-bold gap-2.5 border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 transition-all shadow-sm"
+            >
+              <Smartphone className="h-4 w-4" />
+              <span>Sankalp Web App Store</span>
+            </a>
           </div>
         </div>
       </main>

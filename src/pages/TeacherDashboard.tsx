@@ -39,6 +39,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import {
+  TeacherTimetableSection,
+  LectureAttendancePayload,
+} from "@/components/timetable/TeacherTimetableSection";
+import {
   getStudents,
   getClasses,
   getBatches,
@@ -46,6 +50,8 @@ import {
   getCurrentUser,
   markAttendance,
   getAttendance,
+  getTimetableLectures,
+  TimetableLecture,
   getNotes,
   addNote,
   deleteNote,
@@ -63,21 +69,23 @@ import {
   RemarkType,
 } from "@/lib/localStorage";
 
-const tabOptions: { id: "classes" | "attendance" | "notes" | "remarks"; label: string; icon: LucideIcon }[] = [
+const tabOptions: { id: "classes" | "timetable" | "attendance" | "notes" | "remarks"; label: string; icon: LucideIcon }[] = [
   { id: "classes", label: "Classes", icon: Calendar },
+  { id: "timetable", label: "Timetable", icon: Clock },
   { id: "attendance", label: "Attendance", icon: ClipboardCheck },
   { id: "notes", label: "Notes", icon: FileText },
   { id: "remarks", label: "Student Remarks", icon: MessageSquare },
 ];
 
 const TeacherDashboard = () => {
-  const [activeTab, setActiveTab] = useState<"classes" | "attendance" | "notes" | "remarks">("classes");
+  const [activeTab, setActiveTab] = useState<"classes" | "timetable" | "attendance" | "notes" | "remarks">("classes");
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [remarks, setRemarks] = useState<StudentRemark[]>([]);
+  const [timetableLectures, setTimetableLectures] = useState<TimetableLecture[]>([]);
   const [selectedAttendanceBatch, setSelectedAttendanceBatch] = useState<string | null>(null);
   const [selectedClassForAttendance, setSelectedClassForAttendance] = useState<Class | null>(null);
   const [dailyAttendance, setDailyAttendance] = useState<Record<string, boolean>>({}); // studentId -> isAbsent
@@ -131,6 +139,7 @@ const TeacherDashboard = () => {
     setTeachers(getTeachers());
     setNotes(getNotes());
     setRemarks(getStudentRemarks());
+    setTimetableLectures(getTimetableLectures());
   };
 
   useEffect(() => {
@@ -139,12 +148,14 @@ const TeacherDashboard = () => {
       loadData();
     };
     window.addEventListener('sankalp_role_changed', handleRoleChange);
+    window.addEventListener('sankalp_timetable_changed', handleRoleChange);
     window.addEventListener('storage', handleRoleChange);
     const unsubscribe = subscribeToRealtimeUpdates(() => {
       loadData();
     });
     return () => {
       window.removeEventListener('sankalp_role_changed', handleRoleChange);
+      window.removeEventListener('sankalp_timetable_changed', handleRoleChange);
       window.removeEventListener('storage', handleRoleChange);
       unsubscribe();
     };
@@ -204,6 +215,17 @@ const TeacherDashboard = () => {
 
   const handleSaveDailyAttendance = () => {
     if (!selectedAttendanceBatch) return;
+
+    // Authorization check before saving attendance (Requirement 22)
+    if (
+      selectedClassForAttendance?.teacherId &&
+      !isFallbackTeacher &&
+      selectedClassForAttendance.teacherId !== activeUser?.id
+    ) {
+      toast.error("Unauthorized: You cannot save attendance for another teacher's lecture.");
+      return;
+    }
+
     const targetDate = selectedClassForAttendance?.date || currentDateStr || getLocalDateString();
     const timestamp = new Date().toLocaleTimeString();
 
@@ -248,6 +270,30 @@ const TeacherDashboard = () => {
   const handleOpenAttendanceForClass = (classItem: Class) => {
     setSelectedClassForAttendance(classItem);
     setSelectedAttendanceBatch(classItem.batchId);
+    setActiveTab("attendance");
+  };
+
+  const handleOpenAttendanceForLecture = (payload: LectureAttendancePayload) => {
+    // Authorization check (Requirement 22)
+    const isAuthorized = isFallbackTeacher || payload.teacherId === activeUser?.id;
+    if (!isAuthorized) {
+      toast.error("Unauthorized: You cannot take attendance for another teacher's lecture.");
+      return;
+    }
+
+    const classItem: Class = {
+      id: payload.timetableId,
+      name: `${payload.subjectName} (${payload.roomName || 'Classroom'})`,
+      subject: payload.subjectName,
+      batchId: payload.batchId,
+      teacherId: payload.teacherId,
+      teacherName: payload.teacherName,
+      date: payload.date || currentDateStr || getLocalDateString(),
+      time: payload.startTime,
+      endTime: payload.endTime,
+    };
+    setSelectedClassForAttendance(classItem);
+    setSelectedAttendanceBatch(payload.batchId);
     setActiveTab("attendance");
   };
 
@@ -306,6 +352,19 @@ const TeacherDashboard = () => {
     return `${displayH}:${m.toString().padStart(2, '0')} ${period}`;
   };
 
+  const renderTimetable = () => (
+    <Card className="p-6">
+      <TeacherTimetableSection
+        currentTeacherId={activeUser?.id || ''}
+        isMasterUser={isFallbackTeacher}
+        allLectures={timetableLectures}
+        allAttendance={getAttendance()}
+        allStudents={students}
+        onOpenAttendance={handleOpenAttendanceForLecture}
+      />
+    </Card>
+  );
+
   const renderClasses = () => {
     const sortedClasses = [...myClasses].sort(
       (a, b) => new Date(`${b.date}T${b.time}`).getTime() - new Date(`${a.date}T${a.time}`).getTime()
@@ -315,15 +374,28 @@ const TeacherDashboard = () => {
     const pastClasses = sortedClasses.filter(c => isClassPassed(c));
 
     return (
-      <Card className="p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4 border-b pb-4">
-          <div>
-            <h3 className="text-2xl font-black text-primary">My Schedule & Lectures</h3>
-            <p className="text-sm text-muted-foreground mt-1">
-              Click on any class to take student attendance (syncs with Admin Reports)
-            </p>
+      <div className="space-y-6">
+        <Card className="p-6">
+          <TeacherTimetableSection
+            currentTeacherId={activeUser?.id || ''}
+            isMasterUser={isFallbackTeacher}
+            allLectures={timetableLectures}
+            allAttendance={getAttendance()}
+            allStudents={students}
+            onOpenAttendance={handleOpenAttendanceForLecture}
+          />
+        </Card>
+
+        {/* Existing Class Sessions Section */}
+        <Card className="p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4 border-b pb-4">
+            <div>
+              <h3 className="text-xl font-black text-foreground">Specific Dated Class Sessions</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Individual class sessions scheduled outside recurring weekly timetable.
+              </p>
+            </div>
           </div>
-        </div>
 
         {myClasses.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -455,7 +527,8 @@ const TeacherDashboard = () => {
             )}
           </div>
         )}
-      </Card>
+        </Card>
+      </div>
     );
   };
 
@@ -1430,6 +1503,7 @@ const TeacherDashboard = () => {
 
       <div className="pb-24 lg:pb-0">
         {activeTab === "classes" && renderClasses()}
+        {activeTab === "timetable" && renderTimetable()}
         {activeTab === "attendance" && renderAttendance()}
         {activeTab === "notes" && renderNotes()}
         {activeTab === "remarks" && renderRemarks()}
