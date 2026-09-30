@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -19,6 +20,13 @@ const isElectron = typeof window !== 'undefined' && (
   navigator.userAgent.toLowerCase().includes('electron') ||
   !!(window as any).electronAPI
 );
+
+const StaticRedirect = ({ to }: { to: string }) => {
+  useEffect(() => {
+    window.location.href = to;
+  }, [to]);
+  return null;
+};
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -52,6 +60,8 @@ const App = () => (
             <Route path="/teachers-app" element={<AppDownloadPage appType="teacher" />} />
             <Route path="/staffapp" element={<AppDownloadPage appType="staff" />} />
             <Route path="/staff-app" element={<AppDownloadPage appType="staff" />} />
+            <Route path="/sankalpweb" element={<StaticRedirect to="/sankalpweb/index.html" />} />
+            <Route path="/apps" element={<StaticRedirect to="/sankalpweb/index.html" />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </HashRouter>
@@ -83,6 +93,8 @@ const App = () => (
             <Route path="/teachers-app" element={<AppDownloadPage appType="teacher" />} />
             <Route path="/staffapp" element={<AppDownloadPage appType="staff" />} />
             <Route path="/staff-app" element={<AppDownloadPage appType="staff" />} />
+            <Route path="/sankalpweb" element={<StaticRedirect to="/sankalpweb/index.html" />} />
+            <Route path="/apps" element={<StaticRedirect to="/sankalpweb/index.html" />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

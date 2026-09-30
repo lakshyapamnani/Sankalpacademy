@@ -3,10 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Calendar, BookOpen, Brain, FileText, Home, Bot, UserCircle, MessageSquare, CheckSquare, LogOut, Award, Star, AlertTriangle, Bell, Megaphone, Sparkles, Trophy, CheckCircle2, ArrowRight } from "lucide-react";
+import { Calendar, BookOpen, Brain, FileText, Home, Bot, UserCircle, MessageSquare, CheckSquare, LogOut, Award, Star, AlertTriangle, Bell, Megaphone, Sparkles, Trophy, CheckCircle2, ArrowRight, Clock } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { toast } from "sonner";
+import { StudentTimetableSection } from "@/components/timetable/StudentTimetableSection";
 import {
   getClasses,
   getClassesByBatch,
@@ -33,6 +34,8 @@ import {
   isDevModeActive,
   isClassPast,
   format12h,
+  getTimetableLectures,
+  TimetableLecture,
   ClassNotification,
   AttendanceRecord,
   Class,
@@ -55,8 +58,9 @@ const calculateAttendancePercentage = (records: AttendanceRecord[]): number => {
   return Math.round((presentCount / records.length) * 100);
 };
 
-const tabOptions: { id: "home" | "attendance" | "notes" | "remarks" | "ai" | "tests" | "profile"; label: string; icon: LucideIcon }[] = [
+const tabOptions: { id: "home" | "timetable" | "attendance" | "notes" | "remarks" | "ai" | "tests" | "profile"; label: string; icon: LucideIcon }[] = [
   { id: "home", label: "Home", icon: Home },
+  { id: "timetable", label: "Timetable", icon: Clock },
   { id: "attendance", label: "Attendance", icon: Calendar },
   { id: "notes", label: "Notes", icon: BookOpen },
   { id: "remarks", label: "Remarks", icon: MessageSquare },
@@ -88,6 +92,7 @@ const StudentDashboard = () => {
   const [remarks, setRemarks] = useState<StudentRemark[]>([]);
   const [notices, setNotices] = useState<Notice[]>([]);
   const [remarkFilter, setRemarkFilter] = useState<'all' | 'appreciation' | 'complaint'>('all');
+  const [timetableLectures, setTimetableLectures] = useState<TimetableLecture[]>([]);
 
   // Test Taking State
   const [activeTakingTest, setActiveTakingTest] = useState<Test | null>(null);
@@ -95,7 +100,7 @@ const StudentDashboard = () => {
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, number>>({});
   const [testCompleted, setTestCompleted] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<"home" | "attendance" | "notes" | "remarks" | "ai" | "tests" | "profile">("home");
+  const [activeTab, setActiveTab] = useState<"home" | "timetable" | "attendance" | "notes" | "remarks" | "ai" | "tests" | "profile">("home");
 
   const subjectAttendanceBreakdown = useMemo(() => {
     const map: Record<string, { total: number; present: number; absent: number }> = {};
@@ -243,9 +248,11 @@ const StudentDashboard = () => {
     setTests([]);
     setTestResults([]);
     setBatches([]);
+    setTimetableLectures([]);
   };
 
   const loadData = () => {
+    setTimetableLectures(getTimetableLectures());
     const user = getCurrentUser();
     if (!user) {
       resetData();
@@ -300,6 +307,9 @@ const StudentDashboard = () => {
     }
     setNotes(batchNotes);
 
+    // Timetable
+    setTimetableLectures(getTimetableLectures());
+
     // Attendance
     let studentAttendance = getStudentAttendance(student.id);
     if (studentAttendance.length === 0 && isDev) {
@@ -342,6 +352,7 @@ const StudentDashboard = () => {
       loadData();
     };
     window.addEventListener('sankalp_role_changed', handleRoleChange);
+    window.addEventListener('sankalp_timetable_changed', handleRoleChange);
     window.addEventListener('storage', handleRoleChange);
     
     // Subscribe to realtime updates
@@ -350,6 +361,7 @@ const StudentDashboard = () => {
     });
     return () => {
       window.removeEventListener('sankalp_role_changed', handleRoleChange);
+      window.removeEventListener('sankalp_timetable_changed', handleRoleChange);
       window.removeEventListener('storage', handleRoleChange);
       unsubscribe();
     };
@@ -470,36 +482,27 @@ const StudentDashboard = () => {
         </Button>
       </Card>
 
-      {/* Lectures and Schedule */}
+      {/* Timetable Section */}
       <Card className="p-6">
-        <h3 className="text-xl font-semibold mb-6">Lectures & Schedule</h3>
-        <div className="space-y-3">
-          {[...myClasses].sort((a, b) => {
-            const aPast = isClassPast(a);
-            const bPast = isClassPast(b);
-            if (aPast === bPast) return 0;
-            return aPast ? 1 : -1;
-          }).map(classItem => {
-            const isPast = isClassPast(classItem);
-            return (
-              <div key={classItem.id} className={`p-4 rounded-lg border transition-colors ${isPast ? 'bg-muted/50 opacity-60 border-muted' : 'bg-card hover:bg-accent/5'}`}>
-                <div className="flex items-center gap-2">
-                  <p className="font-semibold">{classItem.name}</p>
-                  {isPast && (
-                    <span className="text-[10px] font-semibold uppercase tracking-wider bg-muted-foreground/20 text-muted-foreground px-1.5 py-0.5 rounded">Completed</span>
-                  )}
-                </div>
-                <p className="text-sm text-muted-foreground">{classItem.subject}</p>
-                <p className="text-xs text-muted-foreground mt-1">{classItem.date} • {format12h(classItem.time)} - {format12h(classItem.endTime)}</p>
-              </div>
-            );
-          })}
-          {myClasses.length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-4">No classes assigned yet.</p>
-          )}
-        </div>
+        <StudentTimetableSection
+          studentBatchId={currentStudent?.batchId || ''}
+          studentDivisionId={currentStudent?.divisionId}
+          batchName={batches.find(b => b.id === currentStudent?.batchId)?.name}
+          allLectures={timetableLectures}
+        />
       </Card>
     </div>
+  );
+
+  const renderTimetableCard = () => (
+    <Card className="p-6">
+      <StudentTimetableSection
+        studentBatchId={currentStudent?.batchId || ''}
+        studentDivisionId={currentStudent?.divisionId}
+        batchName={batches.find(b => b.id === currentStudent?.batchId)?.name}
+        allLectures={timetableLectures}
+      />
+    </Card>
   );
 
   const renderNotesCard = () => (
@@ -768,6 +771,7 @@ const StudentDashboard = () => {
   const renderTabContent = () => {
     switch(activeTab) {
       case "home": return renderClassesCard();
+      case "timetable": return renderTimetableCard();
       case "attendance": return renderAttendanceSection();
       case "notes": return renderNotesCard();
       case "remarks": return renderRemarksCard();

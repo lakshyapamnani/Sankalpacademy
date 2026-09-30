@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sankalp Academy - Official App Store</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f5f5f7;
+      --surface-card: #ffffff;
+      --border-color: rgba(0, 0, 0, 0.08);
+      --accent-blue: #0071e3;
+      --accent-blue-hover: #0077ed;
+      --accent-blue-bg: rgba(0, 113, 227, 0.08);
+      --accent-green: #34c759;
+      --accent-purple: #af52de;
+      --accent-gold: #ff9500;
+      --text-primary: #1d1d1f;
+      --text-secondary: #6e6e73;
+      --text-tertiary: #86868b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Plus Jakarta Sans", "Segoe UI", Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-bottom: 4rem;
+    }
+
+    /* Professional White App Store Header */
+    .appstore-nav {
+      width: 100%;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(255, 255, 255, 0.88);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border-color);
+      padding: 0.9rem 1.5rem;
+    }
+
+    .nav-container {
+      max-width: 1200px;
+      width: 100%;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+      color: var(--text-primary);
+    }
+
+    .brand-logo img {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      object-fit: cover;
+    }
+
+    .brand-logo-text {
+      font-size: 1.2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #1d1d1f;
+    }
+
+    .brand-badge {
+      background: var(--accent-blue-bg);
+      color: var(--accent-blue);
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 0.22rem 0.6rem;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-left: 0.4rem;
+    }
+
+    .nav-tabs {
+      display: flex;
+      align-items: center;
+      gap: 1.75rem;
+      list-style: none;
+    }
+
+    .nav-tab-item {
+      color: var(--text-secondary);
+      font-size: 0.92rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: color 0.2s ease;
+    }
+
+    .nav-tab-item.active, .nav-tab-item:hover {
+      color: var(--accent-blue);
+    }
+
+    .container {
+      max-width: 1200px;
+      width: 100%;
+      padding: 3rem 1.5rem;
+    }
+
+    /* Page Main Header */
+    .page-header {
+      text-align: center;
+      margin-bottom: 3rem;
+    }
+
+    .page-title {
+      font-size: 2.75rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      color: var(--text-primary);
+      margin-bottom: 0.75rem;
+    }
+
+    .page-subtitle {
+      font-size: 1.15rem;
+      color: var(--text-secondary);
+      max-width: 620px;
+      margin: 0 auto;
+      line-height: 1.5;
+    }
+
+    /* App Store Grid */
+    .app-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 2rem;
+      margin-bottom: 3.5rem;
+    }
+
+    /* App Store White Card */
+    .app-card {
+      background: var(--surface-card);
+      border: 1px solid var(--border-color);
+      border-radius: 24px;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.03);
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      position: relative;
+    }
+
+    .app-card:hover {
+      transform: translateY(-6px);
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.1), 0 4px 12px rgba(0, 0, 0, 0.04);
+      border-color: rgba(0, 113, 227, 0.2);
+    }
+
+    .app-card-top {
+      display: flex;
+      gap: 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+
+    /* App Icon (Sankalp Logo Image for all 3 apps) */
+    .app-icon-img {
+      width: 76px;
+      height: 76px;
+      border-radius: 18px;
+      object-fit: cover;
+      flex-shrink: 0;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1), inset 0 0 0 1px rgba(0, 0, 0, 0.06);
+    }
+
+    .app-meta {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .app-title {
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin-bottom: 0.25rem;
+      color: var(--text-primary);
+    }
+
+    .app-category {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 0.4rem;
+    }
+
+    .app-rating {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.85rem;
+      color: var(--accent-gold);
+      font-weight: 700;
+    }
+
+    .rating-count {
+      color: var(--text-tertiary);
+      font-weight: 400;
+      margin-left: 0.2rem;
+    }
+
+    .app-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .tag-pill {
+      background: var(--accent-blue-bg);
+      color: var(--accent-blue);
+      font-size: 0.74rem;
+      font-weight: 600;
+      padding: 0.28rem 0.7rem;
+      border-radius: 8px;
+    }
+
+    .app-description {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      line-height: 1.6;
+      margin-bottom: 1.75rem;
+      flex-grow: 1;
+    }
+
+    /* App Store Action Pill Buttons */
+    .app-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .btn-get {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      background: var(--accent-blue);
+      color: #ffffff;
+      font-weight: 700;
+      font-size: 0.92rem;
+      padding: 0.85rem 1.4rem;
+      border-radius: 9999px;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 14px rgba(0, 113, 227, 0.25);
+    }
+
+    .btn-get:hover {
+      background: var(--accent-blue-hover);
+      transform: scale(1.015);
+      box-shadow: 0 6px 18px rgba(0, 113, 227, 0.35);
+    }
+
+    .btn-get-secondary {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      background: #e8e8ed;
+      color: var(--accent-blue);
+      font-weight: 700;
+      font-size: 0.9rem;
+      padding: 0.8rem 1.25rem;
+      border-radius: 9999px;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+
+    .btn-get-secondary:hover {
+      background: #dcdce2;
+      color: #005bb5;
+    }
+
+    footer {
+      text-align: center;
+      color: var(--text-tertiary);
+      font-size: 0.85rem;
+      border-top: 1px solid var(--border-color);
+      padding-top: 2.5rem;
+      margin-top: 2rem;
+      width: 100%;
+      max-width: 1200px;
+    }
+
+    footer p {
+      margin-bottom: 0.5rem;
+    }
+
+    @media (max-width: 768px) {
+      .nav-tabs {
+        display: none;
+      }
+      .page-title {
+        font-size: 2.1rem;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Clean Professional Navigation Bar -->
+  <header class="appstore-nav">
+    <div class="nav-container">
+      <a href="#" class="brand-logo">
+        <img src="sankalp_logo.jpeg" alt="Sankalp Academy Logo">
+        <span class="brand-logo-text">Sankalp Academy</span>
+        <span class="brand-badge">App Store</span>
+      </a>
+      <ul class="nav-tabs">
+        <li><a href="#apps-section" class="nav-tab-item active">Applications</a></li>
+        <li><a href="/student" target="_blank" class="nav-tab-item">Student Portal</a></li>
+        <li><a href="/teacher" target="_blank" class="nav-tab-item">Teacher Portal</a></li>
+        <li><a href="/staff" target="_blank" class="nav-tab-item">Staff Portal</a></li>
+      </ul>
+    </div>
+  </header>
+
+  <div class="container">
+
+    <!-- Page Main Header -->
+    <div class="page-header">
+      <h1 class="page-title">Sankalp Academy Apps</h1>
+      <p class="page-subtitle">Download official applications and access cloud portals for Students, Faculty, and Administrators.</p>
+    </div>
+
+    <!-- App Store Grid (3 Apps with Logo Icons) -->
+    <div class="app-grid" id="apps-section">
+
+      <!-- 1. STUDENT APP CARD -->
+      <div class="app-card student">
+        <div>
+          <div class="app-card-top">
+            <img src="sankalp_logo.jpeg" alt="Sankalp Student Logo" class="app-icon-img">
+            <div class="app-meta">
+              <h2 class="app-title">Sankalp Student</h2>
+              <span class="app-category">Education • iOS, Android & Web</span>
+              <div class="app-rating">
+                ★ 4.9 <span class="rating-count">(1.8k Ratings)</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="app-tags">
+            <span class="tag-pill">⚡ Live Schedule</span>
+            <span class="tag-pill">📝 AI Assessments</span>
+            <span class="tag-pill">📊 Attendance</span>
+          </div>
+
+          <p class="app-description">Comprehensive student portal for lecture schedules, attendance tracking, study material, AI learning assistance, and online exams.</p>
+        </div>
+
+        <div class="app-actions">
+          <a href="/student" class="btn-get" target="_blank" rel="noopener noreferrer">
+            <span>📱 OPEN iOS / WEB PORTAL</span>
+          </a>
+          <a href="Sankalp_Student.apk" class="btn-get-secondary" download="Sankalp_Student.apk">
+            <span>📥 Download Android APK</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- 2. TEACHERS APP CARD -->
+      <div class="app-card teacher">
+        <div>
+          <div class="app-card-top">
+            <img src="sankalp_logo.jpeg" alt="Sankalp Teachers Logo" class="app-icon-img">
+            <div class="app-meta">
+              <h2 class="app-title">Sankalp Teachers</h2>
+              <span class="app-category">Productivity • iOS, Android & Web</span>
+              <div class="app-rating">
+                ★ 4.9 <span class="rating-count">(950 Ratings)</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="app-tags">
+            <span class="tag-pill">📋 Attendance</span>
+            <span class="tag-pill">📚 Notes Upload</span>
+            <span class="tag-pill">🎯 MCQ Generator</span>
+          </div>
+
+          <p class="app-description">Faculty management platform for registering class attendance, uploading course material, scheduling lectures, and creating automated MCQ tests.</p>
+        </div>
+
+        <div class="app-actions">
+          <a href="/teacher" class="btn-get" target="_blank" rel="noopener noreferrer">
+            <span>📱 OPEN iOS / WEB PORTAL</span>
+          </a>
+          <a href="Sankalp_Teachers.apk" class="btn-get-secondary" download="Sankalp_Teachers.apk">
+            <span>📥 Download Android APK</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- 3. STAFF APP CARD -->
+      <div class="app-card staff">
+        <div>
+          <div class="app-card-top">
+            <img src="sankalp_logo.jpeg" alt="Sankalp Staff Logo" class="app-icon-img">
+            <div class="app-meta">
+              <h2 class="app-title">Sankalp Staff</h2>
+              <span class="app-category">Operations • iOS, Android & Web</span>
+              <div class="app-rating">
+                ★ 4.9 <span class="rating-count">(820 Ratings)</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="app-tags">
+            <span class="tag-pill">📋 Daily Attendance</span>
+            <span class="tag-pill">🏛️ Batch Records</span>
+            <span class="tag-pill">📢 Notices Broadcast</span>
+          </div>
+
+          <p class="app-description">Institute staff administration app for capturing daily student attendance across batches, coordinating classes, and broadcasting instant academy notices.</p>
+        </div>
+
+        <div class="app-actions">
+          <a href="/staff" class="btn-get" target="_blank" rel="noopener noreferrer">
+            <span>📱 OPEN iOS / WEB PORTAL</span>
+          </a>
+          <a href="Sankalp_Staff.apk" class="btn-get-secondary" download="Sankalp_Staff.apk">
+            <span>📥 Download Android APK</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- 4. ADMIN DESKTOP CARD -->
+      <div class="app-card admin">
+        <div>
+          <div class="app-card-top">
+            <img src="sankalp_logo.jpeg" alt="Admin ERP Setup Logo" class="app-icon-img">
+            <div class="app-meta">
+              <h2 class="app-title">Admin ERP Setup</h2>
+              <span class="app-category">Business • Windows Desktop (.exe)</span>
+              <div class="app-rating">
+                ★ 5.0 <span class="rating-count">(Desktop Suite)</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="app-tags">
+            <span class="tag-pill">🏛️ Class Admin</span>
+            <span class="tag-pill">💳 Fee Receipts</span>
+            <span class="tag-pill">📈 Analytics & PDF</span>
+          </div>
+
+          <p class="app-description">Complete desktop administration suite for institute management, student batch allocation, fee collection records, receipt printing, and system analytics.</p>
+        </div>
+
+        <div class="app-actions">
+          <a href="https://drive.google.com/file/d/1ukafDwbLf85J_Zkb8gph4aQkfF8KJ2qe/view?usp=drive_link" class="btn-get" target="_blank" rel="noopener noreferrer">
+            <span>📥 DOWNLOAD FROM DRIVE (.EXE)</span>
+          </a>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- App Store Footer -->
+    <footer>
+      <p>&copy; 2026 Sankalp Academy. All rights reserved.</p>
+      <p>Compatible with iOS, Android Web Viewers, and Windows 10/11 64-bit Edition.</p>
+    </footer>
+
+  </div>
+
+</body>
+
+</html>

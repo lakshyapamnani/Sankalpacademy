@@ -15,6 +15,8 @@ export interface Student {
   studentClass?: string;
   parentWhatsApp?: string;
   dob?: string;
+  divisionId?: string;
+  divisionName?: string;
 }
 
 export interface Staff {
@@ -213,6 +215,29 @@ export interface Notice {
   createdAt: string;
 }
 
+export interface TimetableLecture {
+  timetableId: string;
+  academicYear: string;
+  batchId: string;
+  batchName: string;
+  divisionId?: string;
+  divisionName?: string;
+  day: 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday' | string;
+  dayOrder: number;
+  startTime: string; // e.g. "16:00"
+  endTime: string;   // e.g. "18:00"
+  subjectId?: string;
+  subjectName: string;
+  teacherId: string;
+  teacherName: string;
+  roomId?: string;
+  roomName: string;
+  effectiveFrom?: string; // YYYY-MM-DD
+  effectiveTo?: string;   // YYYY-MM-DD
+  createdAt: string;
+  updatedAt: string;
+}
+
 // Delete functions
 export const deleteStudent = (studentId: string): boolean => {
   try {
@@ -296,6 +321,8 @@ const STORAGE_KEYS = {
   RECEIPT_COUNTER: 'smartclass_receipt_counter',
   STUDENT_REMARKS: 'smartclass_student_remarks',
   NOTICES: 'smartclass_notices',
+  TIMETABLE: 'smartclass_timetable',
+  ROOMS: 'smartclass_rooms',
 };
 
 const DB_PATHS = {
@@ -319,6 +346,8 @@ const DB_PATHS = {
   META: 'meta',
   STUDENT_REMARKS: 'studentRemarks',
   NOTICES: 'notices',
+  TIMETABLE: 'timetable',
+  ROOMS: 'rooms',
 };
 
 // Initialize default data
@@ -383,6 +412,26 @@ const initializeDefaultData = () => {
   if (!localStorage.getItem(STORAGE_KEYS.NOTICES)) {
     localStorage.setItem(STORAGE_KEYS.NOTICES, JSON.stringify([]));
   }
+
+  if (!localStorage.getItem(STORAGE_KEYS.TIMETABLE)) {
+    localStorage.setItem(STORAGE_KEYS.TIMETABLE, JSON.stringify([]));
+  }
+
+  if (!localStorage.getItem(STORAGE_KEYS.ROOMS)) {
+    localStorage.setItem(
+      STORAGE_KEYS.ROOMS,
+      JSON.stringify([
+        'Room 1',
+        'Room 2',
+        'Room 3',
+        'Room 4',
+        'Room 5',
+        'Lab 1',
+        'Lab 2',
+        'Auditorium',
+      ])
+    );
+  }
 };
 
 initializeDefaultData();
@@ -420,7 +469,7 @@ const fetchCollectionFromRealtime = async <T>(collection: string): Promise<T[] |
 };
 
 const syncRealtimeData = async () => {
-  const [students, classes, notes, attendance, batches, fees, tests, testResults, staffList, subjects, teachersList, leadsList, studentRemarksList, noticesList] = await Promise.all([
+  const [students, classes, notes, attendance, batches, fees, tests, testResults, staffList, subjects, teachersList, leadsList, studentRemarksList, noticesList, timetableList] = await Promise.all([
     fetchCollectionFromRealtime<Student>(DB_PATHS.STUDENTS),
     fetchCollectionFromRealtime<Class>(DB_PATHS.CLASSES),
     fetchCollectionFromRealtime<Note>(DB_PATHS.NOTES),
@@ -435,6 +484,7 @@ const syncRealtimeData = async () => {
     fetchCollectionFromRealtime<Lead>(DB_PATHS.LEADS),
     fetchCollectionFromRealtime<StudentRemark>(DB_PATHS.STUDENT_REMARKS),
     fetchCollectionFromRealtime<Notice>(DB_PATHS.NOTICES),
+    fetchCollectionFromRealtime<TimetableLecture>(DB_PATHS.TIMETABLE),
   ]);
 
   if (students) {
@@ -479,6 +529,9 @@ const syncRealtimeData = async () => {
   if (noticesList) {
     saveToStorage(STORAGE_KEYS.NOTICES, noticesList);
   }
+  if (timetableList) {
+    saveToStorage(STORAGE_KEYS.TIMETABLE, timetableList);
+  }
 
   // Sync institute settings
   try {
@@ -487,6 +540,19 @@ const syncRealtimeData = async () => {
       const remoteSettings = settingsSnap.val();
       if (remoteSettings) {
         localStorage.setItem(STORAGE_KEYS.INSTITUTE_SETTINGS, JSON.stringify(remoteSettings));
+      }
+    }
+  } catch {
+    // Firebase unavailable
+  }
+
+  // Sync rooms
+  try {
+    const roomsSnap = await get(child(ref(database), `${DB_PATHS.ROOMS}/list`));
+    if (roomsSnap.exists()) {
+      const remoteRooms = roomsSnap.val();
+      if (Array.isArray(remoteRooms) && remoteRooms.length > 0) {
+        localStorage.setItem(STORAGE_KEYS.ROOMS, JSON.stringify(remoteRooms));
       }
     }
   } catch {
@@ -600,6 +666,12 @@ const attachListener = <T>(
       const data = snapshot.val();
       const items = data ? (Object.values(data) as T[]) : [];
       saveToStorage(storageKey, items);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('sankalp_realtime_sync', { detail: { key: storageKey, count: items.length } }));
+        if (storageKey === STORAGE_KEYS.TIMETABLE) {
+          window.dispatchEvent(new CustomEvent('sankalp_timetable_changed', { detail: items }));
+        }
+      }
       if (onUpdate) onUpdate();
     },
     error => {
@@ -625,6 +697,7 @@ export const subscribeToRealtimeUpdates = (onUpdate?: () => void): Unsubscribe =
     attachListener<FeeRecord>(DB_PATHS.FEES, STORAGE_KEYS.FEES, onUpdate),
     attachListener<StudentRemark>(DB_PATHS.STUDENT_REMARKS, STORAGE_KEYS.STUDENT_REMARKS, onUpdate),
     attachListener<Notice>(DB_PATHS.NOTICES, STORAGE_KEYS.NOTICES, onUpdate),
+    attachListener<TimetableLecture>(DB_PATHS.TIMETABLE, STORAGE_KEYS.TIMETABLE, onUpdate),
   ];
 
   // Also subscribe to Institute Settings updates
@@ -640,6 +713,23 @@ export const subscribeToRealtimeUpdates = (onUpdate?: () => void): Unsubscribe =
       }
     });
     unsubscribes.push(settingsUnsub);
+  } catch {
+    // ignore
+  }
+
+  // Also subscribe to Rooms updates
+  try {
+    const roomsRef = ref(database, `${DB_PATHS.ROOMS}/list`);
+    const roomsUnsub = onValue(roomsRef, snapshot => {
+      if (snapshot.exists()) {
+        const val = snapshot.val();
+        if (Array.isArray(val) && val.length > 0) {
+          localStorage.setItem(STORAGE_KEYS.ROOMS, JSON.stringify(val));
+          if (onUpdate) onUpdate();
+        }
+      }
+    });
+    unsubscribes.push(roomsUnsub);
   } catch {
     // ignore
   }
@@ -1432,4 +1522,402 @@ export const deleteNotice = async (noticeId: string): Promise<boolean> => {
     return false;
   }
 };
+
+// ─── Timetable Management ──────────────────────────────────────────
+
+export const DAYS_OF_WEEK = [
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+  'Sunday',
+] as const;
+
+export const DAY_ORDER_MAP: Record<string, number> = {
+  'Monday': 1,
+  'Tuesday': 2,
+  'Wednesday': 3,
+  'Thursday': 4,
+  'Friday': 5,
+  'Saturday': 6,
+  'Sunday': 7,
+};
+
+export const timeToMinutes = (timeStr: string): number => {
+  if (!timeStr) return 0;
+  const str = timeStr.trim().toUpperCase();
+  const isPM = str.includes('PM');
+  const isAM = str.includes('AM');
+  const clean = str.replace(/(AM|PM)/g, '').trim();
+  const [hStr, mStr] = clean.split(':');
+  let h = parseInt(hStr, 10) || 0;
+  const m = parseInt(mStr, 10) || 0;
+  if (isPM && h < 12) h += 12;
+  if (isAM && h === 12) h = 0;
+  return h * 60 + m;
+};
+
+export const formatTime12h = (time24: string): string => {
+  if (!time24) return '';
+  const clean = time24.trim();
+  if (clean.toUpperCase().includes('AM') || clean.toUpperCase().includes('PM')) {
+    return clean;
+  }
+  const [hStr, mStr = '00'] = clean.split(':');
+  let h = parseInt(hStr, 10) || 0;
+  const period = h >= 12 ? 'PM' : 'AM';
+  if (h > 12) h -= 12;
+  if (h === 0) h = 12;
+  return `${h}:${mStr.padStart(2, '0')} ${period}`;
+};
+
+export const formatTimeRange12h = (start24: string, end24: string): string => {
+  return `${formatTime12h(start24)} – ${formatTime12h(end24)}`;
+};
+
+/**
+ * Filter teachers assigned to a given subject.
+ * Matches case-insensitively against each teacher's assignedSubjects array.
+ */
+export const getTeachersForSubject = (subjectName: string, teachers: Teacher[]): Teacher[] => {
+  if (!subjectName || !teachers) return [];
+  const normalized = subjectName.trim().toLowerCase();
+  return teachers.filter(t =>
+    Array.isArray(t.assignedSubjects) &&
+    t.assignedSubjects.some(s => s && s.trim().toLowerCase() === normalized)
+  );
+};
+
+export interface TimetableValidationResult {
+  isValid: boolean;
+  type?: 'time' | 'batch' | 'teacher' | 'room' | 'duplicate';
+  message?: string;
+}
+
+/**
+ * Validates candidate lecture for time validity, duplicate prevention,
+ * and conflict detection across Batch, Teacher, and Room.
+ */
+export const validateTimetableLecture = (
+  candidate: {
+    timetableId?: string;
+    day: string;
+    startTime: string;
+    endTime: string;
+    batchId: string;
+    divisionId?: string;
+    teacherId: string;
+    teacherName?: string;
+    roomId?: string;
+    roomName: string;
+    subjectName: string;
+    effectiveFrom?: string;
+    effectiveTo?: string;
+  },
+  existingLectures: TimetableLecture[],
+  excludeTimetableId?: string
+): TimetableValidationResult => {
+  const candStart = timeToMinutes(candidate.startTime);
+  const candEnd = timeToMinutes(candidate.endTime);
+
+  // 1. Time validation: End Time must be later than Start Time
+  if (candEnd <= candStart) {
+    return {
+      isValid: false,
+      type: 'time',
+      message: 'End Time must be later than Start Time.',
+    };
+  }
+
+  // Filter other lectures
+  const otherLectures = existingLectures.filter(
+    l => l.timetableId !== excludeTimetableId && (!candidate.timetableId || l.timetableId !== candidate.timetableId)
+  );
+
+  for (const other of otherLectures) {
+    // Only check if on the same day
+    if (other.day.toLowerCase() !== candidate.day.toLowerCase()) {
+      continue;
+    }
+
+    // Check effective date range overlap if both have effective ranges specified
+    if (candidate.effectiveFrom && candidate.effectiveTo && other.effectiveFrom && other.effectiveTo) {
+      const candEffFrom = candidate.effectiveFrom;
+      const candEffTo = candidate.effectiveTo;
+      const otherEffFrom = other.effectiveFrom;
+      const otherEffTo = other.effectiveTo;
+      const dateOverlap = candEffFrom <= otherEffTo && otherEffFrom <= candEffTo;
+      if (!dateOverlap) {
+        continue;
+      }
+    }
+
+    const otherStart = timeToMinutes(other.startTime);
+    const otherEnd = timeToMinutes(other.endTime);
+
+    // Overlap condition: start1 < end2 && start2 < end1
+    const timesOverlap = candStart < otherEnd && otherStart < candEnd;
+
+    // Exact duplicate check
+    if (
+      other.batchId === candidate.batchId &&
+      other.startTime === candidate.startTime &&
+      other.endTime === candidate.endTime &&
+      (other.subjectName || '').trim().toLowerCase() === (candidate.subjectName || '').trim().toLowerCase() &&
+      other.teacherId === candidate.teacherId
+    ) {
+      return {
+        isValid: false,
+        type: 'duplicate',
+        message: 'An identical lecture is already scheduled for this batch, day, time, subject, and teacher.',
+      };
+    }
+
+    if (timesOverlap) {
+      // A. BATCH CONFLICT
+      // The same batch cannot have overlapping lectures
+      const sameBatch = other.batchId === candidate.batchId;
+      const sameDivision = !candidate.divisionId || !other.divisionId || candidate.divisionId === other.divisionId;
+      if (sameBatch && sameDivision) {
+        return {
+          isValid: false,
+          type: 'batch',
+          message: 'Lecture time overlaps with another lecture scheduled for this batch.',
+        };
+      }
+
+      // B. TEACHER CONFLICT
+      // A teacher cannot teach two batches at overlapping times
+      if (other.teacherId === candidate.teacherId) {
+        const teacherDisplayName = candidate.teacherName || other.teacherName || 'The selected teacher';
+        return {
+          isValid: false,
+          type: 'teacher',
+          message: `${teacherDisplayName} is already assigned to another lecture during this time.`,
+        };
+      }
+
+      // C. ROOM CONFLICT
+      // A room cannot be used by two batches at overlapping times
+      const sameRoomId = candidate.roomId && other.roomId && candidate.roomId === other.roomId;
+      const sameRoomName =
+        candidate.roomName &&
+        other.roomName &&
+        candidate.roomName.trim().toLowerCase() === other.roomName.trim().toLowerCase();
+
+      if (sameRoomId || sameRoomName) {
+        const roomDisplayName = candidate.roomName || other.roomName || 'Room';
+        return {
+          isValid: false,
+          type: 'room',
+          message: `${roomDisplayName} is already occupied during this time.`,
+        };
+      }
+    }
+  }
+
+  return { isValid: true };
+};
+
+export const getTimetableLectures = (): TimetableLecture[] =>
+  getFromStorage<TimetableLecture>(STORAGE_KEYS.TIMETABLE);
+
+export const getTimetableByBatch = (batchId: string, divisionId?: string): TimetableLecture[] => {
+  return getTimetableLectures()
+    .filter(l => l.batchId === batchId && (!divisionId || !l.divisionId || l.divisionId === divisionId))
+    .sort((a, b) => {
+      if (a.dayOrder !== b.dayOrder) return a.dayOrder - b.dayOrder;
+      return timeToMinutes(a.startTime) - timeToMinutes(b.startTime);
+    });
+};
+
+export const getTimetableByTeacher = (teacherId: string): TimetableLecture[] => {
+  return getTimetableLectures()
+    .filter(l => l.teacherId === teacherId)
+    .sort((a, b) => {
+      if (a.dayOrder !== b.dayOrder) return a.dayOrder - b.dayOrder;
+      return timeToMinutes(a.startTime) - timeToMinutes(b.startTime);
+    });
+};
+
+export const addTimetableLecture = async (lecture: TimetableLecture): Promise<void> => {
+  const current = getTimetableLectures();
+  // Prevent any exact duplicate from being added locally
+  const deduplicated = current.filter(
+    l => l.timetableId !== lecture.timetableId &&
+      !(l.batchId === lecture.batchId &&
+        l.day === lecture.day &&
+        l.startTime === lecture.startTime &&
+        l.endTime === lecture.endTime &&
+        l.subjectName.toLowerCase() === lecture.subjectName.toLowerCase())
+  );
+  const updated = [...deduplicated, lecture];
+  saveToStorage(STORAGE_KEYS.TIMETABLE, updated);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('sankalp_timetable_changed', { detail: updated }));
+  }
+  // Async non-blocking write to Firebase Realtime Database
+  void writeItemToRealtime(DB_PATHS.TIMETABLE, lecture.timetableId, lecture);
+};
+
+export const updateTimetableLecture = async (
+  timetableId: string,
+  updates: Partial<TimetableLecture>
+): Promise<void> => {
+  const current = getTimetableLectures();
+  const index = current.findIndex(l => l.timetableId === timetableId);
+  if (index !== -1) {
+    const updatedLecture: TimetableLecture = {
+      ...current[index],
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    };
+    current[index] = updatedLecture;
+    saveToStorage(STORAGE_KEYS.TIMETABLE, current);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('sankalp_timetable_changed', { detail: current }));
+    }
+    void writeItemToRealtime(DB_PATHS.TIMETABLE, timetableId, updatedLecture);
+  }
+};
+
+export const deleteTimetableLecture = async (timetableId: string): Promise<boolean> => {
+  try {
+    const current = getTimetableLectures();
+    const target = current.find(l => l.timetableId === timetableId);
+    
+    const idsToDelete: string[] = [timetableId];
+    let updated: TimetableLecture[];
+    
+    if (target) {
+      updated = current.filter(l => {
+        const isMatch = l.timetableId === timetableId ||
+          (l.batchId === target.batchId &&
+           l.day === target.day &&
+           l.startTime === target.startTime &&
+           l.endTime === target.endTime &&
+           l.subjectName.toLowerCase() === target.subjectName.toLowerCase());
+        if (isMatch && l.timetableId !== timetableId) {
+          idsToDelete.push(l.timetableId);
+        }
+        return !isMatch;
+      });
+    } else {
+      updated = current.filter(l => l.timetableId !== timetableId);
+    }
+
+    saveToStorage(STORAGE_KEYS.TIMETABLE, updated);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('sankalp_timetable_changed', { detail: updated }));
+    }
+    
+    idsToDelete.forEach(id => {
+      void removeItemFromRealtime(DB_PATHS.TIMETABLE, id);
+    });
+    return true;
+  } catch (error) {
+    console.error('Error deleting timetable lecture:', error);
+    return false;
+  }
+};
+
+export const subscribeToTimetableUpdates = (
+  callback: (lectures: TimetableLecture[]) => void
+): Unsubscribe => {
+  const collectionRef = ref(database, DB_PATHS.TIMETABLE);
+  
+  const unsubscribeFirebase = onValue(
+    collectionRef,
+    snapshot => {
+      const data = snapshot.val();
+      const items = data ? (Object.values(data) as TimetableLecture[]) : [];
+      saveToStorage(STORAGE_KEYS.TIMETABLE, items);
+      callback(items);
+    },
+    error => {
+      console.error('Failed to listen for timetable updates on Firebase', error);
+    }
+  );
+
+  const handleLocalChange = () => {
+    callback(getTimetableLectures());
+  };
+  window.addEventListener('sankalp_timetable_changed', handleLocalChange);
+  window.addEventListener('storage', handleLocalChange);
+
+  return () => {
+    unsubscribeFirebase();
+    window.removeEventListener('sankalp_timetable_changed', handleLocalChange);
+    window.removeEventListener('storage', handleLocalChange);
+  };
+};
+
+// ─── Room / Classroom Settings ──────────────────────────────────────
+
+export const DEFAULT_ROOM_LIST: string[] = [
+  'Room 1',
+  'Room 2',
+  'Room 3',
+  'Room 4',
+  'Room 5',
+  'Lab 1',
+  'Lab 2',
+  'Auditorium',
+];
+
+export const getRooms = (): string[] => {
+  const data = localStorage.getItem(STORAGE_KEYS.ROOMS);
+  if (data) {
+    try {
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    } catch {
+      // fallback
+    }
+  }
+  return DEFAULT_ROOM_LIST;
+};
+
+export const addRoom = async (roomName: string): Promise<string[]> => {
+  const clean = roomName.trim();
+  if (!clean) return getRooms();
+  const rooms = getRooms();
+  if (rooms.some(r => r.toLowerCase() === clean.toLowerCase())) {
+    throw new Error(`Room "${clean}" already exists.`);
+  }
+  const updated = [...rooms, clean];
+  localStorage.setItem(STORAGE_KEYS.ROOMS, JSON.stringify(updated));
+  try {
+    await set(ref(database, `${DB_PATHS.ROOMS}/list`), updated);
+  } catch (error) {
+    console.error('Failed to sync rooms to Firebase', error);
+  }
+  return updated;
+};
+
+export const deleteRoom = async (roomName: string): Promise<string[]> => {
+  const rooms = getRooms();
+  const updated = rooms.filter(r => r.toLowerCase() !== roomName.trim().toLowerCase());
+  localStorage.setItem(STORAGE_KEYS.ROOMS, JSON.stringify(updated));
+  try {
+    await set(ref(database, `${DB_PATHS.ROOMS}/list`), updated);
+  } catch (error) {
+    console.error('Failed to delete room from Firebase', error);
+  }
+  return updated;
+};
+
+export const resetRoomsToDefault = async (): Promise<string[]> => {
+  localStorage.setItem(STORAGE_KEYS.ROOMS, JSON.stringify(DEFAULT_ROOM_LIST));
+  try {
+    await set(ref(database, `${DB_PATHS.ROOMS}/list`), DEFAULT_ROOM_LIST);
+  } catch (error) {
+    console.error('Failed to reset rooms in Firebase', error);
+  }
+  return DEFAULT_ROOM_LIST;
+};
+
+
 
