@@ -21,6 +21,9 @@ import {
   timeToMinutes,
   DAYS_OF_WEEK,
   DAY_ORDER_MAP,
+  getLectureTeacherIds,
+  getLectureTeacherNames,
+  formatLectureTeachers,
 } from '@/lib/localStorage';
 import {
   getCurrentLocalDayName,
@@ -35,6 +38,7 @@ export interface LectureAttendancePayload {
   divisionId?: string;
   subjectName: string;
   teacherId: string;
+  teacherIds?: string[];
   teacherName: string;
   date: string;
   startTime: string;
@@ -65,11 +69,13 @@ export const TeacherTimetableSection = ({
   const todayDayName = useMemo(() => getCurrentLocalDayName(), []);
   const weekInfo = useMemo(() => getWeekInfo(new Date()), []);
 
-  // Filter lectures assigned strictly to this teacher (or all for dev master)
+  // Filter lectures assigned to this teacher (or all for dev master)
+  // Teacher sees lecture if their teacherId exists in teacherIds or teacherId (Requirement 23)
   const teacherLectures = useMemo(() => {
     return allLectures.filter(l => {
       if (isMasterUser) return true;
-      return l.teacherId === currentTeacherId;
+      const ids = getLectureTeacherIds(l);
+      return ids.includes(currentTeacherId);
     });
   }, [allLectures, currentTeacherId, isMasterUser]);
 
@@ -144,8 +150,9 @@ export const TeacherTimetableSection = ({
       batchId: lecture.batchId,
       divisionId: lecture.divisionId,
       subjectName: lecture.subjectName,
-      teacherId: lecture.teacherId,
-      teacherName: lecture.teacherName,
+      teacherId: lecture.teacherId || lecture.teacherIds?.[0] || currentTeacherId,
+      teacherIds: getLectureTeacherIds(lecture),
+      teacherName: formatLectureTeachers(lecture),
       date: targetDate,
       startTime: lecture.startTime,
       endTime: lecture.endTime,
@@ -267,11 +274,13 @@ export const TeacherTimetableSection = ({
                             {lecture.roomName || 'Room 1'}
                           </span>
                         </div>
-                        {isMasterUser && lecture.teacherName && (
+                        {(isMasterUser || getLectureTeacherNames(lecture).length > 1) && (
                           <div className="flex items-center justify-between">
-                            <span className="font-semibold text-foreground">Teacher:</span>
+                            <span className="font-semibold text-foreground">
+                              {getLectureTeacherNames(lecture).length > 1 ? 'Teachers:' : 'Teacher:'}
+                            </span>
                             <span className="font-bold text-foreground">
-                              {lecture.teacherName}
+                              {formatLectureTeachers(lecture)}
                             </span>
                           </div>
                         )}
@@ -343,11 +352,11 @@ export const TeacherTimetableSection = ({
                             {lecture.roomName || 'Room 1'}
                           </span>
                         </div>
-                        {isMasterUser && lecture.teacherName && (
+                        {(isMasterUser || getLectureTeacherNames(lecture).length > 1) && (
                           <div className="flex justify-between">
-                            <span>Teacher:</span>
+                            <span>{getLectureTeacherNames(lecture).length > 1 ? 'Teachers:' : 'Teacher:'}</span>
                             <span className="font-semibold text-foreground">
-                              {lecture.teacherName}
+                              {formatLectureTeachers(lecture)}
                             </span>
                           </div>
                         )}
@@ -448,9 +457,10 @@ export const TeacherTimetableSection = ({
                               </span>
                             </div>
 
-                            {isMasterUser && lecture.teacherName && (
+                            {(isMasterUser || getLectureTeacherNames(lecture).length > 1) && (
                               <div className="text-[11px] text-muted-foreground mt-1">
-                                Teacher: <span className="font-semibold text-foreground">{lecture.teacherName}</span>
+                                {getLectureTeacherNames(lecture).length > 1 ? 'Teachers:' : 'Teacher:'}{' '}
+                                <span className="font-semibold text-foreground">{formatLectureTeachers(lecture)}</span>
                               </div>
                             )}
 

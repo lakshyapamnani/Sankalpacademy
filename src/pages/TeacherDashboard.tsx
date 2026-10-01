@@ -216,12 +216,14 @@ const TeacherDashboard = () => {
   const handleSaveDailyAttendance = () => {
     if (!selectedAttendanceBatch) return;
 
-    // Authorization check before saving attendance (Requirement 22)
-    if (
-      selectedClassForAttendance?.teacherId &&
-      !isFallbackTeacher &&
-      selectedClassForAttendance.teacherId !== activeUser?.id
-    ) {
+    // Authorization check before saving attendance (Requirement 22 & 29)
+    const isAuthorizedToSave =
+      isFallbackTeacher ||
+      !selectedClassForAttendance?.teacherId ||
+      selectedClassForAttendance.teacherId === activeUser?.id ||
+      (Array.isArray(selectedClassForAttendance.teacherIds) && selectedClassForAttendance.teacherIds.includes(activeUser?.id || ''));
+
+    if (!isAuthorizedToSave) {
       toast.error("Unauthorized: You cannot save attendance for another teacher's lecture.");
       return;
     }
@@ -274,8 +276,12 @@ const TeacherDashboard = () => {
   };
 
   const handleOpenAttendanceForLecture = (payload: LectureAttendancePayload) => {
-    // Authorization check (Requirement 22)
-    const isAuthorized = isFallbackTeacher || payload.teacherId === activeUser?.id;
+    // Authorization check (Requirement 28 & 29): check teacherId or teacherIds array
+    const isAuthorized =
+      isFallbackTeacher ||
+      payload.teacherId === activeUser?.id ||
+      (Array.isArray(payload.teacherIds) && payload.teacherIds.includes(activeUser?.id || ''));
+
     if (!isAuthorized) {
       toast.error("Unauthorized: You cannot take attendance for another teacher's lecture.");
       return;
@@ -287,6 +293,7 @@ const TeacherDashboard = () => {
       subject: payload.subjectName,
       batchId: payload.batchId,
       teacherId: payload.teacherId,
+      teacherIds: payload.teacherIds,
       teacherName: payload.teacherName,
       date: payload.date || currentDateStr || getLocalDateString(),
       time: payload.startTime,

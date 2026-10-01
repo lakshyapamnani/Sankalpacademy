@@ -119,11 +119,22 @@ export interface Class {
   batchId: string;
   teacherId?: string;
   teacherName?: string;
+  teacherIds?: string[];
+  teacherNames?: string[];
   schedule?: string;
   date: string;
   time: string;
   endTime: string;
   endDate?: string; // ISO date string (YYYY-MM-DD)
+}
+
+export interface BatchTimingSetting {
+  batchId: string;
+  batchName?: string;
+  startTime: string; // e.g. "16:00" (4:00 PM)
+  endTime: string;   // e.g. "20:00" (8:00 PM)
+  defaultLecturesPerWeek?: number; // e.g. 2 or 3
+  isCombinedBatch?: boolean; // checkbox of combined batch so assign two subjects at the same time
 }
 
 export interface InstituteSettings {
@@ -133,6 +144,7 @@ export interface InstituteSettings {
   email: string;
   logo?: string;
   signature?: string;
+  batchTimings?: Record<string, BatchTimingSetting>;
 }
 
 
@@ -228,14 +240,29 @@ export interface TimetableLecture {
   endTime: string;   // e.g. "18:00"
   subjectId?: string;
   subjectName: string;
-  teacherId: string;
-  teacherName: string;
+  subjectNames?: string[]; // array of subjects if multiple subjects in this slot (e.g. ["Mathematics", "Science"])
+  subjectIds?: string[];
+  teacherSubjectMap?: Record<string, string>; // teacherId -> subjectName
+  teacherId?: string; // primary teacher (for backward compatibility)
+  teacherName?: string; // primary teacher (for backward compatibility)
+  teacherIds?: string[]; // array of assigned teacher IDs [primary, additional...]
+  teacherNames?: string[]; // array of assigned teacher names
   roomId?: string;
   roomName: string;
   effectiveFrom?: string; // YYYY-MM-DD
   effectiveTo?: string;   // YYYY-MM-DD
   createdAt: string;
   updatedAt: string;
+}
+
+export interface TimetableTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  academicYear?: string;
+  batchName?: string;
+  lectures: Omit<TimetableLecture, 'timetableId' | 'createdAt' | 'updatedAt'>[];
+  createdAt: string;
 }
 
 // Delete functions
@@ -322,6 +349,7 @@ const STORAGE_KEYS = {
   STUDENT_REMARKS: 'smartclass_student_remarks',
   NOTICES: 'smartclass_notices',
   TIMETABLE: 'smartclass_timetable',
+  TIMETABLE_TEMPLATES: 'smartclass_timetable_templates',
   ROOMS: 'smartclass_rooms',
 };
 
@@ -347,6 +375,7 @@ const DB_PATHS = {
   STUDENT_REMARKS: 'studentRemarks',
   NOTICES: 'notices',
   TIMETABLE: 'timetable',
+  TIMETABLE_TEMPLATES: 'timetable_templates',
   ROOMS: 'rooms',
 };
 
@@ -415,6 +444,10 @@ const initializeDefaultData = () => {
 
   if (!localStorage.getItem(STORAGE_KEYS.TIMETABLE)) {
     localStorage.setItem(STORAGE_KEYS.TIMETABLE, JSON.stringify([]));
+  }
+
+  if (!localStorage.getItem(STORAGE_KEYS.TIMETABLE_TEMPLATES)) {
+    localStorage.setItem(STORAGE_KEYS.TIMETABLE_TEMPLATES, JSON.stringify([]));
   }
 
   if (!localStorage.getItem(STORAGE_KEYS.ROOMS)) {
@@ -1382,6 +1415,20 @@ export const saveInstituteSettings = async (settings: InstituteSettings): Promis
   }
 };
 
+export const getBatchTimings = (): Record<string, BatchTimingSetting> => {
+  const settings = getInstituteSettings();
+  return settings.batchTimings || {};
+};
+
+export const saveBatchTimings = async (batchTimings: Record<string, BatchTimingSetting>): Promise<void> => {
+  const settings = getInstituteSettings();
+  const updatedSettings: InstituteSettings = {
+    ...settings,
+    batchTimings,
+  };
+  await saveInstituteSettings(updatedSettings);
+};
+
 // Class date helpers
 export const isClassPast = (classItem: Class): boolean => {
   // Primary check: use date + endTime fields (structured schedule)
@@ -1590,6 +1637,63 @@ export const getTeachersForSubject = (subjectName: string, teachers: Teacher[]):
   );
 };
 
+export const getLectureTeacherIds = (lecture: { teacherIds?: string[]; teacherId?: string }): string[] => {
+  if (Array.isArray(lecture.teacherIds) && lecture.teacherIds.length > 0) {
+    return lecture.teacherIds.filter(Boolean);
+  }
+  if (lecture.teacherId) return [lecture.teacherId];
+  return [];
+};
+
+export const getLectureTeacherNames = (lecture: { teacherNames?: string[]; teacherName?: string }): string[] => {
+  if (Array.isArray(lecture.teacherNames) && lecture.teacherNames.length > 0) {
+    return lecture.teacherNames.filter(Boolean);
+  }
+  if (lecture.teacherName) return [lecture.teacherName];
+  return [];
+};
+
+export const formatLectureTeachers = (lecture: { teacherNames?: string[]; teacherName?: string; teacherIds?: string[]; teacherId?: string }): string => {
+  const names = getLectureTeacherNames(lecture);
+  if (names.length > 0) {
+    return names.join(' + ');
+  }
+  return lecture.teacherName || 'Unassigned';
+};
+
+export const addMinutesToTime24 = (time24: string, minutesToAdd: number): string => {
+  const total = (timeToMinutes(time24) + minutesToAdd) % (24 * 60);
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+};
+
+export const formatLectureSubjects = (lecture: { subjectName: string; subjectNames?: string[] }): string => {
+  if (Array.isArray(lecture.subjectNames) && lecture.subjectNames.length > 0) {
+    const distinct = Array.from(new Set(lecture.subjectNames.filter(Boolean)));
+    return distinct.join(' & ');
+  }
+  return lecture.subjectName || 'Subject';
+};
+
+export const formatLectureSubjectWithTeachers = (lecture: TimetableLecture): string => {
+  const teacherIds = getLectureTeacherIds(lecture);
+  const teacherNames = getLectureTeacherNames(lecture);
+  const map = lecture.teacherSubjectMap || {};
+
+  if (teacherIds.length > 1 && lecture.subjectNames && lecture.subjectNames.length > 1) {
+    const parts = teacherIds.map((tId, idx) => {
+      const tName = teacherNames[idx] || 'Teacher';
+      const subj = map[tId] || lecture.subjectNames?.[idx] || lecture.subjectName;
+      return `${tName} (${subj})`;
+    });
+    return parts.join(' + ');
+  }
+
+  const teachers = formatLectureTeachers(lecture);
+  return teachers;
+};
+
 export interface TimetableValidationResult {
   isValid: boolean;
   type?: 'time' | 'batch' | 'teacher' | 'room' | 'duplicate';
@@ -1598,7 +1702,7 @@ export interface TimetableValidationResult {
 
 /**
  * Validates candidate lecture for time validity, duplicate prevention,
- * and conflict detection across Batch, Teacher, and Room.
+ * and conflict detection across Batch, Teacher(s), and Room.
  */
 export const validateTimetableLecture = (
   candidate: {
@@ -1608,8 +1712,10 @@ export const validateTimetableLecture = (
     endTime: string;
     batchId: string;
     divisionId?: string;
-    teacherId: string;
+    teacherId?: string;
     teacherName?: string;
+    teacherIds?: string[];
+    teacherNames?: string[];
     roomId?: string;
     roomName: string;
     subjectName: string;
@@ -1630,6 +1736,9 @@ export const validateTimetableLecture = (
       message: 'End Time must be later than Start Time.',
     };
   }
+
+  const candTeacherIds = getLectureTeacherIds(candidate);
+  const candTeacherNames = getLectureTeacherNames(candidate);
 
   // Filter other lectures
   const otherLectures = existingLectures.filter(
@@ -1660,25 +1769,30 @@ export const validateTimetableLecture = (
     // Overlap condition: start1 < end2 && start2 < end1
     const timesOverlap = candStart < otherEnd && otherStart < candEnd;
 
+    const otherTeacherIds = getLectureTeacherIds(other);
+    const otherTeacherNames = getLectureTeacherNames(other);
+
     // Exact duplicate check
-    if (
-      other.batchId === candidate.batchId &&
-      other.startTime === candidate.startTime &&
-      other.endTime === candidate.endTime &&
-      (other.subjectName || '').trim().toLowerCase() === (candidate.subjectName || '').trim().toLowerCase() &&
-      other.teacherId === candidate.teacherId
-    ) {
+    const sameBatch = other.batchId === candidate.batchId;
+    const sameTime = other.startTime === candidate.startTime && other.endTime === candidate.endTime;
+    const sameSubject = (other.subjectName || '').trim().toLowerCase() === (candidate.subjectName || '').trim().toLowerCase();
+    const sameRoom = (other.roomName || '').trim().toLowerCase() === (candidate.roomName || '').trim().toLowerCase();
+    const sameTeachers =
+      candTeacherIds.length > 0 &&
+      candTeacherIds.length === otherTeacherIds.length &&
+      candTeacherIds.every(id => otherTeacherIds.includes(id));
+
+    if (sameBatch && sameTime && sameSubject && sameRoom && sameTeachers) {
       return {
         isValid: false,
         type: 'duplicate',
-        message: 'An identical lecture is already scheduled for this batch, day, time, subject, and teacher.',
+        message: 'An identical lecture is already scheduled for this batch, day, time, subject, and teacher(s).',
       };
     }
 
     if (timesOverlap) {
       // A. BATCH CONFLICT
       // The same batch cannot have overlapping lectures
-      const sameBatch = other.batchId === candidate.batchId;
       const sameDivision = !candidate.divisionId || !other.divisionId || candidate.divisionId === other.divisionId;
       if (sameBatch && sameDivision) {
         return {
@@ -1689,14 +1803,18 @@ export const validateTimetableLecture = (
       }
 
       // B. TEACHER CONFLICT
-      // A teacher cannot teach two batches at overlapping times
-      if (other.teacherId === candidate.teacherId) {
-        const teacherDisplayName = candidate.teacherName || other.teacherName || 'The selected teacher';
-        return {
-          isValid: false,
-          type: 'teacher',
-          message: `${teacherDisplayName} is already assigned to another lecture during this time.`,
-        };
+      // A teacher cannot be assigned to two different lectures at overlapping times.
+      // For multi-teacher lecture, check EVERY teacher individually (Requirement 14 & 16)
+      for (let i = 0; i < candTeacherIds.length; i++) {
+        const tId = candTeacherIds[i];
+        if (otherTeacherIds.includes(tId)) {
+          const teacherDisplayName = candTeacherNames[i] || 'The selected teacher';
+          return {
+            isValid: false,
+            type: 'teacher',
+            message: `${teacherDisplayName} is already assigned to another lecture during this time.`,
+          };
+        }
       }
 
       // C. ROOM CONFLICT
@@ -1735,7 +1853,10 @@ export const getTimetableByBatch = (batchId: string, divisionId?: string): Timet
 
 export const getTimetableByTeacher = (teacherId: string): TimetableLecture[] => {
   return getTimetableLectures()
-    .filter(l => l.teacherId === teacherId)
+    .filter(l => {
+      const ids = getLectureTeacherIds(l);
+      return ids.includes(teacherId);
+    })
     .sort((a, b) => {
       if (a.dayOrder !== b.dayOrder) return a.dayOrder - b.dayOrder;
       return timeToMinutes(a.startTime) - timeToMinutes(b.startTime);
@@ -1744,22 +1865,60 @@ export const getTimetableByTeacher = (teacherId: string): TimetableLecture[] => 
 
 export const addTimetableLecture = async (lecture: TimetableLecture): Promise<void> => {
   const current = getTimetableLectures();
+  const teacherIds = getLectureTeacherIds(lecture);
+  const teacherNames = getLectureTeacherNames(lecture);
+
+  const normalizedLecture: TimetableLecture = {
+    ...lecture,
+    teacherIds,
+    teacherNames,
+    teacherId: teacherIds[0] || lecture.teacherId || '',
+    teacherName: teacherNames[0] || lecture.teacherName || '',
+  };
+
   // Prevent any exact duplicate from being added locally
   const deduplicated = current.filter(
-    l => l.timetableId !== lecture.timetableId &&
-      !(l.batchId === lecture.batchId &&
-        l.day === lecture.day &&
-        l.startTime === lecture.startTime &&
-        l.endTime === lecture.endTime &&
-        l.subjectName.toLowerCase() === lecture.subjectName.toLowerCase())
+    l => l.timetableId !== normalizedLecture.timetableId &&
+      !(l.batchId === normalizedLecture.batchId &&
+        l.day === normalizedLecture.day &&
+        l.startTime === normalizedLecture.startTime &&
+        l.endTime === normalizedLecture.endTime &&
+        l.subjectName.toLowerCase() === normalizedLecture.subjectName.toLowerCase())
   );
-  const updated = [...deduplicated, lecture];
+  const updated = [...deduplicated, normalizedLecture];
   saveToStorage(STORAGE_KEYS.TIMETABLE, updated);
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('sankalp_timetable_changed', { detail: updated }));
   }
   // Async non-blocking write to Firebase Realtime Database
-  void writeItemToRealtime(DB_PATHS.TIMETABLE, lecture.timetableId, lecture);
+  void writeItemToRealtime(DB_PATHS.TIMETABLE, normalizedLecture.timetableId, normalizedLecture);
+};
+
+export const addTimetableLecturesBulk = async (lectures: TimetableLecture[]): Promise<void> => {
+  if (lectures.length === 0) return;
+  const current = getTimetableLectures();
+  const normalizedLectures = lectures.map(lecture => {
+    const teacherIds = getLectureTeacherIds(lecture);
+    const teacherNames = getLectureTeacherNames(lecture);
+    return {
+      ...lecture,
+      teacherIds,
+      teacherNames,
+      teacherId: teacherIds[0] || lecture.teacherId || '',
+      teacherName: teacherNames[0] || lecture.teacherName || '',
+    };
+  });
+
+  const idsToReplace = new Set(normalizedLectures.map(l => l.timetableId));
+  const deduplicated = current.filter(l => !idsToReplace.has(l.timetableId));
+  const updated = [...deduplicated, ...normalizedLectures];
+  saveToStorage(STORAGE_KEYS.TIMETABLE, updated);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('sankalp_timetable_changed', { detail: updated }));
+  }
+  for (const lec of normalizedLectures) {
+    void writeItemToRealtime(DB_PATHS.TIMETABLE, lec.timetableId, lec);
+  }
 };
 
 export const updateTimetableLecture = async (
@@ -1769,9 +1928,21 @@ export const updateTimetableLecture = async (
   const current = getTimetableLectures();
   const index = current.findIndex(l => l.timetableId === timetableId);
   if (index !== -1) {
+    const existing = current[index];
+    const teacherIds = updates.teacherIds !== undefined
+      ? updates.teacherIds
+      : getLectureTeacherIds(existing);
+    const teacherNames = updates.teacherNames !== undefined
+      ? updates.teacherNames
+      : getLectureTeacherNames(existing);
+
     const updatedLecture: TimetableLecture = {
-      ...current[index],
+      ...existing,
       ...updates,
+      teacherIds,
+      teacherNames,
+      teacherId: teacherIds[0] || updates.teacherId || existing.teacherId || '',
+      teacherName: teacherNames[0] || updates.teacherName || existing.teacherName || '',
       updatedAt: new Date().toISOString(),
     };
     current[index] = updatedLecture;
@@ -1780,6 +1951,32 @@ export const updateTimetableLecture = async (
       window.dispatchEvent(new CustomEvent('sankalp_timetable_changed', { detail: current }));
     }
     void writeItemToRealtime(DB_PATHS.TIMETABLE, timetableId, updatedLecture);
+  }
+};
+
+// ─── Timetable Templates ────────────────────────────────────────────
+
+export const getTimetableTemplates = (): TimetableTemplate[] =>
+  getFromStorage<TimetableTemplate>(STORAGE_KEYS.TIMETABLE_TEMPLATES);
+
+export const saveTimetableTemplate = async (template: TimetableTemplate): Promise<void> => {
+  const current = getTimetableTemplates();
+  const filtered = current.filter(t => t.id !== template.id);
+  const updated = [template, ...filtered];
+  saveToStorage(STORAGE_KEYS.TIMETABLE_TEMPLATES, updated);
+  void writeItemToRealtime(DB_PATHS.TIMETABLE_TEMPLATES, template.id, template);
+};
+
+export const deleteTimetableTemplate = async (templateId: string): Promise<boolean> => {
+  try {
+    const current = getTimetableTemplates();
+    const updated = current.filter(t => t.id !== templateId);
+    saveToStorage(STORAGE_KEYS.TIMETABLE_TEMPLATES, updated);
+    void removeItemFromRealtime(DB_PATHS.TIMETABLE_TEMPLATES, templateId);
+    return true;
+  } catch (error) {
+    console.error('Failed to delete timetable template:', error);
+    return false;
   }
 };
 
@@ -1820,6 +2017,39 @@ export const deleteTimetableLecture = async (timetableId: string): Promise<boole
   } catch (error) {
     console.error('Error deleting timetable lecture:', error);
     return false;
+  }
+};
+
+export const clearAllTimetableLectures = async (filter?: {
+  batchId?: string;
+  academicYear?: string;
+  effectiveFrom?: string;
+}): Promise<number> => {
+  try {
+    const current = getTimetableLectures();
+    const toDelete = current.filter(l => {
+      if (filter?.batchId && l.batchId !== filter.batchId) return false;
+      if (filter?.academicYear && l.academicYear !== filter.academicYear) return false;
+      if (filter?.effectiveFrom && l.effectiveFrom && l.effectiveFrom !== filter.effectiveFrom) return false;
+      return true;
+    });
+
+    if (toDelete.length === 0) return 0;
+
+    const idsToDelete = new Set(toDelete.map(l => l.timetableId));
+    const remaining = current.filter(l => !idsToDelete.has(l.timetableId));
+
+    saveToStorage(STORAGE_KEYS.TIMETABLE, remaining);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('sankalp_timetable_changed', { detail: remaining }));
+    }
+
+    // Delete from Firebase in parallel
+    await Promise.all(toDelete.map(l => removeItemFromRealtime(DB_PATHS.TIMETABLE, l.timetableId)));
+    return toDelete.length;
+  } catch (error) {
+    console.error('Error clearing all timetable lectures:', error);
+    throw error;
   }
 };
 

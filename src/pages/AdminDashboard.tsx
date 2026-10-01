@@ -75,6 +75,9 @@ import {
   InstituteSettings,
   getInstituteSettings,
   saveInstituteSettings,
+  BatchTimingSetting,
+  getBatchTimings,
+  saveBatchTimings,
   Note,
   Lead,
   getLeads,
@@ -388,6 +391,7 @@ const AdminDashboard = () => {
   const [settingsEmail, setSettingsEmail] = useState<string>(instituteSettings.email || '');
   const [settingsLogo, setSettingsLogo] = useState<string>(instituteSettings.logo || '');
   const [settingsSignature, setSettingsSignature] = useState<string>(instituteSettings.signature || '');
+  const [settingsBatchTimings, setSettingsBatchTimings] = useState<Record<string, BatchTimingSetting>>(() => getBatchTimings());
   const [isSavingSettings, setIsSavingSettings] = useState<boolean>(false);
 
   // Classroom / Room Settings State
@@ -405,6 +409,7 @@ const AdminDashboard = () => {
     setSettingsEmail(current.email || '');
     setSettingsLogo(current.logo || '');
     setSettingsSignature(current.signature || '');
+    setSettingsBatchTimings(current.batchTimings || getBatchTimings());
   }, []);
 
   // Absent Today State
@@ -485,6 +490,9 @@ const AdminDashboard = () => {
     setNotices(getNotices());
     setTimetableLectures(getTimetableLectures());
     setRoomsList(getRooms());
+    const instSettings = getInstituteSettings();
+    setInstituteSettingsState(instSettings);
+    setSettingsBatchTimings(instSettings.batchTimings || getBatchTimings());
 
     const records = await getFeeRecords();
     setAllFeeRecords(records || []);
@@ -1036,6 +1044,7 @@ const AdminDashboard = () => {
   };
 
   const handlePrint = () => {
+    setInstituteSettingsState(getInstituteSettings());
     if (!selectedStudentForFees || !feeRecord) {
       toast.error("Please select a student first");
       return;
@@ -1191,6 +1200,7 @@ const AdminDashboard = () => {
   };
 
   const handlePrintReceipt = (payment: FeePayment) => {
+    setInstituteSettingsState(getInstituteSettings());
     if (!selectedStudentForFees || !feeRecord) return;
     setReceiptData({
       student: selectedStudentForFees,
@@ -1205,6 +1215,7 @@ const AdminDashboard = () => {
   };
 
   const handlePrintDownPaymentReceipt = () => {
+    setInstituteSettingsState(getInstituteSettings());
     if (!selectedStudentForFees || !feeRecord) return;
     const dpAmount = Number(feeRecord.downPayment || 0);
     if (dpAmount <= 0) return;
@@ -2631,10 +2642,11 @@ const AdminDashboard = () => {
         email: settingsEmail.trim(),
         logo: settingsLogo.trim() || undefined,
         signature: settingsSignature.trim() || undefined,
+        batchTimings: settingsBatchTimings,
       };
       await saveInstituteSettings(updatedSettings);
       setInstituteSettingsState(updatedSettings);
-      toast.success('Settings and Fee Receipt customization saved successfully!');
+      toast.success('Settings, batch timings, and branding saved successfully!');
     } catch (err) {
       console.error('Failed to save settings:', err);
       toast.error('Failed to save settings');
@@ -8100,6 +8112,182 @@ const AdminDashboard = () => {
                     </Card>
                   </div>
 
+                  {/* Batch Timings & Auto-Schedule Preferences Card */}
+                  <Card className="p-6 rounded-2xl border shadow-sm space-y-5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-4">
+                      <div>
+                        <h4 className="text-lg font-bold text-foreground flex items-center gap-2">
+                          <Clock className="h-5 w-5 text-primary" /> Batch Timings & Auto-Schedule Preferences
+                        </h4>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Set operating hours, default weekly lectures, and combined batch pairing once. Auto Generate will automatically fetch these timings.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-xs font-bold text-primary border-primary/40 bg-primary/5">
+                          {batches.length} {batches.length === 1 ? 'Batch' : 'Batches'}
+                        </Badge>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={async () => {
+                            try {
+                              await saveBatchTimings(settingsBatchTimings);
+                              toast.success('Batch timings and combined batch preferences saved!');
+                            } catch {
+                              toast.error('Failed to save batch timings');
+                            }
+                          }}
+                          className="text-xs font-bold rounded-xl gap-1.5"
+                        >
+                          <Save className="h-3.5 w-3.5" /> Save Batch Timings
+                        </Button>
+                      </div>
+                    </div>
+
+                    {batches.length === 0 ? (
+                      <div className="p-8 text-center text-muted-foreground border-2 border-dashed rounded-xl">
+                        <Users className="h-8 w-8 mx-auto mb-2 opacity-40 text-muted-foreground" />
+                        <p className="font-semibold text-sm">No batches created yet.</p>
+                        <p className="text-xs mt-1">Create batches in the Students tab to configure batch-specific timings.</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {batches.map(batch => {
+                          const timing = settingsBatchTimings[batch.id] || {
+                            batchId: batch.id,
+                            batchName: batch.name,
+                            startTime: '16:00',
+                            endTime: '20:00',
+                            defaultLecturesPerWeek: 2,
+                            isCombinedBatch: batch.name.toLowerCase().includes('&') || batch.name.toLowerCase().includes('and'),
+                          };
+
+                          return (
+                            <div
+                              key={batch.id}
+                              className={`p-4 rounded-2xl border transition-all space-y-3 ${
+                                timing.isCombinedBatch
+                                  ? 'border-primary/50 bg-primary/5 shadow-xs'
+                                  : 'bg-card border-border hover:border-primary/30'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <h5 className="font-black text-sm text-foreground">{batch.name}</h5>
+                                  {batch.year && (
+                                    <Badge variant="secondary" className="text-[10px] font-bold">
+                                      {batch.year}
+                                    </Badge>
+                                  )}
+                                </div>
+                                {timing.isCombinedBatch && (
+                                  <Badge className="text-[10px] font-bold bg-primary text-primary-foreground">
+                                    Combined Batch (2 Subjects)
+                                  </Badge>
+                                )}
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-3 text-xs">
+                                <div className="space-y-1">
+                                  <Label className="text-[10px] font-black uppercase text-muted-foreground">
+                                    Start Time
+                                  </Label>
+                                  <Input
+                                    type="time"
+                                    value={timing.startTime || '16:00'}
+                                    onChange={e => {
+                                      const updated = {
+                                        ...timing,
+                                        batchId: batch.id,
+                                        batchName: batch.name,
+                                        startTime: e.target.value,
+                                      };
+                                      setSettingsBatchTimings(prev => ({ ...prev, [batch.id]: updated }));
+                                    }}
+                                    className="h-9 text-xs rounded-xl font-bold bg-background"
+                                  />
+                                </div>
+
+                                <div className="space-y-1">
+                                  <Label className="text-[10px] font-black uppercase text-muted-foreground">
+                                    End Time
+                                  </Label>
+                                  <Input
+                                    type="time"
+                                    value={timing.endTime || '20:00'}
+                                    onChange={e => {
+                                      const updated = {
+                                        ...timing,
+                                        batchId: batch.id,
+                                        batchName: batch.name,
+                                        endTime: e.target.value,
+                                      };
+                                      setSettingsBatchTimings(prev => ({ ...prev, [batch.id]: updated }));
+                                    }}
+                                    className="h-9 text-xs rounded-xl font-bold bg-background"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t text-xs items-center">
+                                <div className="space-y-1">
+                                  <Label className="text-[10px] font-black uppercase text-muted-foreground">
+                                    Default Lectures / Week
+                                  </Label>
+                                  <select
+                                    value={(timing.defaultLecturesPerWeek || 2).toString()}
+                                    onChange={e => {
+                                      const updated = {
+                                        ...timing,
+                                        batchId: batch.id,
+                                        batchName: batch.name,
+                                        defaultLecturesPerWeek: Number(e.target.value),
+                                      };
+                                      setSettingsBatchTimings(prev => ({ ...prev, [batch.id]: updated }));
+                                    }}
+                                    className="h-9 w-full rounded-xl border border-input bg-background px-3 py-1 font-bold text-xs"
+                                  >
+                                    {[1, 2, 3, 4, 5, 6].map(n => (
+                                      <option key={n} value={n}>
+                                        {n} {n === 1 ? 'lecture / week' : 'lectures / week'}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+
+                                <label className="flex items-center gap-2.5 pt-2 sm:pt-4 cursor-pointer select-none">
+                                  <Checkbox
+                                    checked={!!timing.isCombinedBatch}
+                                    onCheckedChange={checked => {
+                                      const updated = {
+                                        ...timing,
+                                        batchId: batch.id,
+                                        batchName: batch.name,
+                                        isCombinedBatch: !!checked,
+                                      };
+                                      setSettingsBatchTimings(prev => ({ ...prev, [batch.id]: updated }));
+                                    }}
+                                    className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                                  />
+                                  <div>
+                                    <span className="font-black text-xs text-foreground block leading-tight">
+                                      Combined Batch
+                                    </span>
+                                    <span className="text-[10px] text-muted-foreground leading-tight block">
+                                      Assign two subjects at the same time
+                                    </span>
+                                  </div>
+                                </label>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </Card>
+
                   {/* Save Settings Action Bar */}
                   <div className="flex items-center justify-between p-4 bg-card border rounded-2xl shadow-sm">
                     <p className="text-xs text-muted-foreground">
@@ -9684,21 +9872,27 @@ const AdminDashboard = () => {
             {/* Invoice Header */}
             <div className="border-b-2 border-gray-800 pb-5 mb-6">
               <div className="flex items-center justify-center gap-6">
-                {instituteSettings.logo && (
+                {(instituteSettings.logo || getInstituteSettings().logo || './icons/sankalp_logo.jpeg') && (
                   <img
-                    src={instituteSettings.logo}
+                    src={instituteSettings.logo || getInstituteSettings().logo || './icons/sankalp_logo.jpeg'}
                     alt="Institute Logo"
                     className="h-20 w-20 object-contain rounded shrink-0"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      if (!target.src.includes('sankalp_logo.jpeg')) {
+                        target.src = './icons/sankalp_logo.jpeg';
+                      }
+                    }}
                   />
                 )}
-                <div className={instituteSettings.logo ? "text-left" : "text-center"}>
-                  <h1 className="text-2xl font-bold uppercase tracking-widest text-gray-900">{instituteSettings.name || 'Sankalp Academy ERP'}</h1>
-                  {instituteSettings.address && (
-                    <p className="text-sm text-gray-600 mt-1">{instituteSettings.address}</p>
+                <div className={(instituteSettings.logo || getInstituteSettings().logo) ? "text-left" : "text-center"}>
+                  <h1 className="text-2xl font-bold uppercase tracking-widest text-gray-900">{instituteSettings.name || getInstituteSettings().name || 'Sankalp Academy ERP'}</h1>
+                  {(instituteSettings.address || getInstituteSettings().address) && (
+                    <p className="text-sm text-gray-600 mt-1">{instituteSettings.address || getInstituteSettings().address}</p>
                   )}
-                  <div className={`flex items-center ${instituteSettings.logo ? 'justify-start' : 'justify-center'} gap-6 mt-1 text-xs text-gray-500`}>
-                    {instituteSettings.phone && <span>Phone: {instituteSettings.phone}</span>}
-                    {instituteSettings.email && <span>Email: {instituteSettings.email}</span>}
+                  <div className={`flex items-center ${(instituteSettings.logo || getInstituteSettings().logo) ? 'justify-start' : 'justify-center'} gap-6 mt-1 text-xs text-gray-500`}>
+                    {(instituteSettings.phone || getInstituteSettings().phone) && <span>Phone: {instituteSettings.phone || getInstituteSettings().phone}</span>}
+                    {(instituteSettings.email || getInstituteSettings().email) && <span>Email: {instituteSettings.email || getInstituteSettings().email}</span>}
                   </div>
                 </div>
               </div>
@@ -9878,14 +10072,29 @@ const AdminDashboard = () => {
               
               {/* Header */}
               <div className="border-b-2 border-gray-800 pb-5 mb-6">
-                <div className="text-center">
-                  <h1 className="text-2xl font-bold uppercase tracking-widest text-gray-900">{instituteSettings.name || 'Sankalp Academy ERP'}</h1>
-                  {instituteSettings.address && (
-                    <p className="text-sm text-gray-600 mt-1">{instituteSettings.address}</p>
+                <div className="flex items-center justify-center gap-6">
+                  {(instituteSettings.logo || getInstituteSettings().logo || './icons/sankalp_logo.jpeg') && (
+                    <img
+                      src={instituteSettings.logo || getInstituteSettings().logo || './icons/sankalp_logo.jpeg'}
+                      alt="Institute Logo"
+                      className="h-20 w-20 object-contain rounded shrink-0"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        if (!target.src.includes('sankalp_logo.jpeg')) {
+                          target.src = './icons/sankalp_logo.jpeg';
+                        }
+                      }}
+                    />
                   )}
-                  <div className="flex items-center justify-center gap-6 mt-1 text-xs text-gray-500">
-                    {instituteSettings.phone && <span>Phone: {instituteSettings.phone}</span>}
-                    {instituteSettings.email && <span>Email: {instituteSettings.email}</span>}
+                  <div className={(instituteSettings.logo || getInstituteSettings().logo) ? "text-left" : "text-center"}>
+                    <h1 className="text-2xl font-bold uppercase tracking-widest text-gray-900">{instituteSettings.name || getInstituteSettings().name || 'Sankalp Academy ERP'}</h1>
+                    {(instituteSettings.address || getInstituteSettings().address) && (
+                      <p className="text-sm text-gray-600 mt-1">{instituteSettings.address || getInstituteSettings().address}</p>
+                    )}
+                    <div className={`flex items-center ${(instituteSettings.logo || getInstituteSettings().logo) ? 'justify-start' : 'justify-center'} gap-6 mt-1 text-xs text-gray-500`}>
+                      {(instituteSettings.phone || getInstituteSettings().phone) && <span>Phone: {instituteSettings.phone || getInstituteSettings().phone}</span>}
+                      {(instituteSettings.email || getInstituteSettings().email) && <span>Email: {instituteSettings.email || getInstituteSettings().email}</span>}
+                    </div>
                   </div>
                 </div>
                 <div className="mt-4 text-center">
@@ -10061,14 +10270,29 @@ const AdminDashboard = () => {
               
               {/* Header */}
               <div className="border-b-2 border-gray-800 pb-4 mb-6">
-                <div className="text-center">
-                  <h1 className="text-2xl font-bold uppercase tracking-widest text-gray-900">{instituteSettings.name || 'Sankalp Academy ERP'}</h1>
-                  {instituteSettings.address && (
-                    <p className="text-sm text-gray-600 mt-0.5">{instituteSettings.address}</p>
+                <div className="flex items-center justify-center gap-6">
+                  {(instituteSettings.logo || getInstituteSettings().logo || './icons/sankalp_logo.jpeg') && (
+                    <img
+                      src={instituteSettings.logo || getInstituteSettings().logo || './icons/sankalp_logo.jpeg'}
+                      alt="Institute Logo"
+                      className="h-16 w-16 object-contain rounded shrink-0"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        if (!target.src.includes('sankalp_logo.jpeg')) {
+                          target.src = './icons/sankalp_logo.jpeg';
+                        }
+                      }}
+                    />
                   )}
-                  <div className="flex items-center justify-center gap-6 mt-1 text-xs text-gray-500">
-                    {instituteSettings.phone && <span>Phone: {instituteSettings.phone}</span>}
-                    {instituteSettings.email && <span>Email: {instituteSettings.email}</span>}
+                  <div className={(instituteSettings.logo || getInstituteSettings().logo) ? "text-left" : "text-center"}>
+                    <h1 className="text-2xl font-bold uppercase tracking-widest text-gray-900">{instituteSettings.name || getInstituteSettings().name || 'Sankalp Academy ERP'}</h1>
+                    {(instituteSettings.address || getInstituteSettings().address) && (
+                      <p className="text-sm text-gray-600 mt-0.5">{instituteSettings.address || getInstituteSettings().address}</p>
+                    )}
+                    <div className={`flex items-center ${(instituteSettings.logo || getInstituteSettings().logo) ? 'justify-start' : 'justify-center'} gap-6 mt-1 text-xs text-gray-500`}>
+                      {(instituteSettings.phone || getInstituteSettings().phone) && <span>Phone: {instituteSettings.phone || getInstituteSettings().phone}</span>}
+                      {(instituteSettings.email || getInstituteSettings().email) && <span>Email: {instituteSettings.email || getInstituteSettings().email}</span>}
+                    </div>
                   </div>
                 </div>
                 <div className="mt-3 text-center">
