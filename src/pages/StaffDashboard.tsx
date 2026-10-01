@@ -189,6 +189,7 @@ const StaffDashboard = () => {
       subject: payload.subjectName,
       batchId: payload.batchId,
       teacherId: payload.teacherId,
+      teacherIds: payload.teacherIds,
       teacherName: payload.teacherName,
       date: payload.date || currentDateStr || getLocalDateString(),
       time: payload.startTime,

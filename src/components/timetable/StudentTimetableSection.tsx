@@ -16,6 +16,8 @@ import {
   timeToMinutes,
   DAYS_OF_WEEK,
   DAY_ORDER_MAP,
+  formatLectureTeachers,
+  getLectureTeacherNames,
 } from '@/lib/localStorage';
 import {
   getCurrentLocalDayName,
@@ -44,13 +46,17 @@ export const StudentTimetableSection = ({
   const weekInfo = useMemo(() => getWeekInfo(new Date()), []);
 
   // Filter lectures belonging strictly to this student's batch & division
+  // Multi-teacher lecture appears ONLY ONCE (Requirement 32)
   const studentLectures = useMemo(() => {
     if (!studentBatchId) return [];
+    const seen = new Set<string>();
     return allLectures.filter(l => {
       if (l.batchId !== studentBatchId) return false;
       if (studentDivisionId && l.divisionId && l.divisionId !== studentDivisionId) {
         return false;
       }
+      if (seen.has(l.timetableId)) return false;
+      seen.add(l.timetableId);
       return true;
     });
   }, [allLectures, studentBatchId, studentDivisionId]);
@@ -187,9 +193,10 @@ export const StudentTimetableSection = ({
                     </h4>
 
                     <div className="flex items-center gap-2 text-xs text-muted-foreground border-t pt-3 mt-3">
-                      <User className="h-3.5 w-3.5 text-primary" />
+                      <User className="h-3.5 w-3.5 text-primary shrink-0" />
                       <span>
-                        Teacher: <strong className="text-foreground">{lecture.teacherName}</strong>
+                        {getLectureTeacherNames(lecture).length > 1 ? 'Teachers:' : 'Teacher:'}{' '}
+                        <strong className="text-foreground">{formatLectureTeachers(lecture)}</strong>
                       </span>
                     </div>
                   </Card>
@@ -229,11 +236,14 @@ export const StudentTimetableSection = ({
 
                     <div className="text-xs text-muted-foreground space-y-1 mt-2.5 pt-2 border-t">
                       <div className="flex items-center gap-1">
-                        <User className="h-3 w-3 text-muted-foreground" />
-                        <span>Teacher: <strong className="text-foreground">{lecture.teacherName}</strong></span>
+                        <User className="h-3 w-3 text-muted-foreground shrink-0" />
+                        <span>
+                          {getLectureTeacherNames(lecture).length > 1 ? 'Teachers:' : 'Teacher:'}{' '}
+                          <strong className="text-foreground">{formatLectureTeachers(lecture)}</strong>
+                        </span>
                       </div>
                       <div className="flex items-center gap-1">
-                        <MapPin className="h-3 w-3 text-muted-foreground" />
+                        <MapPin className="h-3 w-3 text-muted-foreground shrink-0" />
                         <span>Room: <strong className="text-foreground">{lecture.roomName || 'Room 1'}</strong></span>
                       </div>
                     </div>
@@ -302,11 +312,14 @@ export const StudentTimetableSection = ({
                           </div>
 
                           <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1 border-t border-border/40">
-                            <span className="flex items-center gap-1">
-                              <User className="h-3 w-3 text-muted-foreground" />
-                              {lecture.teacherName}
+                            <span className="flex items-center gap-1 truncate mr-2">
+                              <User className="h-3 w-3 text-muted-foreground shrink-0" />
+                              <span className="truncate">
+                                {getLectureTeacherNames(lecture).length > 1 ? 'Teachers:' : 'Teacher:'}{' '}
+                                <strong className="text-foreground font-semibold">{formatLectureTeachers(lecture)}</strong>
+                              </span>
                             </span>
-                            <span className="flex items-center gap-1 font-semibold text-foreground">
+                            <span className="flex items-center gap-1 font-semibold text-foreground shrink-0">
                               <MapPin className="h-3 w-3 text-primary" />
                               {lecture.roomName || 'Room 1'}
                             </span>
