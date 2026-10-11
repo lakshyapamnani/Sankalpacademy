@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit, ArrowLeft, Search, Download, MessageSquare, Eye, TrendingUp, FileText, Trash2, GraduationCap, LogIn, Key, Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Layers, Settings, Image, PenTool, Building, Save, Bell, Megaphone, Award, AlertTriangle, Star, ThumbsUp, ThumbsDown, Send, Filter, Check, Clock, ExternalLink, DoorOpen, RotateCcw } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
