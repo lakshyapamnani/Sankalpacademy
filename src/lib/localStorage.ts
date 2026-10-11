@@ -1062,6 +1062,16 @@ export const addBatch = (batch: Batch): void => {
   saveToStorage(STORAGE_KEYS.BATCHES, [...batches, batch]);
   void writeItemToRealtime(DB_PATHS.BATCHES, batch.id, batch);
 };
+export const updateBatch = (batchId: string, updates: Partial<Batch>): void => {
+  const batches = getBatches();
+  const index = batches.findIndex(b => b.id === batchId);
+  if (index !== -1) {
+    const updatedBatch = { ...batches[index], ...updates };
+    batches[index] = updatedBatch;
+    saveToStorage(STORAGE_KEYS.BATCHES, batches);
+    void writeItemToRealtime(DB_PATHS.BATCHES, batchId, updatedBatch);
+  }
+};
 
 // Current User
 export const isDevModeActive = (): boolean => {

@@ -7,11 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LogIn } from "lucide-react";
+import { LogIn, Edit } from "lucide-react";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { toast } from "sonner";
 import {
   getBatches,
+  updateBatch,
   getClasses,
   getStudentsByBatch,
   getStudentAttendance,
@@ -32,6 +33,7 @@ const BatchDetails = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [passwordDialogStudent, setPasswordDialogStudent] = useState<string | null>(null);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!batchId) return;
@@ -80,6 +82,22 @@ const BatchDetails = () => {
     return false;
   };
 
+  const handleUpdateBatchName = (newName: string, newYear: string) => {
+    if (!batch || !batchId) return;
+    const trimmedName = newName.trim();
+    if (!trimmedName) {
+      toast.error("Batch name cannot be empty");
+      return;
+    }
+    updateBatch(batchId, {
+      name: trimmedName,
+      year: newYear.trim() || batch.year,
+    });
+    toast.success("Batch updated successfully");
+    setIsEditDialogOpen(false);
+    loadBatchData(batchId);
+  };
+
   const batchStats = useMemo(() => {
     return {
       totalStudents: students.length,
@@ -123,6 +141,58 @@ const BatchDetails = () => {
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-semibold">{batch.name}</h1>
             <Badge variant="secondary">{batch.year}</Badge>
+            <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 gap-1.5 ml-1">
+                  <Edit className="h-3.5 w-3.5" />
+                  <span>Edit Name</span>
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Edit Batch Name</DialogTitle>
+                </DialogHeader>
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const formData = new FormData(event.currentTarget);
+                    handleUpdateBatchName(
+                      (formData.get("name") as string) || "",
+                      (formData.get("year") as string) || ""
+                    );
+                  }}
+                  className="space-y-4"
+                >
+                  <div>
+                    <Label htmlFor="edit-batch-name-input">Batch Name</Label>
+                    <Input
+                      id="edit-batch-name-input"
+                      name="name"
+                      defaultValue={batch.name}
+                      placeholder="e.g., Batch D"
+                      required
+                      autoFocus
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit-batch-year-input">Academic Year</Label>
+                    <Input
+                      id="edit-batch-year-input"
+                      name="year"
+                      defaultValue={batch.year}
+                      placeholder="e.g., 2024"
+                      required
+                    />
+                  </div>
+                  <DialogFooter className="gap-2 sm:gap-0">
+                    <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button type="submit">Save Changes</Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
         <div className="flex gap-4">

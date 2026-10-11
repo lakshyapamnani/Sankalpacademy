@@ -22,6 +22,7 @@ import {
   updateStudent,
   addClass,
   addBatch,
+  updateBatch,
   deleteStudent,
   deleteClass,
   deleteBatch,
@@ -199,6 +200,7 @@ const AdminDashboard = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
+  const [editingBatch, setEditingBatch] = useState<Batch | null>(null);
   const [tests, setTests] = useState<Test[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [teachers, setTeachersState] = useState<Teacher[]>([]);
@@ -2306,6 +2308,25 @@ const AdminDashboard = () => {
     addBatch(batch);
     toast.success("Batch created successfully");
     setOpenDialog(null);
+    loadData();
+  };
+
+  const handleUpdateBatch = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingBatch) return;
+    const formData = new FormData(e.currentTarget);
+    const name = (formData.get("name") as string || "").trim();
+    const year = (formData.get("year") as string || "").trim();
+    if (!name) {
+      toast.error("Batch name cannot be empty");
+      return;
+    }
+    updateBatch(editingBatch.id, {
+      name,
+      year: year || editingBatch.year,
+    });
+    toast.success("Batch updated successfully");
+    setEditingBatch(null);
     loadData();
   };
 
@@ -5367,7 +5388,92 @@ const AdminDashboard = () => {
                                       <div>
                                         <h4 className="font-semibold mb-3">Payment History</h4>
                                         <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
-                                          {/* Down Payment entry if present */}
+                                          {/* Render installment payments with last payment appearing on top */}
+                                          {feeRecord.payments && feeRecord.payments.length > 0 ? (
+                                            [...feeRecord.payments]
+                                              .map((p, index) => ({ p, originalIndex: index + 1 }))
+                                              .sort((a, b) => {
+                                                const timeA = new Date(a.p.date).getTime() || 0;
+                                                const timeB = new Date(b.p.date).getTime() || 0;
+                                                if (timeB !== timeA) return timeB - timeA;
+                                                return b.originalIndex - a.originalIndex;
+                                              })
+                                              .map(({ p, originalIndex }, revIdx) => (
+                                                <div key={p.id} className="flex justify-between items-center bg-card border p-3 rounded-xl text-sm hover:shadow-sm transition-shadow">
+                                                  <div className="flex-1">
+                                                    <p className="font-semibold">
+                                                      Payment #{originalIndex} • <span className="text-primary font-mono">Receipt: {p.receiptNo || ('RCPT-' + p.id.slice(-6).toUpperCase())}</span>
+                                                      {revIdx === 0 && (
+                                                        <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium uppercase bg-primary/10 text-primary">
+                                                          Latest
+                                                        </span>
+                                                      )}
+                                                      {p.paymentMode && (
+                                                        <span className={`ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium uppercase ${
+                                                          p.paymentMode === 'cash' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                                                          p.paymentMode === 'upi' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
+                                                          p.paymentMode === 'card' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' :
+                                                          p.paymentMode === 'bank_transfer' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' :
+                                                          p.paymentMode === 'cheque' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                                                          'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                                        }`}>{p.paymentMode.replace('_', ' ')}</span>
+                                                      )}
+                                                    </p>
+                                                    <p className="text-xs text-muted-foreground">
+                                                      {new Date(p.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                                      {p.transactionId && <span> • TXN: {p.transactionId}</span>}
+                                                      {p.chequeNo && <span> • Cheque: {p.chequeNo}</span>}
+                                                      {p.chequeDate && <span> • Dt: {new Date(p.chequeDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>}
+                                                    </p>
+                                                  </div>
+                                                  <div className="flex items-center gap-1.5">
+                                                    <div className="font-bold text-green-600 mr-1.5">+₹{p.amount.toLocaleString('en-IN')}</div>
+                                                    <Button 
+                                                      onClick={() => handleOpenEditPayment(p)} 
+                                                      variant="ghost" 
+                                                      size="icon" 
+                                                      className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-xl"
+                                                      title="Edit Payment / Date"
+                                                    >
+                                                      <Edit className="h-4 w-4" />
+                                                    </Button>
+                                                    <Button 
+                                                      onClick={() => handlePrintReceipt(p)} 
+                                                      variant="ghost" 
+                                                      size="icon" 
+                                                      className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-xl"
+                                                      title="Print Receipt"
+                                                    >
+                                                      <Printer className="h-4 w-4" />
+                                                    </Button>
+                                                    <Button 
+                                                      onClick={() => handleDownloadReceiptPDF(p)} 
+                                                      variant="ghost" 
+                                                      size="icon" 
+                                                      className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-xl"
+                                                      title="Download Receipt PDF"
+                                                    >
+                                                      <Download className="h-4 w-4" />
+                                                    </Button>
+                                                    <Button 
+                                                      onClick={() => handleDeletePayment(p.id)} 
+                                                      variant="ghost" 
+                                                      size="icon" 
+                                                      className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl"
+                                                      title="Delete Payment Record"
+                                                    >
+                                                      <Trash2 className="h-4 w-4" />
+                                                    </Button>
+                                                  </div>
+                                                </div>
+                                              ))
+                                          ) : (
+                                            (!feeRecord.downPayment || Number(feeRecord.downPayment) === 0) && (
+                                              <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
+                                            )
+                                          )}
+
+                                          {/* Down Payment entry if present (initial setup token, placed below installments so latest payment is on top) */}
                                           {Number(feeRecord.downPayment || 0) > 0 && (
                                             <div className="flex justify-between items-center bg-primary/5 border border-primary/20 p-3 rounded-xl text-sm">
                                               <div className="flex-1">
@@ -5416,77 +5522,6 @@ const AdminDashboard = () => {
                                                 </Button>
                                               </div>
                                             </div>
-                                          )}
-
-                                          {feeRecord.payments?.length > 0 ? (
-                                            feeRecord.payments.map((p, index) => (
-                                              <div key={p.id} className="flex justify-between items-center bg-card border p-3 rounded-xl text-sm hover:shadow-sm transition-shadow">
-                                                <div className="flex-1">
-                                                  <p className="font-semibold">
-                                                    Payment #{index + 1} • <span className="text-primary font-mono">Receipt: {p.receiptNo || ('RCPT-' + p.id.slice(-6).toUpperCase())}</span>
-                                                    {p.paymentMode && (
-                                                      <span className={`ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium uppercase ${
-                                                        p.paymentMode === 'cash' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
-                                                        p.paymentMode === 'upi' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
-                                                        p.paymentMode === 'card' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' :
-                                                        p.paymentMode === 'bank_transfer' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' :
-                                                        p.paymentMode === 'cheque' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
-                                                        'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                                                      }`}>{p.paymentMode.replace('_', ' ')}</span>
-                                                    )}
-                                                  </p>
-                                                  <p className="text-xs text-muted-foreground">
-                                                    {new Date(p.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                                                    {p.transactionId && <span> • TXN: {p.transactionId}</span>}
-                                                    {p.chequeNo && <span> • Cheque: {p.chequeNo}</span>}
-                                                    {p.chequeDate && <span> • Dt: {new Date(p.chequeDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>}
-                                                  </p>
-                                                </div>
-                                                <div className="flex items-center gap-1.5">
-                                                  <div className="font-bold text-green-600 mr-1.5">+₹{p.amount.toLocaleString('en-IN')}</div>
-                                                  <Button 
-                                                    onClick={() => handleOpenEditPayment(p)} 
-                                                    variant="ghost" 
-                                                    size="icon" 
-                                                    className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-xl"
-                                                    title="Edit Payment / Date"
-                                                  >
-                                                    <Edit className="h-4 w-4" />
-                                                  </Button>
-                                                  <Button 
-                                                    onClick={() => handlePrintReceipt(p)} 
-                                                    variant="ghost" 
-                                                    size="icon" 
-                                                    className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-xl"
-                                                    title="Print Receipt"
-                                                  >
-                                                    <Printer className="h-4 w-4" />
-                                                  </Button>
-                                                  <Button 
-                                                    onClick={() => handleDownloadReceiptPDF(p)} 
-                                                    variant="ghost" 
-                                                    size="icon" 
-                                                    className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-xl"
-                                                    title="Download Receipt PDF"
-                                                  >
-                                                    <Download className="h-4 w-4" />
-                                                  </Button>
-                                                  <Button 
-                                                    onClick={() => handleDeletePayment(p.id)} 
-                                                    variant="ghost" 
-                                                    size="icon" 
-                                                    className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl"
-                                                    title="Delete Payment Record"
-                                                  >
-                                                    <Trash2 className="h-4 w-4" />
-                                                  </Button>
-                                                </div>
-                                              </div>
-                                            ))
-                                          ) : (
-                                            (!feeRecord.downPayment || Number(feeRecord.downPayment) === 0) && (
-                                              <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
-                                            )
                                           )}
                                         </div>
                                       </div>
@@ -7167,6 +7202,16 @@ const AdminDashboard = () => {
                             <Button variant="outline" size="sm" onClick={() => navigate(`/admin-dashboard/batches/${batch.id}`)}>
                               View Details
                             </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 gap-1.5"
+                              onClick={() => setEditingBatch(batch)}
+                              title="Edit Batch Name"
+                            >
+                              <Edit className="h-3.5 w-3.5" />
+                              <span>Edit</span>
+                            </Button>
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => handleDeleteBatch(batch.id)}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -7189,6 +7234,45 @@ const AdminDashboard = () => {
                     </div>
                   )}
                 </div>
+
+                <Dialog open={!!editingBatch} onOpenChange={(open) => !open && setEditingBatch(null)}>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Edit Batch Name</DialogTitle>
+                    </DialogHeader>
+                    {editingBatch && (
+                      <form onSubmit={handleUpdateBatch} className="space-y-4">
+                        <div>
+                          <Label htmlFor="edit-batch-dialog-name">Batch Name</Label>
+                          <Input
+                            id="edit-batch-dialog-name"
+                            name="name"
+                            defaultValue={editingBatch.name}
+                            placeholder="e.g., Batch D"
+                            required
+                            autoFocus
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="edit-batch-dialog-year">Academic Year</Label>
+                          <Input
+                            id="edit-batch-dialog-year"
+                            name="year"
+                            defaultValue={editingBatch.year}
+                            placeholder="e.g., 2024"
+                            required
+                          />
+                        </div>
+                        <DialogFooter className="gap-2 sm:gap-0">
+                          <Button type="button" variant="outline" onClick={() => setEditingBatch(null)}>
+                            Cancel
+                          </Button>
+                          <Button type="submit">Save Changes</Button>
+                        </DialogFooter>
+                      </form>
+                    )}
+                  </DialogContent>
+                </Dialog>
               </Card>
             )}
             
@@ -10212,7 +10296,9 @@ const AdminDashboard = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {feeRecord.payments.map((p) => (
+                      {[...(feeRecord.payments || [])]
+                        .sort((a, b) => (new Date(b.date).getTime() || 0) - (new Date(a.date).getTime() || 0))
+                        .map((p) => (
                         <tr key={p.id}>
                           <td className="border border-gray-200 px-2.5 py-1.5 font-mono">{p.receiptNo || ('RCPT-' + p.id.slice(-6).toUpperCase())}</td>
                           <td className="border border-gray-200 px-2.5 py-1.5">{new Date(p.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
