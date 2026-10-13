@@ -1385,6 +1385,11 @@ export const authenticateUser = (email: string, password: string, role: string):
     if ((normEmail === 'admin@sankalpacademy.com' || normEmail === 'admin@rctutorials.com' || normEmail === 'admin') && normPass === 'admin123') {
       return { id: 'admin', name: 'Administrator' };
     }
+    // Also allow registered staff members logging in from Admin option
+    const staffMember = getStaff().find(s => (s.email || '').trim().toLowerCase() === normEmail && (s.password || '').trim() === normPass);
+    if (staffMember) {
+      return { id: staffMember.id, name: staffMember.name };
+    }
     return null;
   }
 

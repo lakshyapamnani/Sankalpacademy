@@ -110,16 +110,20 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
       return;
     }
 
-    const userRole = selectedRole || (user.id === 'admin' ? 'admin' : 'student');
+    // Always detect real role: if user matches a staff member in getStaff(), they are staff
+    const staffMember = getStaff().find(s => s.id === user.id);
+    const userRole: UserRole = staffMember ? 'staff' : (selectedRole || (user.id === 'admin' ? 'admin' : 'student'));
+    
     setCurrentUser({ id: user.id, role: userRole, name: user.name });
     toast.success(`Welcome back, ${user.name}!`);
 
     if (userRole === 'staff') {
-      const staffMember = getStaff().find(s => s.id === user.id);
       if (staffMember?.allowAdminUi) {
         navigate('/admin-dashboard');
         return;
       }
+      navigate('/staff-dashboard');
+      return;
     }
 
     navigate(`/${userRole}-dashboard`);
