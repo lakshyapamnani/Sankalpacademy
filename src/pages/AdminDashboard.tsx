@@ -204,7 +204,7 @@ const AdminDashboard = () => {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [editingBatch, setEditingBatch] = useState<Batch | null>(null);
   const [tests, setTests] = useState<Test[]>([]);
-  const [staff, setStaff] = useState<Staff[]>([]);
+  const [staff, setStaff] = useState<Staff[]>(() => getStaff());
 
   // Staff Permissions Options & Presets
   const STAFF_PERMISSIONS_OPTIONS = [
@@ -238,19 +238,20 @@ const AdminDashboard = () => {
 
   const currentUser = getCurrentUser();
   const loggedInStaff = useMemo(() => {
-    if (currentUser?.role === 'staff') {
-      return staff.find(s => s.id === currentUser.id) || null;
-    }
-    return null;
+    if (!currentUser || currentUser.id === 'admin') return null;
+    const allStaff = staff.length > 0 ? staff : getStaff();
+    // Detect staff member by role OR if currentUser.id matches any staff member
+    return allStaff.find(s => s.id === currentUser.id) || null;
   }, [currentUser, staff]);
 
-  const isStaffLoggedIn = currentUser?.role === 'staff';
+  const isStaffLoggedIn = Boolean(loggedInStaff);
 
   const isTabPermitted = useCallback((tabId: string): boolean => {
     if (!isStaffLoggedIn) return true;
     if (!loggedInStaff) return true;
-    const allowed = loggedInStaff.allowedTabs;
-    if (!allowed || allowed.length === 0) return true;
+    const allowed = Array.isArray(loggedInStaff.allowedTabs) 
+      ? loggedInStaff.allowedTabs 
+      : DEFAULT_STAFF_ALLOWED_TABS;
     return allowed.includes(tabId);
   }, [isStaffLoggedIn, loggedInStaff]);
 
@@ -3067,16 +3068,22 @@ const AdminDashboard = () => {
   ];
 
   const visibleSidebarItems = useMemo(() => {
-    if (isStaffLoggedIn && loggedInStaff?.allowedTabs && loggedInStaff.allowedTabs.length > 0) {
-      return sidebarItems.filter(item => loggedInStaff.allowedTabs!.includes(item.id));
+    if (isStaffLoggedIn && loggedInStaff) {
+      const allowed = Array.isArray(loggedInStaff.allowedTabs) 
+        ? loggedInStaff.allowedTabs 
+        : DEFAULT_STAFF_ALLOWED_TABS;
+      return sidebarItems.filter(item => allowed.includes(item.id));
     }
     return sidebarItems;
   }, [sidebarItems, isStaffLoggedIn, loggedInStaff]);
 
   useEffect(() => {
-    if (isStaffLoggedIn && loggedInStaff?.allowedTabs && loggedInStaff.allowedTabs.length > 0) {
-      if (!loggedInStaff.allowedTabs.includes(activeTab)) {
-        const firstAllowed = loggedInStaff.allowedTabs.find(tabId =>
+    if (isStaffLoggedIn && loggedInStaff) {
+      const allowed = Array.isArray(loggedInStaff.allowedTabs) 
+        ? loggedInStaff.allowedTabs 
+        : DEFAULT_STAFF_ALLOWED_TABS;
+      if (!allowed.includes(activeTab)) {
+        const firstAllowed = allowed.find(tabId =>
           sidebarItems.some(item => item.id === tabId)
         ) as typeof activeTab | undefined;
         if (firstAllowed) {
