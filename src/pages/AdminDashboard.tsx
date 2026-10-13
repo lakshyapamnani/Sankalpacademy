@@ -9949,7 +9949,7 @@ const AdminDashboard = () => {
       </div>
 
       {/* Printable Fee Receipt */}
-      {!printingReport && !printingSchedule && !printingMomReport && receiptData && (
+      {printingReceipt && !printingReport && !printingSchedule && !printingMomReport && receiptData && (
         <div className="hidden print:block w-full bg-white text-black min-h-screen" style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
           <div className="max-w-[210mm] mx-auto px-10 py-8">
             

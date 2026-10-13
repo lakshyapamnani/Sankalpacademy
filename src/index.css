@@ -144,6 +144,40 @@ All colors MUST be HSL.
     opacity: 0 !important;
   }
 
+  /* Prevent scroll containers and parent wrappers from clipping printed output */
+  body * {
+    overflow: visible !important;
+  }
+
+  .overflow-hidden,
+  .overflow-y-auto,
+  .overflow-x-hidden {
+    overflow: visible !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+  }
+
+  .page-break-inside-avoid,
+  .batch-schedule-card {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  tbody tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
   .print\:block {
     display: block !important;
     visibility: visible !important;

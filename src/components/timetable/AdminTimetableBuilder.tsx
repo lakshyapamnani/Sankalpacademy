@@ -784,7 +784,7 @@ export const AdminTimetableBuilder = ({
       {/* ─────────────────────────────────────────────────────────────
           TOP CONTROL DECK: View Switcher, Academic Year, Effective Week, Tools
       ───────────────────────────────────────────────────────────── */}
-      <Card className="p-5 sm:p-6 bg-card border-2 shadow-sm rounded-3xl space-y-5">
+      <Card className="p-5 sm:p-6 bg-card border-2 shadow-sm rounded-3xl space-y-5 print:hidden">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b pb-5">
           <div>
             <div className="flex items-center gap-2">
