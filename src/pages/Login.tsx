@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { GraduationCap, User, BookOpen, Shield } from "lucide-react";
 import { toast } from "sonner";
-import { clearCurrentUser, authenticateUser, getCurrentUser, setCurrentUser, switchDevRole } from "@/lib/localStorage";
+import { clearCurrentUser, authenticateUser, getCurrentUser, setCurrentUser, switchDevRole, getStaff } from "@/lib/localStorage";
 
 type UserRole = "admin" | "student" | "staff" | "teacher";
 
@@ -113,6 +113,15 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
     const userRole = selectedRole || (user.id === 'admin' ? 'admin' : 'student');
     setCurrentUser({ id: user.id, role: userRole, name: user.name });
     toast.success(`Welcome back, ${user.name}!`);
+
+    if (userRole === 'staff') {
+      const staffMember = getStaff().find(s => s.id === user.id);
+      if (staffMember?.allowAdminUi) {
+        navigate('/admin-dashboard');
+        return;
+      }
+    }
+
     navigate(`/${userRole}-dashboard`);
   };
 

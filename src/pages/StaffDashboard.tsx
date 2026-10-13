@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -9,6 +10,7 @@ import {
   CheckCircle2,
   Check,
   X,
+  Laptop,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -22,6 +24,7 @@ import {
   getClasses,
   getBatches,
   getCurrentUser,
+  getStaff,
   markAttendance,
   getAttendance,
   getTimetableLectures,
@@ -39,6 +42,7 @@ const tabOptions: { id: "classes" | "timetable" | "attendance"; label: string; i
 ];
 
 const StaffDashboard = () => {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"classes" | "timetable" | "attendance">("classes");
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
@@ -50,6 +54,7 @@ const StaffDashboard = () => {
   const [currentDateStr, setCurrentDateStr] = useState<string>('');
 
   const currentUser = getCurrentUser();
+  const staffRecord = currentUser ? getStaff().find(s => s.id === currentUser.id) : null;
 
   // Returns YYYY-MM-DD in the local timezone (not UTC)
   const getLocalDateString = () => {
@@ -506,6 +511,26 @@ const StaffDashboard = () => {
 
   return (
     <DashboardLayout role="staff" title="Staff Dashboard">
+      {staffRecord?.allowAdminUi && (
+        <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-primary/10 via-primary/5 to-accent/10 border border-primary/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+          <div className="flex items-center gap-3.5">
+            <div className="p-3 rounded-2xl bg-primary text-primary-foreground shadow-md shadow-primary/20">
+              <Laptop className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="font-black text-sm">Laptop / Admin UI Access Enabled</p>
+              <p className="text-xs text-muted-foreground font-medium">You have permission to use the full desktop Admin interface for your permitted tabs.</p>
+            </div>
+          </div>
+          <Button 
+            onClick={() => navigate('/admin-dashboard')}
+            className="font-black gap-2 h-11 px-5 rounded-xl shadow-lg shadow-primary/20 shrink-0"
+          >
+            <Laptop className="h-4 w-4" /> Open Admin Interface
+          </Button>
+        </div>
+      )}
+
       <div className="hidden lg:flex items-center gap-3 mb-8">
         {tabOptions.map(tab => {
           const Icon = tab.icon;
