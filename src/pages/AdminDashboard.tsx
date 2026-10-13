@@ -2812,6 +2812,12 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleLoginAsTeacher = (teacher: Teacher) => {
+    setCurrentUser({ id: teacher.id, role: 'teacher', name: teacher.name });
+    toast.success(`Logged in as ${teacher.name}`);
+    navigate('/teacher-dashboard');
+  };
+
   const handleAddSubject = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
@@ -6813,6 +6819,13 @@ const AdminDashboard = () => {
                                 </div>
                               </div>
                               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                                <button
+                                  onClick={() => handleLoginAsTeacher(t)}
+                                  className="p-1.5 text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-950/40 rounded-xl transition-colors"
+                                  title={`Log In as ${t.name}`}
+                                >
+                                  <LogIn className="h-4 w-4" />
+                                </button>
                                 <Button
                                   variant="ghost"
                                   size="icon"
@@ -6822,6 +6835,7 @@ const AdminDashboard = () => {
                                     setEditCustomTeacherSubject('');
                                   }}
                                   className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-xl"
+                                  title="Edit Teacher"
                                 >
                                   <Edit className="h-4 w-4" />
                                 </Button>
@@ -6829,7 +6843,7 @@ const AdminDashboard = () => {
                                   title="Delete Teacher Account?"
                                   onDelete={() => handleDeleteTeacher(t.id)}
                                   trigger={
-                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive/40 hover:text-destructive hover:bg-destructive/10 rounded-xl">
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive/40 hover:text-destructive hover:bg-destructive/10 rounded-xl" title="Delete Teacher">
                                       <Plus className="h-4 w-4 rotate-45" />
                                     </Button>
                                   }
@@ -6845,6 +6859,15 @@ const AdminDashboard = () => {
                               {(!t.assignedSubjects || t.assignedSubjects.length === 0) && (!t.assignedBatchIds || t.assignedBatchIds.length === 0) && (
                                 <span className="text-[10px] text-muted-foreground italic">No subjects assigned</span>
                               )}
+                            </div>
+                            <div className="pt-2 border-t border-primary/10 mt-auto">
+                              <button
+                                onClick={() => handleLoginAsTeacher(t)}
+                                className="w-full py-2 text-xs font-bold rounded-xl bg-teal-50 text-teal-700 hover:bg-teal-100 dark:bg-teal-950/40 dark:text-teal-300 dark:hover:bg-teal-900/60 transition-colors flex items-center justify-center gap-1.5 border border-teal-200/50 shadow-2xs"
+                              >
+                                <LogIn className="h-3.5 w-3.5" />
+                                Log In as Teacher
+                              </button>
                             </div>
                           </div>
                         ))}

@@ -1722,17 +1722,16 @@ export const AdminTimetableBuilder = ({
         />
       )}
 
-      {selectedBatch && (
-        <TimetableTemplateDialog
-          open={templateDialogOpen}
-          onOpenChange={setTemplateDialogOpen}
-          currentBatch={selectedBatch}
-          effectiveWeek={weekInfo}
-          academicYear={selectedAcademicYear}
-          allLectures={timetableLectures}
-          onSuccess={onDataChange}
-        />
-      )}
+      <TimetableTemplateDialog
+        open={templateDialogOpen}
+        onOpenChange={setTemplateDialogOpen}
+        batches={batches}
+        currentBatch={selectedBatch || batches[0]}
+        effectiveWeek={weekInfo}
+        academicYear={selectedAcademicYear}
+        allLectures={timetableLectures}
+        onSuccess={onDataChange}
+      />
 
       <TimetableCsvImportDialog
         open={csvImportDialogOpen}
