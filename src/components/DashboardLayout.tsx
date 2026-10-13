@@ -122,21 +122,21 @@ const DashboardLayout = ({ children, role, title, sidebarItems = [], activeSideb
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden pt-[65px]">
+      <div className="flex flex-1 overflow-hidden pt-[65px] print:pt-0 print:overflow-visible">
         {/* Sidebar */}
         {sidebarItems.length > 0 && (
           <>
             {/* Mobile Sidebar Overlay */}
             {isSidebarOpen && (
               <div 
-                className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 lg:hidden"
+                className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 lg:hidden print:hidden"
                 onClick={() => setIsSidebarOpen(false)}
               />
             )}
             
             {/* Sidebar Content */}
             <aside
-              className={`fixed inset-y-0 left-0 z-50 mt-[65px] bg-card border-r transition-all duration-300 flex flex-col 
+              className={`fixed inset-y-0 left-0 z-50 mt-[65px] bg-card border-r transition-all duration-300 flex flex-col print:hidden
               ${isSidebarOpen ? "translate-x-0 w-64" : "-translate-x-full lg:translate-x-0"}
               ${isSidebarCollapsed ? "lg:w-16" : "lg:w-64"}`}
             >
@@ -178,8 +178,8 @@ const DashboardLayout = ({ children, role, title, sidebarItems = [], activeSideb
           </>
         )}
 
-        <main className={`flex-1 overflow-y-auto transition-all p-4 lg:p-6 ${sidebarItems.length > 0 ? (isSidebarCollapsed ? "lg:ml-16" : "lg:ml-64") : ""}`}>
-          <div className="mb-6">
+        <main className={`flex-1 overflow-y-auto transition-all p-4 lg:p-6 print:p-0 print:m-0 print:overflow-visible ${sidebarItems.length > 0 ? (isSidebarCollapsed ? "lg:ml-16" : "lg:ml-64") : ""} print:lg:ml-0`}>
+          <div className="mb-6 print:hidden">
             <h2 className="text-2xl font-semibold mb-1">{title}</h2>
             <p className="hidden sm:block text-sm text-muted-foreground">
               {new Date().toLocaleDateString("en-US", {
@@ -193,7 +193,7 @@ const DashboardLayout = ({ children, role, title, sidebarItems = [], activeSideb
 
           {children}
 
-          <footer className="mt-12 py-6 border-t flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
+          <footer className="mt-12 py-6 border-t flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground print:hidden">
             <p>&copy; {new Date().getFullYear()} Sankalp Academy. All rights reserved.</p>
           </footer>
         </main>

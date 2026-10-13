@@ -784,7 +784,7 @@ export const AdminTimetableBuilder = ({
       {/* ─────────────────────────────────────────────────────────────
           TOP CONTROL DECK: View Switcher, Academic Year, Effective Week, Tools
       ───────────────────────────────────────────────────────────── */}
-      <Card className="p-5 sm:p-6 bg-card border-2 shadow-sm rounded-3xl space-y-5">
+      <Card className="p-5 sm:p-6 bg-card border-2 shadow-sm rounded-3xl space-y-5 print:hidden">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b pb-5">
           <div>
             <div className="flex items-center gap-2">
@@ -1722,17 +1722,16 @@ export const AdminTimetableBuilder = ({
         />
       )}
 
-      {selectedBatch && (
-        <TimetableTemplateDialog
-          open={templateDialogOpen}
-          onOpenChange={setTemplateDialogOpen}
-          currentBatch={selectedBatch}
-          effectiveWeek={weekInfo}
-          academicYear={selectedAcademicYear}
-          allLectures={timetableLectures}
-          onSuccess={onDataChange}
-        />
-      )}
+      <TimetableTemplateDialog
+        open={templateDialogOpen}
+        onOpenChange={setTemplateDialogOpen}
+        batches={batches}
+        currentBatch={selectedBatch || batches[0]}
+        effectiveWeek={weekInfo}
+        academicYear={selectedAcademicYear}
+        allLectures={timetableLectures}
+        onSuccess={onDataChange}
+      />
 
       <TimetableCsvImportDialog
         open={csvImportDialogOpen}
