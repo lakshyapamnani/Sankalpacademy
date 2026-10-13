@@ -25,6 +25,8 @@ export interface Staff {
   email: string;
   password: string;
   role: string;
+  allowAdminUi?: boolean;
+  allowedTabs?: string[];
   firebaseUid?: string;
 }
 
@@ -913,6 +915,19 @@ export const addStaff = async (staff: Staff): Promise<void> => {
     throw error;
   }
 };
+
+export const updateStaff = async (staffRecord: Staff): Promise<void> => {
+  try {
+    const allStaff = getStaff();
+    const updated = allStaff.map(s => s.id === staffRecord.id ? { ...s, ...staffRecord } : s);
+    saveToStorage(STORAGE_KEYS.STAFF, updated);
+    await writeItemToRealtime(DB_PATHS.STAFF, staffRecord.id, staffRecord);
+  } catch (error) {
+    console.error("Error updating staff:", error);
+    throw error;
+  }
+};
+
 export const deleteStaff = (staffId: string): boolean => {
   try {
     const allStaff = getStaff();

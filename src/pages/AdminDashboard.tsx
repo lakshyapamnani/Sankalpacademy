@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit, ArrowLeft, Search, Download, MessageSquare, Eye, TrendingUp, FileText, Trash2, GraduationCap, LogIn, Key, Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Layers, Settings, Image, PenTool, Building, Save, Bell, Megaphone, Award, AlertTriangle, Star, ThumbsUp, ThumbsDown, Send, Filter, Check, Clock, ExternalLink, DoorOpen, RotateCcw } from "lucide-react";
+import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit, ArrowLeft, Search, Download, MessageSquare, Eye, TrendingUp, FileText, Trash2, GraduationCap, LogIn, Key, Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Layers, Settings, Image, PenTool, Building, Save, Bell, Megaphone, Award, AlertTriangle, Star, ThumbsUp, ThumbsDown, Send, Filter, Check, Clock, ExternalLink, DoorOpen, RotateCcw, Laptop, Shield } from "lucide-react";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -45,7 +45,9 @@ import {
   markAttendance,
   getStaff,
   addStaff,
+  updateStaff,
   deleteStaff,
+  getCurrentUser,
   getSubjects,
   addSubject,
   deleteSubject,
@@ -203,6 +205,61 @@ const AdminDashboard = () => {
   const [editingBatch, setEditingBatch] = useState<Batch | null>(null);
   const [tests, setTests] = useState<Test[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
+
+  // Staff Permissions Options & Presets
+  const STAFF_PERMISSIONS_OPTIONS = [
+    { id: 'students', label: 'Students', desc: 'Directory, profiles & cards' },
+    { id: 'leads', label: 'Leads & Admissions', desc: 'Inquiries & lead pipeline' },
+    { id: 'attendance', label: 'Attendance & Reports', desc: 'Daily attendance & reports' },
+    { id: 'timetable', label: 'Timetable', desc: 'Weekly planner & matrix' },
+    { id: 'classes', label: 'Classes & Sessions', desc: 'Class schedules & lecture tracking' },
+    { id: 'batches', label: 'Batches', desc: 'Batch courses & divisions' },
+    { id: 'fees', label: 'Fees Management', desc: 'Fee structures, records & receipts' },
+    { id: 'tests', label: 'Tests & Marks', desc: 'Exam marks entry & tests' },
+    { id: 'notes', label: 'Study Material', desc: 'Chapter notes & PDF resources' },
+    { id: 'remarks', label: 'Student Remarks', desc: 'Appreciation & behavior remarks' },
+    { id: 'notices', label: 'Notices & Alerts', desc: 'Announcements & notifications' },
+    { id: 'teachers', label: 'Faculty / Teachers', desc: 'Faculty directory & subjects' },
+    { id: 'staff', label: 'Staff Accounts', desc: 'Office staff & permissions' },
+    { id: 'birthdays', label: 'Birthdays', desc: 'Birthday reminders' },
+    { id: 'settings', label: 'Institute Settings', desc: 'Branding, logo & settings' },
+  ];
+
+  const DEFAULT_STAFF_ALLOWED_TABS = [
+    'students', 'leads', 'attendance', 'timetable', 'classes', 'batches', 'tests', 'notes', 'remarks', 'notices', 'birthdays'
+  ];
+
+  const [newStaffAllowAdminUi, setNewStaffAllowAdminUi] = useState<boolean>(true);
+  const [newStaffAllowedTabs, setNewStaffAllowedTabs] = useState<string[]>(DEFAULT_STAFF_ALLOWED_TABS);
+
+  const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
+  const [editStaffAllowAdminUi, setEditStaffAllowAdminUi] = useState<boolean>(true);
+  const [editStaffAllowedTabs, setEditStaffAllowedTabs] = useState<string[]>([]);
+
+  const currentUser = getCurrentUser();
+  const loggedInStaff = useMemo(() => {
+    if (currentUser?.role === 'staff') {
+      return staff.find(s => s.id === currentUser.id) || null;
+    }
+    return null;
+  }, [currentUser, staff]);
+
+  const isStaffLoggedIn = currentUser?.role === 'staff';
+
+  const isTabPermitted = useCallback((tabId: string): boolean => {
+    if (!isStaffLoggedIn) return true;
+    if (!loggedInStaff) return true;
+    const allowed = loggedInStaff.allowedTabs;
+    if (!allowed || allowed.length === 0) return true;
+    return allowed.includes(tabId);
+  }, [isStaffLoggedIn, loggedInStaff]);
+
+  useEffect(() => {
+    if (isStaffLoggedIn && loggedInStaff && loggedInStaff.allowAdminUi === false) {
+      toast.error("Admin UI access is not enabled for your account");
+      navigate('/staff-dashboard');
+    }
+  }, [isStaffLoggedIn, loggedInStaff, navigate]);
   const [teachers, setTeachersState] = useState<Teacher[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -2576,9 +2633,9 @@ const AdminDashboard = () => {
   const handleSaveStaff = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const name = formData.get('name') as string;
-    const email = formData.get('email') as string;
-    const password = formData.get('password') as string;
+    const name = (formData.get('name') as string)?.trim();
+    const email = (formData.get('email') as string)?.trim();
+    const password = (formData.get('password') as string)?.trim();
 
     if (!name || !email || !password) {
       toast.error("Please fill all fields");
@@ -2591,14 +2648,60 @@ const AdminDashboard = () => {
         name,
         email,
         password,
-        role: 'staff'
+        role: 'staff',
+        allowAdminUi: newStaffAllowAdminUi,
+        allowedTabs: newStaffAllowedTabs,
       };
       await addStaff(newStaff);
       await loadData();
       setOpenDialog(null);
+      setNewStaffAllowAdminUi(true);
+      setNewStaffAllowedTabs(DEFAULT_STAFF_ALLOWED_TABS);
       toast.success("Staff account created successfully");
     } catch (error: any) {
       toast.error(formatFirebaseError(error.message));
+    }
+  };
+
+  const handleOpenEditStaff = (s: Staff) => {
+    setEditingStaff(s);
+    setEditStaffAllowAdminUi(s.allowAdminUi ?? true);
+    setEditStaffAllowedTabs(s.allowedTabs || DEFAULT_STAFF_ALLOWED_TABS);
+  };
+
+  const handleUpdateStaff = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingStaff) return;
+    const formData = new FormData(e.currentTarget);
+    const name = ((formData.get('editName') as string) || editingStaff.name).trim();
+    const email = ((formData.get('editEmail') as string) || editingStaff.email).trim();
+    const password = ((formData.get('editPassword') as string) || editingStaff.password).trim();
+
+    try {
+      const updated: Staff = {
+        ...editingStaff,
+        name,
+        email,
+        password: password ? password : editingStaff.password,
+        allowAdminUi: editStaffAllowAdminUi,
+        allowedTabs: editStaffAllowedTabs,
+      };
+      await updateStaff(updated);
+      await loadData();
+      setEditingStaff(null);
+      toast.success("Staff account & permissions updated successfully");
+    } catch (error: any) {
+      toast.error(formatFirebaseError(error.message));
+    }
+  };
+
+  const handleLoginAsStaff = (staffMember: Staff) => {
+    setCurrentUser({ id: staffMember.id, role: 'staff', name: staffMember.name });
+    toast.success(`Logged in as Staff: ${staffMember.name}`);
+    if (staffMember.allowAdminUi) {
+      navigate('/admin-dashboard');
+    } else {
+      navigate('/staff-dashboard');
     }
   };
 
@@ -2963,6 +3066,26 @@ const AdminDashboard = () => {
     { id: 'settings', label: 'Settings', icon: Settings, action: () => setActiveTab('settings') },
   ];
 
+  const visibleSidebarItems = useMemo(() => {
+    if (isStaffLoggedIn && loggedInStaff?.allowedTabs && loggedInStaff.allowedTabs.length > 0) {
+      return sidebarItems.filter(item => loggedInStaff.allowedTabs!.includes(item.id));
+    }
+    return sidebarItems;
+  }, [sidebarItems, isStaffLoggedIn, loggedInStaff]);
+
+  useEffect(() => {
+    if (isStaffLoggedIn && loggedInStaff?.allowedTabs && loggedInStaff.allowedTabs.length > 0) {
+      if (!loggedInStaff.allowedTabs.includes(activeTab)) {
+        const firstAllowed = loggedInStaff.allowedTabs.find(tabId =>
+          sidebarItems.some(item => item.id === tabId)
+        ) as typeof activeTab | undefined;
+        if (firstAllowed) {
+          setActiveTab(firstAllowed);
+        }
+      }
+    }
+  }, [isStaffLoggedIn, loggedInStaff, activeTab, sidebarItems]);
+
   const handleSaveAdminRemark = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedStudentForAdminRemark) {
@@ -3060,15 +3183,36 @@ const AdminDashboard = () => {
     <>
       <div className="print:hidden">
         <DashboardLayout 
-          role="admin" 
-          title="Administrator Dashboard"
-          sidebarItems={sidebarItems}
+          role={isStaffLoggedIn ? "staff" : "admin"} 
+          title={isStaffLoggedIn ? `Staff Portal • ${loggedInStaff?.name || currentUser?.name || 'Staff'}` : "Administrator Dashboard"}
+          sidebarItems={visibleSidebarItems}
           activeSidebarItem={activeTab}
         >
           <div className="space-y-6">
+            {!isTabPermitted(activeTab) && (
+              <Card className="p-10 text-center border-dashed border-2 border-amber-500/30 bg-amber-500/5 rounded-3xl">
+                <div className="max-w-md mx-auto space-y-4">
+                  <div className="w-16 h-16 rounded-full bg-amber-500/20 text-amber-600 flex items-center justify-center mx-auto">
+                    <Shield className="w-8 h-8" />
+                  </div>
+                  <h3 className="text-2xl font-black text-amber-900 dark:text-amber-100">Access Restricted</h3>
+                  <p className="text-sm text-muted-foreground font-medium">
+                    Your staff account does not have permission to view or manage the <strong className="capitalize text-foreground">{activeTab}</strong> section. Please contact your administrator if you need access.
+                  </p>
+                  {visibleSidebarItems.length > 0 && (
+                    <Button 
+                      className="font-bold rounded-xl"
+                      onClick={() => visibleSidebarItems[0].action()}
+                    >
+                      Go to {visibleSidebarItems[0].label}
+                    </Button>
+                  )}
+                </div>
+              </Card>
+            )}
             
             
-            {activeTab === 'students' && (
+            {activeTab === 'students' && isTabPermitted('students') && (
               <div>
               <Card className="p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
@@ -4129,7 +4273,7 @@ const AdminDashboard = () => {
               </div>
             )}
 
-            {activeTab === 'leads' && (
+            {activeTab === 'leads' && isTabPermitted('leads') && (
               <div className="space-y-6">
                 {/* Header Card & Stats */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -4503,7 +4647,7 @@ const AdminDashboard = () => {
             )}
 
             
-            {activeTab === 'fees' && (
+            {activeTab === 'fees' && isTabPermitted('fees') && (
               <div className="space-y-6">
                 {/* 1. Fees Overview Dashboard */}
                 <FeesDashboardOverview
@@ -5637,7 +5781,7 @@ const AdminDashboard = () => {
             )}
 
             
-            {activeTab === 'tests' && (
+            {activeTab === 'tests' && isTabPermitted('tests') && (
               <Card className="p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4 border-b pb-6">
                   <div>
@@ -6492,7 +6636,7 @@ const AdminDashboard = () => {
             </Dialog>
 
             
-            {activeTab === 'staff' && (
+            {activeTab === 'staff' && isTabPermitted('staff') && (
               <div className="space-y-6">
                 <Card className="p-6">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4 border-b pb-6">
@@ -6508,27 +6652,307 @@ const AdminDashboard = () => {
                           <UserPlus className="h-4 w-4" /> Add Staff Member
                         </Button>
                       </DialogTrigger>
-                      <DialogContent className="sm:max-w-md rounded-[32px]">
+                      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto rounded-[32px]">
                         <DialogHeader>
-                          <DialogTitle className="text-2xl font-black">Register New Staff</DialogTitle>
+                          <DialogTitle className="text-2xl font-black">Register New Staff Member</DialogTitle>
                         </DialogHeader>
-                        <form onSubmit={handleSaveStaff} className="space-y-4 pt-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="name" className="font-bold">Full Name</Label>
-                            <Input id="name" name="name" placeholder="Enter staff name" required className="h-12 rounded-xl" />
+                        <form onSubmit={handleSaveStaff} className="space-y-4 pt-2">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="name" className="font-bold">Full Name</Label>
+                              <Input id="name" name="name" placeholder="e.g. Rahul Sharma" required className="h-11 rounded-xl" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="email" className="font-bold">Email Address (Login ID)</Label>
+                              <Input id="email" name="email" type="email" placeholder="staff@example.com" required className="h-11 rounded-xl" />
+                            </div>
                           </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="email" className="font-bold">Email Address (Login ID)</Label>
-                            <Input id="email" name="email" type="email" placeholder="staff@example.com" required className="h-12 rounded-xl" />
-                          </div>
+
                           <div className="space-y-2">
                             <Label htmlFor="password" className="font-bold">Password</Label>
-                            <Input id="password" name="password" type="password" placeholder="••••••••" required className="h-12 rounded-xl" />
+                            <Input id="password" name="password" type="password" placeholder="••••••••" required className="h-11 rounded-xl" />
                           </div>
-                          <Button type="submit" className="w-full h-14 rounded-2xl font-black text-lg shadow-xl shadow-primary/20 mt-4">
-                            Create Account
+
+                          {/* Laptop / Admin UI Interface Checkbox */}
+                          <div className="p-4 rounded-2xl bg-primary/5 border border-primary/20 space-y-2">
+                            <div className="flex items-start gap-3">
+                              <Checkbox 
+                                id="newStaffAllowAdminUi" 
+                                checked={newStaffAllowAdminUi} 
+                                onCheckedChange={(checked) => setNewStaffAllowAdminUi(!!checked)}
+                                className="mt-1"
+                              />
+                              <div className="space-y-1">
+                                <Label htmlFor="newStaffAllowAdminUi" className="font-bold flex items-center gap-2 cursor-pointer text-sm">
+                                  <Laptop className="h-4 w-4 text-primary" /> Enable Admin UI / Laptop Interface
+                                </Label>
+                                <p className="text-xs text-muted-foreground leading-relaxed">
+                                  Allow this staff member to log in to the desktop Admin Dashboard on laptop/PC, restricted only to their permitted tabs below. If unchecked, they will only have access to the mobile Staff Portal.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Feature & Tab Permissions Section */}
+                          <div className="space-y-3 pt-1">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <div>
+                                <Label className="font-bold flex items-center gap-2 text-sm">
+                                  <Shield className="h-4 w-4 text-primary" /> Tab & Feature Access Permissions
+                                </Label>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  Select which tabs this staff member can access ({newStaffAllowedTabs.length} of {STAFF_PERMISSIONS_OPTIONS.length} tabs enabled)
+                                </p>
+                              </div>
+
+                              {/* Presets */}
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 text-[11px] px-2.5 font-bold rounded-lg"
+                                  onClick={() => setNewStaffAllowedTabs(STAFF_PERMISSIONS_OPTIONS.map(o => o.id))}
+                                >
+                                  All Tabs
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 text-[11px] px-2.5 font-bold rounded-lg border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10"
+                                  onClick={() => setNewStaffAllowedTabs(STAFF_PERMISSIONS_OPTIONS.map(o => o.id).filter(id => id !== 'fees'))}
+                                >
+                                  All Except Fees
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 text-[11px] px-2.5 font-bold rounded-lg"
+                                  onClick={() => setNewStaffAllowedTabs(DEFAULT_STAFF_ALLOWED_TABS)}
+                                >
+                                  Standard Staff
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 text-[11px] px-2 text-muted-foreground hover:text-destructive"
+                                  onClick={() => setNewStaffAllowedTabs([])}
+                                >
+                                  Clear All
+                                </Button>
+                              </div>
+                            </div>
+
+                            {/* Checkbox Grid */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-56 overflow-y-auto p-3 rounded-2xl border bg-muted/20">
+                              {STAFF_PERMISSIONS_OPTIONS.map((opt) => {
+                                const isChecked = newStaffAllowedTabs.includes(opt.id);
+                                const isFeeTab = opt.id === 'fees';
+                                return (
+                                  <label
+                                    key={opt.id}
+                                    className={`flex items-start gap-3 p-2.5 rounded-xl border transition-all cursor-pointer ${
+                                      isChecked
+                                        ? isFeeTab
+                                          ? 'bg-amber-500/10 border-amber-500/40 text-foreground'
+                                          : 'bg-primary/5 border-primary/25 text-foreground'
+                                        : 'bg-background/60 border-border/40 text-muted-foreground hover:border-border'
+                                    }`}
+                                  >
+                                    <Checkbox
+                                      checked={isChecked}
+                                      onCheckedChange={(checked) => {
+                                        if (checked) {
+                                          setNewStaffAllowedTabs(prev => [...prev, opt.id]);
+                                        } else {
+                                          setNewStaffAllowedTabs(prev => prev.filter(id => id !== opt.id));
+                                        }
+                                      }}
+                                      className="mt-0.5"
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="text-xs font-bold leading-tight">{opt.label}</span>
+                                        {isFeeTab && (
+                                          <span className="text-[10px] font-black px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300">
+                                            Fees & Collections
+                                          </span>
+                                        )}
+                                      </div>
+                                      <p className="text-[11px] text-muted-foreground truncate leading-tight mt-0.5">{opt.desc}</p>
+                                    </div>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <Button type="submit" className="w-full h-12 rounded-2xl font-black text-base shadow-xl shadow-primary/20 mt-2">
+                            Create Staff Account
                           </Button>
                         </form>
+                      </DialogContent>
+                    </Dialog>
+
+                    {/* Edit Staff & Permissions Dialog */}
+                    <Dialog open={!!editingStaff} onOpenChange={(open) => !open && setEditingStaff(null)}>
+                      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto rounded-[32px]">
+                        <DialogHeader>
+                          <DialogTitle className="text-2xl font-black">Edit Staff & Tab Permissions</DialogTitle>
+                        </DialogHeader>
+                        {editingStaff && (
+                          <form onSubmit={handleUpdateStaff} className="space-y-4 pt-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <Label htmlFor="editName" className="font-bold">Full Name</Label>
+                                <Input id="editName" name="editName" defaultValue={editingStaff.name} required className="h-11 rounded-xl" />
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="editEmail" className="font-bold">Email Address</Label>
+                                <Input id="editEmail" name="editEmail" type="email" defaultValue={editingStaff.email} required className="h-11 rounded-xl" />
+                              </div>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label htmlFor="editPassword" className="font-bold">New Password (leave blank to keep current)</Label>
+                              <Input id="editPassword" name="editPassword" type="password" placeholder="Leave empty to keep unchanged" className="h-11 rounded-xl" />
+                            </div>
+
+                            {/* Laptop / Admin UI Interface Checkbox */}
+                            <div className="p-4 rounded-2xl bg-primary/5 border border-primary/20 space-y-2">
+                              <div className="flex items-start gap-3">
+                                <Checkbox 
+                                  id="editStaffAllowAdminUi" 
+                                  checked={editStaffAllowAdminUi} 
+                                  onCheckedChange={(checked) => setEditStaffAllowAdminUi(!!checked)}
+                                  className="mt-1"
+                                />
+                                <div className="space-y-1">
+                                  <Label htmlFor="editStaffAllowAdminUi" className="font-bold flex items-center gap-2 cursor-pointer text-sm">
+                                    <Laptop className="h-4 w-4 text-primary" /> Enable Admin UI / Laptop Interface
+                                  </Label>
+                                  <p className="text-xs text-muted-foreground leading-relaxed">
+                                    Allow this staff member to log in to the desktop Admin Dashboard on laptop/PC, restricted only to their permitted tabs below.
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Feature & Tab Permissions Section */}
+                            <div className="space-y-3 pt-1">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                <div>
+                                  <Label className="font-bold flex items-center gap-2 text-sm">
+                                    <Shield className="h-4 w-4 text-primary" /> Tab & Feature Access Permissions
+                                  </Label>
+                                  <p className="text-xs text-muted-foreground mt-0.5">
+                                    Select which tabs this staff member can access ({editStaffAllowedTabs.length} of {STAFF_PERMISSIONS_OPTIONS.length} tabs enabled)
+                                  </p>
+                                </div>
+
+                                {/* Presets */}
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 text-[11px] px-2.5 font-bold rounded-lg"
+                                    onClick={() => setEditStaffAllowedTabs(STAFF_PERMISSIONS_OPTIONS.map(o => o.id))}
+                                  >
+                                    All Tabs
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 text-[11px] px-2.5 font-bold rounded-lg border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10"
+                                    onClick={() => setEditStaffAllowedTabs(STAFF_PERMISSIONS_OPTIONS.map(o => o.id).filter(id => id !== 'fees'))}
+                                  >
+                                    All Except Fees
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 text-[11px] px-2.5 font-bold rounded-lg"
+                                    onClick={() => setEditStaffAllowedTabs(DEFAULT_STAFF_ALLOWED_TABS)}
+                                  >
+                                    Standard Staff
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 text-[11px] px-2 text-muted-foreground hover:text-destructive"
+                                    onClick={() => setEditStaffAllowedTabs([])}
+                                  >
+                                    Clear All
+                                  </Button>
+                                </div>
+                              </div>
+
+                              {/* Checkbox Grid */}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-56 overflow-y-auto p-3 rounded-2xl border bg-muted/20">
+                                {STAFF_PERMISSIONS_OPTIONS.map((opt) => {
+                                  const isChecked = editStaffAllowedTabs.includes(opt.id);
+                                  const isFeeTab = opt.id === 'fees';
+                                  return (
+                                    <label
+                                      key={opt.id}
+                                      className={`flex items-start gap-3 p-2.5 rounded-xl border transition-all cursor-pointer ${
+                                        isChecked
+                                          ? isFeeTab
+                                            ? 'bg-amber-500/10 border-amber-500/40 text-foreground'
+                                            : 'bg-primary/5 border-primary/25 text-foreground'
+                                          : 'bg-background/60 border-border/40 text-muted-foreground hover:border-border'
+                                      }`}
+                                    >
+                                      <Checkbox
+                                        checked={isChecked}
+                                        onCheckedChange={(checked) => {
+                                          if (checked) {
+                                            setEditStaffAllowedTabs(prev => [...prev, opt.id]);
+                                          } else {
+                                            setEditStaffAllowedTabs(prev => prev.filter(id => id !== opt.id));
+                                          }
+                                        }}
+                                        className="mt-0.5"
+                                      />
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className="text-xs font-bold leading-tight">{opt.label}</span>
+                                          {isFeeTab && (
+                                            <span className="text-[10px] font-black px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300">
+                                              Fees & Collections
+                                            </span>
+                                          )}
+                                        </div>
+                                        <p className="text-[11px] text-muted-foreground truncate leading-tight mt-0.5">{opt.desc}</p>
+                                      </div>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            <div className="flex gap-2 justify-end pt-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => setEditingStaff(null)}
+                                className="rounded-xl font-bold"
+                              >
+                                Cancel
+                              </Button>
+                              <Button type="submit" className="rounded-xl font-black px-6 shadow-md shadow-primary/20">
+                                Save Changes
+                              </Button>
+                            </div>
+                          </form>
+                        )}
                       </DialogContent>
                     </Dialog>
                   </div>
@@ -6536,31 +6960,107 @@ const AdminDashboard = () => {
                   {staff.length > 0 && (
                     <div className="mb-10">
                       <h4 className="text-lg font-black mb-4 flex items-center gap-2">
-                        <Users className="h-5 w-5 text-primary" /> Active Staff Accounts
+                        <Users className="h-5 w-5 text-primary" /> Active Staff Accounts ({staff.length})
                       </h4>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {staff.map(s => (
-                          <div key={s.id} className="p-4 bg-accent/5 rounded-2xl border border-primary/10 flex items-center justify-between group hover:border-primary/30 transition-all">
-                            <div className="flex items-center gap-3">
-                              <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-black">
-                                {s.name.charAt(0)}
-                              </div>
+                        {staff.map(s => {
+                          const allowedList = s.allowedTabs || DEFAULT_STAFF_ALLOWED_TABS;
+                          const hasFeesAccess = allowedList.includes('fees');
+                          const hasAdminUi = s.allowAdminUi ?? true;
+
+                          return (
+                            <div key={s.id} className="p-4 bg-card rounded-2xl border border-border shadow-sm flex flex-col justify-between group hover:border-primary/40 transition-all gap-4">
                               <div>
-                                <p className="font-bold">{s.name}</p>
-                                <p className="text-[10px] text-muted-foreground font-medium">{s.email}</p>
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="flex items-center gap-3">
+                                    <div className="h-11 w-11 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-black text-lg shadow-inner">
+                                      {s.name.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="font-bold text-base leading-tight truncate">{s.name}</p>
+                                      <p className="text-xs text-muted-foreground font-medium truncate">{s.email}</p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 text-primary/70 hover:text-primary hover:bg-primary/10 rounded-xl"
+                                      title="Edit Staff & Permissions"
+                                      onClick={() => handleOpenEditStaff(s)}
+                                    >
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                    <DeleteDialog 
+                                      title="Delete Staff Account?" 
+                                      onDelete={() => handleDeleteStaff(s.id)}
+                                      trigger={
+                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive/40 hover:text-destructive hover:bg-destructive/10 rounded-xl">
+                                          <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                      }
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* Permissions Badges */}
+                                <div className="mt-3 flex flex-wrap gap-1.5 items-center">
+                                  {hasAdminUi ? (
+                                    <Badge className="bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20 text-[10px] font-bold gap-1 py-0.5">
+                                      <Laptop className="h-3 w-3" /> Admin UI Enabled
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="outline" className="text-muted-foreground text-[10px] font-bold gap-1 py-0.5">
+                                      Mobile Portal Only
+                                    </Badge>
+                                  )}
+
+                                  {hasFeesAccess ? (
+                                    <Badge className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20 text-[10px] font-bold gap-1 py-0.5">
+                                      <IndianRupee className="h-3 w-3" /> Fees Allowed
+                                    </Badge>
+                                  ) : (
+                                    <Badge className="bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20 text-[10px] font-bold gap-1 py-0.5">
+                                      <Shield className="h-3 w-3" /> Fees Blocked
+                                    </Badge>
+                                  )}
+
+                                  <Badge variant="secondary" className="text-[10px] font-bold py-0.5">
+                                    {allowedList.length} of {STAFF_PERMISSIONS_OPTIONS.length} Tabs
+                                  </Badge>
+                                </div>
+
+                                {/* Preview of allowed tabs */}
+                                <div className="mt-2.5 flex flex-wrap gap-1">
+                                  {allowedList.slice(0, 5).map(tabId => {
+                                    const match = STAFF_PERMISSIONS_OPTIONS.find(o => o.id === tabId);
+                                    return (
+                                      <span key={tabId} className="text-[10px] bg-muted px-2 py-0.5 rounded-md text-muted-foreground font-medium">
+                                        {match?.label || tabId}
+                                      </span>
+                                    );
+                                  })}
+                                  {allowedList.length > 5 && (
+                                    <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded-md text-muted-foreground font-bold">
+                                      +{allowedList.length - 5} more
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="pt-2 border-t flex items-center justify-between gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleLoginAsStaff(s)}
+                                  className="w-full h-8 text-xs font-bold gap-1.5 rounded-xl border-primary/20 text-primary hover:bg-primary/5"
+                                >
+                                  <LogIn className="h-3.5 w-3.5" /> Log In as Staff
+                                </Button>
                               </div>
                             </div>
-                            <DeleteDialog 
-                              title="Delete Staff Account?" 
-                              onDelete={() => handleDeleteStaff(s.id)}
-                              trigger={
-                                <Button variant="ghost" size="icon" className="text-destructive/40 hover:text-destructive hover:bg-destructive/10 rounded-xl opacity-0 group-hover:opacity-100 transition-all">
-                                  <Plus className="h-4 w-4 rotate-45" />
-                                </Button>
-                              }
-                            />
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -6657,7 +7157,7 @@ const AdminDashboard = () => {
             )}
 
             
-            {activeTab === 'teachers' && (
+            {activeTab === 'teachers' && isTabPermitted('teachers') && (
               <div>
                 <Card className="p-6">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4 border-b pb-6">
@@ -6966,7 +7466,7 @@ const AdminDashboard = () => {
               </div>
             )}
 
-            {activeTab === 'classes' && (
+            {activeTab === 'classes' && isTabPermitted('classes') && (
               <Card className="p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
                   <div>
@@ -7167,7 +7667,7 @@ const AdminDashboard = () => {
               </Card>
             )}
 
-            {activeTab === 'timetable' && (
+            {activeTab === 'timetable' && isTabPermitted('timetable') && (
               <AdminTimetableBuilder
                 batches={batches}
                 subjects={subjects}
@@ -7177,7 +7677,7 @@ const AdminDashboard = () => {
               />
             )}
             
-            {activeTab === 'batches' && (
+            {activeTab === 'batches' && isTabPermitted('batches') && (
               <Card className="p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
                   <div>
@@ -7299,7 +7799,7 @@ const AdminDashboard = () => {
               </Card>
             )}
             
-            {activeTab === 'attendance' && (
+            {activeTab === 'attendance' && isTabPermitted('attendance') && (
               <div className="space-y-6">
                 {!selectedReportBatch ? (
                   <>
@@ -7680,7 +8180,7 @@ const AdminDashboard = () => {
       )}
 
             
-            {activeTab === 'birthdays' && (
+            {activeTab === 'birthdays' && isTabPermitted('birthdays') && (
               <div className="space-y-6">
                 <Card className="p-6">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4 border-b pb-6">
@@ -7820,7 +8320,7 @@ const AdminDashboard = () => {
               </div>
             )}
 
-            {activeTab === 'notes' && (
+            {activeTab === 'notes' && isTabPermitted('notes') && (
               <div>
                 <Card className="p-6">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
@@ -8005,7 +8505,7 @@ const AdminDashboard = () => {
             )}
 
             {/* Settings Tab */}
-            {activeTab === 'settings' && (
+            {activeTab === 'settings' && isTabPermitted('settings') && (
               <div className="space-y-6 max-w-5xl">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
@@ -8511,7 +9011,7 @@ const AdminDashboard = () => {
             )}
 
             {/* REMARKS TAB */}
-            {activeTab === 'remarks' && (
+            {activeTab === 'remarks' && isTabPermitted('remarks') && (
               <div className="space-y-6">
                 <Card className="p-6">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4 border-b pb-6">
@@ -8762,7 +9262,7 @@ const AdminDashboard = () => {
             )}
 
             {/* NOTICES TAB */}
-            {activeTab === 'notices' && (
+            {activeTab === 'notices' && isTabPermitted('notices') && (
               <div className="space-y-6">
                 <Card className="p-6">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4 border-b pb-6">
