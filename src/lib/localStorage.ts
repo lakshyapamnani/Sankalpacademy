@@ -53,6 +53,8 @@ export interface Teacher {
   assignedSubjects: string[];
   assignedBatchIds?: string[];
   firebaseUid?: string;
+  allowedFeatures?: string[];
+  allowedTabs?: string[];
 }
 
 export type PaymentMode = 'cash' | 'upi' | 'card' | 'bank_transfer' | 'cheque' | 'other' | string;
