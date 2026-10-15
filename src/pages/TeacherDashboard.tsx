@@ -31,7 +31,14 @@ import {
   Smartphone,
   Sparkles,
   Share2,
-  Users
+  Users,
+  CheckSquare,
+  BookOpen,
+  ArrowLeft,
+  Percent,
+  TrendingUp,
+  X,
+  FileSpreadsheet
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -58,8 +65,15 @@ import {
   getStudentRemarks,
   addStudentRemark,
   deleteStudentRemark,
+  getTests,
+  addTest,
+  updateTest,
+  deleteTest,
+  getTestResults,
+  saveTestResult,
   subscribeToRealtimeUpdates,
   isDevModeActive,
+  getInstituteSettings,
   Student,
   Class,
   Batch,
@@ -67,25 +81,55 @@ import {
   Note,
   StudentRemark,
   RemarkType,
+  Test,
+  TestResult,
 } from "@/lib/localStorage";
 
-const tabOptions: { id: "classes" | "timetable" | "attendance" | "notes" | "remarks"; label: string; icon: LucideIcon }[] = [
-  { id: "classes", label: "Classes", icon: Calendar },
-  { id: "timetable", label: "Timetable", icon: Clock },
-  { id: "attendance", label: "Attendance", icon: ClipboardCheck },
-  { id: "notes", label: "Notes", icon: FileText },
-  { id: "remarks", label: "Student Remarks", icon: MessageSquare },
+export type TeacherTab = "classes" | "timetable" | "attendance" | "marks" | "notes" | "remarks";
+
+const ALL_TEACHER_TABS: { id: TeacherTab; label: string; icon: LucideIcon; desc: string }[] = [
+  { id: "classes", label: "Classes", icon: Calendar, desc: "Lecture schedules & classes" },
+  { id: "timetable", label: "Timetable", icon: Clock, desc: "Weekly schedule matrix" },
+  { id: "attendance", label: "Attendance", icon: ClipboardCheck, desc: "Student attendance tracking" },
+  { id: "marks", label: "Tests & Marks", icon: Award, desc: "Enter student marks & grading" },
+  { id: "notes", label: "Notes", icon: FileText, desc: "Upload notes & study material" },
+  { id: "remarks", label: "Student Remarks", icon: MessageSquare, desc: "Feedback & parent notices" },
 ];
 
 const TeacherDashboard = () => {
-  const [activeTab, setActiveTab] = useState<"classes" | "timetable" | "attendance" | "notes" | "remarks">("classes");
+  const [activeTab, setActiveTab] = useState<TeacherTab>("classes");
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>(() => getTeachers());
+  const [devSelectedTeacherId, setDevSelectedTeacherId] = useState<string>(() => {
+    try {
+      return sessionStorage.getItem('sankalp_dev_teacher_id') || '';
+    } catch {
+      return '';
+    }
+  });
   const [notes, setNotes] = useState<Note[]>([]);
   const [remarks, setRemarks] = useState<StudentRemark[]>([]);
   const [timetableLectures, setTimetableLectures] = useState<TimetableLecture[]>([]);
+  const [tests, setTests] = useState<Test[]>([]);
+  const [testResults, setTestResults] = useState<TestResult[]>([]);
+
+  // Tests & Marks State
+  const [selectedTest, setSelectedTest] = useState<Test | null>(null);
+  const [localMarks, setLocalMarks] = useState<Record<string, string>>({});
+  const [testSearch, setTestSearch] = useState('');
+  const [testSubjectFilter, setTestSubjectFilter] = useState('all');
+  const [testBatchFilter, setTestBatchFilter] = useState('all');
+  const [studentMarksFilter, setStudentMarksFilter] = useState<'all' | 'graded' | 'pending' | 'absent'>('all');
+  const [studentMarksSearch, setStudentMarksSearch] = useState('');
+  const [isCreateTestOpen, setIsCreateTestOpen] = useState(false);
+  const [newTestName, setNewTestName] = useState('');
+  const [newTestSubject, setNewTestSubject] = useState('');
+  const [newTestBatchIds, setNewTestBatchIds] = useState<string[]>([]);
+  const [newTestTotalMarks, setNewTestTotalMarks] = useState('50');
+  const [newTestDate, setNewTestDate] = useState('');
+  const [newTestType, setNewTestType] = useState<'subjective' | 'mcq'>('subjective');
   const [selectedAttendanceBatch, setSelectedAttendanceBatch] = useState<string | null>(null);
   const [selectedClassForAttendance, setSelectedClassForAttendance] = useState<Class | null>(null);
   const [dailyAttendance, setDailyAttendance] = useState<Record<string, boolean>>({}); // studentId -> isAbsent
@@ -140,6 +184,8 @@ const TeacherDashboard = () => {
     setNotes(getNotes());
     setRemarks(getStudentRemarks());
     setTimetableLectures(getTimetableLectures());
+    setTests(getTests());
+    setTestResults(getTestResults());
   };
 
   useEffect(() => {
@@ -163,11 +209,318 @@ const TeacherDashboard = () => {
 
   // Determine current teacher details
   const activeUser = getCurrentUser();
-  const currentTeacher = teachers.find(t => t.id === activeUser?.id);
-  const isFallbackTeacher = !currentTeacher || activeUser?.id === 'teacher' || activeUser?.role === 'admin' || activeUser?.id === 'dev-lakshya' || activeUser?.name?.includes('Dev Mode') || isDevModeActive();
-  const teacherSubjects = (currentTeacher?.assignedSubjects && currentTeacher.assignedSubjects.length > 0)
-    ? currentTeacher.assignedSubjects
-    : ['Physics', 'Chemistry', 'Mathematics', 'Biology', 'General'];
+  const allTeachers = teachers.length > 0 ? teachers : getTeachers();
+
+  const isDevOrAdminSession = !activeUser || 
+                              activeUser.id === 'dev-lakshya' || 
+                              activeUser.id === 'teacher' || 
+                              activeUser.role === 'admin' || 
+                              activeUser.name?.includes('Dev Mode');
+
+  // 1. Direct match for a real logged-in teacher
+  let matchedTeacher = allTeachers.find(t =>
+    (t.id && activeUser?.id && String(t.id).trim() === String(activeUser.id).trim()) ||
+    (t.email && activeUser?.id && t.email.trim().toLowerCase() === String(activeUser.id).trim().toLowerCase()) ||
+    (t.email && activeUser?.name && t.email.trim().toLowerCase() === String(activeUser.name).trim().toLowerCase()) ||
+    (t.name && activeUser?.name && t.name.trim().toLowerCase() === String(activeUser.name).trim().toLowerCase())
+  );
+
+  // 2. If in dev mode / admin test session, allow switching or auto-selecting registered teacher
+  if ((isDevOrAdminSession || isDevModeActive()) && allTeachers.length > 0) {
+    if (devSelectedTeacherId) {
+      const explicit = allTeachers.find(t => t.id === devSelectedTeacherId);
+      if (explicit) matchedTeacher = explicit;
+    }
+    if (!matchedTeacher) {
+      matchedTeacher = allTeachers.find(t => Array.isArray(t.assignedSubjects) && t.assignedSubjects.length > 0) || allTeachers[0];
+    }
+  }
+
+  const currentTeacher = matchedTeacher;
+  const isFallbackTeacher = !currentTeacher;
+
+  // Strictly compute teacher's assigned subjects - NO generic fallback!
+  const teacherSubjects = ((): string[] => {
+    if (!currentTeacher) return [];
+
+    const set = new Set<string>();
+
+    // 1. From teacher's assignedSubjects (handling array or comma-separated strings)
+    const rawAssigned = currentTeacher.assignedSubjects || (currentTeacher as any).subjects || (currentTeacher as any).subject;
+    if (Array.isArray(rawAssigned)) {
+      rawAssigned.forEach(s => {
+        if (typeof s === 'string') {
+          s.split(',').map(x => x.trim()).filter(Boolean).forEach(x => set.add(x));
+        }
+      });
+    } else if (typeof rawAssigned === 'string') {
+      rawAssigned.split(',').map(x => x.trim()).filter(Boolean).forEach(x => set.add(x));
+    }
+
+    // 2. Also check if the teacher has any assigned classes with subjects
+    classes.forEach(c => {
+      const isMyClass = c.teacherId === currentTeacher.id ||
+                        (Array.isArray(c.teacherIds) && c.teacherIds.includes(currentTeacher.id)) ||
+                        (c.teacherName && c.teacherName.trim().toLowerCase() === currentTeacher.name.trim().toLowerCase());
+      if (isMyClass && c.subject && c.subject.trim()) {
+        set.add(c.subject.trim());
+      }
+    });
+
+    // 3. Also check timetable lectures assigned to this teacher
+    timetableLectures.forEach(l => {
+      const teacherIds = [l.teacherId, ...(l.teacherIds || [])].filter(Boolean);
+      const teacherNames = [l.teacherName, ...(l.teacherNames || [])].filter(Boolean).map(n => n.toLowerCase());
+      const isMyLecture = teacherIds.includes(currentTeacher.id) || teacherNames.includes(currentTeacher.name.toLowerCase());
+      if (isMyLecture && l.subjectName && l.subjectName.trim()) {
+        set.add(l.subjectName.trim());
+      }
+    });
+
+    return Array.from(set);
+  })();
+
+  // Teacher Feature Permissions & Allowed Tabs
+  const allowedFeatures = ((): string[] => {
+    if (isFallbackTeacher) {
+      return ['classes', 'timetable', 'attendance', 'marks', 'notes', 'remarks'];
+    }
+    const feats = currentTeacher?.allowedFeatures || currentTeacher?.allowedTabs;
+    if (Array.isArray(feats) && feats.length > 0) {
+      return feats;
+    }
+    return ['classes', 'timetable', 'attendance', 'marks', 'notes', 'remarks'];
+  })();
+
+  const tabOptions = ALL_TEACHER_TABS.filter(tab => allowedFeatures.includes(tab.id));
+
+  // If currently active tab is not allowed, switch to first allowed tab
+  useEffect(() => {
+    if (tabOptions.length > 0 && !tabOptions.some(t => t.id === activeTab)) {
+      setActiveTab(tabOptions[0].id);
+    }
+  }, [tabOptions, activeTab]);
+
+  // Batches and Tests accessible by this teacher
+  const teacherBatchIds = (() => {
+    if (isFallbackTeacher) return batches.map(b => b.id);
+    const fromTeacher = currentTeacher?.assignedBatchIds || [];
+    const fromClasses = classes
+      .filter(c => c.teacherId === currentUser?.id || teacherSubjects.some(s => s.toLowerCase() === c.subject.toLowerCase()))
+      .map(c => c.batchId)
+      .filter(Boolean);
+    const combined = Array.from(new Set([...fromTeacher, ...fromClasses]));
+    return combined.length > 0 ? combined : batches.map(b => b.id);
+  })();
+
+  const teacherBatches = batches.filter(b => teacherBatchIds.includes(b.id));
+
+  // STRICT SUBJECT ISOLATION: Teachers can ONLY see tests of their assigned subjects
+  const teacherTests = tests.filter(t => {
+    if (isFallbackTeacher) return true;
+    if (teacherSubjects.length === 0) return false;
+    const testSubj = (t.subject || '').trim().toLowerCase();
+    // Only tests where the subject matches one of the teacher's assigned subjects
+    return teacherSubjects.some(s => s.trim().toLowerCase() === testSubj);
+  });
+
+  // Automatically reset testSubjectFilter if current filter is not among teacher's assigned subjects
+  useEffect(() => {
+    if (testSubjectFilter !== 'all' && !teacherSubjects.some(s => s.trim().toLowerCase() === testSubjectFilter.trim().toLowerCase())) {
+      setTestSubjectFilter('all');
+    }
+  }, [teacherSubjects, testSubjectFilter]);
+
+  // Guard: Automatically deselect or block any test outside the teacher's assigned subjects
+  useEffect(() => {
+    if (selectedTest && !isFallbackTeacher) {
+      const testSubj = (selectedTest.subject || '').trim().toLowerCase();
+      const hasSubjectMatch = teacherSubjects.some(s => s.trim().toLowerCase() === testSubj);
+      if (!hasSubjectMatch) {
+        toast.error("Access restricted: You can only view and grade tests of your assigned subjects: " + teacherSubjects.join(', '));
+        setSelectedTest(null);
+      }
+    }
+  }, [selectedTest, teacherSubjects, isFallbackTeacher]);
+
+  // Sync localMarks when selectedTest changes or testResults change
+  useEffect(() => {
+    if (!selectedTest) return;
+    const marks: Record<string, string> = {};
+    testResults.forEach(r => {
+      if (r.testId === selectedTest.id) {
+        marks[r.studentId] = r.isAbsent ? '' : String(r.marksObtained);
+      }
+    });
+    setLocalMarks(marks);
+  }, [selectedTest, testResults]);
+
+  // Handle Marks Saving
+  const handleSaveMarks = (studentId: string, marksRaw: string) => {
+    if (!selectedTest) return;
+    const trimmed = marksRaw.trim();
+    if (trimmed === '') return;
+    let marks = Number(trimmed);
+    if (isNaN(marks)) {
+      toast.error("Please enter a valid numeric mark");
+      return;
+    }
+    if (marks > selectedTest.totalMarks) {
+      marks = selectedTest.totalMarks;
+      toast.info(`Marks capped at test maximum: ${selectedTest.totalMarks}`);
+    }
+    if (marks < 0) marks = 0;
+
+    const resultId = `${studentId}_${selectedTest.id}`;
+    const resultObj: TestResult = {
+      id: resultId,
+      testId: selectedTest.id,
+      studentId: studentId,
+      marksObtained: marks,
+      isAbsent: false,
+      submittedAt: new Date().toISOString()
+    };
+    saveTestResult(resultObj);
+
+    setTestResults(prev => {
+      const idx = prev.findIndex(r => r.id === resultId);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = resultObj;
+        return copy;
+      }
+      return [...prev, resultObj];
+    });
+
+    setLocalMarks(prev => ({ ...prev, [studentId]: String(marks) }));
+    toast.success("Marks recorded");
+  };
+
+  // Toggle Absent State
+  const toggleAbsent = (studentId: string) => {
+    if (!selectedTest) return;
+    const resultId = `${studentId}_${selectedTest.id}`;
+    const existing = testResults.find(r => r.id === resultId);
+    const isAbsent = !existing?.isAbsent;
+
+    const updatedResult: TestResult = {
+      id: resultId,
+      testId: selectedTest.id,
+      studentId: studentId,
+      marksObtained: 0,
+      isAbsent: isAbsent,
+      submittedAt: new Date().toISOString()
+    };
+
+    saveTestResult(updatedResult);
+
+    setTestResults(prev => {
+      const idx = prev.findIndex(r => r.id === resultId);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = updatedResult;
+        return copy;
+      }
+      return [...prev, updatedResult];
+    });
+
+    if (isAbsent) {
+      setLocalMarks(prev => ({ ...prev, [studentId]: '' }));
+    }
+    toast.success(isAbsent ? "Marked as absent" : "Marked as present");
+  };
+
+  // Send WhatsApp Marks Report to Parent
+  const handleShareMarksWhatsApp = (student: Student) => {
+    if (!selectedTest) return;
+    const phone = student.parentWhatsApp || student.whatsappNo || student.phoneNo;
+    if (!phone) {
+      toast.error(`No contact number found for ${student.name}`);
+      return;
+    }
+    const cleanedPhone = phone.replace(/[^0-9]/g, '');
+    const fullPhone = cleanedPhone.length === 10 ? `91${cleanedPhone}` : cleanedPhone;
+
+    const resultId = `${student.id}_${selectedTest.id}`;
+    const result = testResults.find(r => r.id === resultId);
+    const isAbsent = result?.isAbsent;
+    const marks = result ? result.marksObtained : (localMarks[student.id] ? Number(localMarks[student.id]) : 0);
+    const percent = Math.round((marks / selectedTest.totalMarks) * 100);
+
+    const instSettings = getInstituteSettings();
+    const instituteName = instSettings?.name || "Sankalp Academy";
+
+    let msg = "";
+    if (isAbsent) {
+      msg = `*${instituteName} - Test Absence Notice*\n\nDear Parent,\nYour child *${student.name}* was marked *ABSENT* for the test:\n📝 Test: *${selectedTest.name}*\n📚 Subject: *${selectedTest.subject || 'General'}*\n📅 Date: *${selectedTest.date}*\n\nPlease connect with the faculty for makeup exams if applicable.`;
+    } else {
+      msg = `*${instituteName} - Test Marks Report*\n\nDear Parent,\nHere is the performance report for *${student.name}*:\n📝 Test: *${selectedTest.name}*\n📚 Subject: *${selectedTest.subject || 'General'}*\n📅 Date: *${selectedTest.date}*\n🎯 Marks: *${marks} / ${selectedTest.totalMarks}* (${percent}%)\n\nWe appreciate your support in encouraging regular studies!`;
+    }
+
+    const waUrl = `https://wa.me/${fullPhone}?text=${encodeURIComponent(msg.replace(/\\n/g, '\n'))}`;
+    window.open(waUrl, '_blank');
+  };
+
+  // Teacher Create Test
+  const handleCreateTest = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTestName.trim()) {
+      toast.error("Please enter test name");
+      return;
+    }
+    if (newTestBatchIds.length === 0) {
+      toast.error("Please assign at least one batch");
+      return;
+    }
+    const marksNum = Number(newTestTotalMarks);
+    if (!marksNum || marksNum <= 0) {
+      toast.error("Please enter a valid total marks greater than 0");
+      return;
+    }
+
+    const assignedSubjectToSave = newTestSubject || teacherSubjects[0] || 'General';
+    if (!isFallbackTeacher && teacherSubjects.length > 0) {
+      const isPermittedSubject = teacherSubjects.some(s => s.trim().toLowerCase() === assignedSubjectToSave.trim().toLowerCase());
+      if (!isPermittedSubject) {
+        toast.error(`You can only create tests for your assigned subjects: ${teacherSubjects.join(', ')}`);
+        return;
+      }
+    }
+
+    const testId = Date.now().toString();
+    const createdTest: Test = {
+      id: testId,
+      name: newTestName.trim(),
+      batchIds: newTestBatchIds,
+      batchId: newTestBatchIds[0],
+      subject: assignedSubjectToSave,
+      totalMarks: marksNum,
+      date: newTestDate || currentDateStr || getLocalDateString(),
+      type: newTestType || 'subjective'
+    };
+
+    addTest(createdTest);
+    setTests(prev => [createdTest, ...prev]);
+    setIsCreateTestOpen(false);
+    setNewTestName('');
+    setNewTestBatchIds([]);
+    setNewTestTotalMarks('50');
+    setSelectedTest(createdTest);
+    toast.success("Test created! You can now enter student marks below.");
+  };
+
+  // Delete Test
+  const handleDeleteTest = (testId: string) => {
+    if (window.confirm("Are you sure you want to delete this test and all its marks?")) {
+      deleteTest(testId);
+      setTests(prev => prev.filter(t => t.id !== testId));
+      setTestResults(prev => prev.filter(r => r.testId !== testId));
+      if (selectedTest?.id === testId) {
+        setSelectedTest(null);
+      }
+      toast.success("Test deleted successfully");
+    }
+  };
   
   const myClasses = classes.filter(c => {
     if (isFallbackTeacher) return true;
@@ -1487,8 +1840,810 @@ const TeacherDashboard = () => {
     </div>
   );
 
+  // ==========================================
+  // TESTS & MARKS UI FOR TEACHERS APP
+  // ==========================================
+  const renderMarks = () => {
+    // Current test's batches and students
+    const selectedTestBatchIds = selectedTest
+      ? (selectedTest.batchIds && selectedTest.batchIds.length > 0 ? selectedTest.batchIds : (selectedTest.batchId ? [selectedTest.batchId] : []))
+      : [];
+
+    const selectedTestBatches = batches.filter(b => selectedTestBatchIds.includes(b.id));
+
+    const testStudents = selectedTest
+      ? students.filter(s => selectedTestBatchIds.includes(s.batchId))
+      : [];
+
+    // Filter tests in test list
+    const filteredTests = teacherTests.filter(t => {
+      if (testSubjectFilter !== 'all' && (t.subject || 'General').toLowerCase() !== testSubjectFilter.toLowerCase()) {
+        return false;
+      }
+      if (testBatchFilter !== 'all') {
+        const bIds = t.batchIds && t.batchIds.length > 0 ? t.batchIds : (t.batchId ? [t.batchId] : []);
+        if (!bIds.includes(testBatchFilter)) return false;
+      }
+      if (testSearch.trim()) {
+        const query = testSearch.trim().toLowerCase();
+        const nameMatch = t.name.toLowerCase().includes(query);
+        const subjMatch = (t.subject || '').toLowerCase().includes(query);
+        if (!nameMatch && !subjMatch) return false;
+      }
+      return true;
+    });
+
+    // Test statistics
+    const allTeacherTestResults = testResults.filter(r => teacherTests.some(t => t.id === r.testId));
+    const totalTeacherGraded = allTeacherTestResults.filter(r => !r.isAbsent).length;
+
+    // Selected test stats
+    const selectedResults = selectedTest
+      ? testResults.filter(r => r.testId === selectedTest.id)
+      : [];
+    const gradedCount = selectedResults.filter(r => !r.isAbsent && testStudents.some(s => s.id === r.studentId)).length;
+    const absentCount = selectedResults.filter(r => r.isAbsent && testStudents.some(s => s.id === r.studentId)).length;
+    const pendingCount = Math.max(0, testStudents.length - (gradedCount + absentCount));
+
+    const validScores = selectedResults
+      .filter(r => !r.isAbsent && testStudents.some(s => s.id === r.studentId))
+      .map(r => r.marksObtained);
+    const averageScore = validScores.length > 0
+      ? Math.round((validScores.reduce((a, b) => a + b, 0) / validScores.length) * 10) / 10
+      : null;
+    const highestScore = validScores.length > 0 ? Math.max(...validScores) : null;
+
+    // Filter students inside selected test view
+    const filteredStudents = testStudents.filter(s => {
+      if (studentMarksSearch.trim()) {
+        const q = studentMarksSearch.trim().toLowerCase();
+        const matchesName = s.name.toLowerCase().includes(q);
+        const matchesPhone = (s.phoneNo || s.whatsappNo || '').includes(q);
+        if (!matchesName && !matchesPhone) return false;
+      }
+
+      const res = selectedResults.find(r => r.studentId === s.id);
+      const isGraded = res && !res.isAbsent;
+      const isAbsent = res && res.isAbsent;
+
+      if (studentMarksFilter === 'graded' && !isGraded) return false;
+      if (studentMarksFilter === 'absent' && !isAbsent) return false;
+      if (studentMarksFilter === 'pending' && (isGraded || isAbsent)) return false;
+
+      return true;
+    });
+
+    return (
+      <div className="space-y-6">
+        {/* VIEW 1: DEDICATED STUDENT MARKS ENTRY VIEW FOR SELECTED TEST */}
+        {selectedTest ? (
+          <div className="space-y-6">
+            {/* Top Bar / Navigation */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-3xl bg-card border border-border shadow-sm">
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedTest(null)}
+                  className="h-10 px-3.5 rounded-xl font-bold gap-2 text-primary hover:bg-primary/10 border-primary/20"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  <span>Back to Tests</span>
+                </Button>
+                <div>
+                  <h3 className="text-xl sm:text-2xl font-black text-foreground flex items-center gap-2">
+                    {selectedTest.name}
+                  </h3>
+                  <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-muted-foreground font-medium">
+                    <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary font-bold">
+                      {selectedTest.subject || 'General'}
+                    </span>
+                    <span>•</span>
+                    <span>Max Marks: <strong className="text-foreground font-bold">{selectedTest.totalMarks}</strong></span>
+                    <span>•</span>
+                    <span>Date: <strong>{selectedTest.date}</strong></span>
+                    <span>•</span>
+                    <span>
+                      Batches: {selectedTestBatches.map(b => b.name).join(', ') || 'All Assigned'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Actions */}
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    testStudents.forEach(st => {
+                      const resId = `${st.id}_${selectedTest.id}`;
+                      const existing = testResults.find(r => r.id === resId);
+                      if (existing?.isAbsent) {
+                        toggleAbsent(st.id);
+                      }
+                    });
+                    toast.success("All students set to present");
+                  }}
+                  className="rounded-xl font-bold text-xs h-9"
+                >
+                  <Check className="h-3.5 w-3.5 mr-1 text-emerald-600" /> Mark All Present
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => {
+                    Object.entries(localMarks).forEach(([studentId, val]) => {
+                      if (val !== '') {
+                        handleSaveMarks(studentId, val);
+                      }
+                    });
+                    toast.success("All marks saved successfully");
+                  }}
+                  className="rounded-xl font-bold text-xs h-9 shadow-md shadow-primary/20 gap-1.5"
+                >
+                  <CheckSquare className="h-3.5 w-3.5" /> Save All Marks
+                </Button>
+              </div>
+            </div>
+
+            {/* Test Metrics Bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <div className="p-3.5 rounded-2xl bg-card border border-border/60 shadow-2xs">
+                <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Total Students</p>
+                <p className="text-2xl font-black text-foreground mt-0.5">{testStudents.length}</p>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 shadow-2xs">
+                <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider">Graded</p>
+                <p className="text-2xl font-black text-emerald-700 dark:text-emerald-300 mt-0.5">{gradedCount}</p>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 shadow-2xs">
+                <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300 uppercase tracking-wider">Pending</p>
+                <p className="text-2xl font-black text-amber-700 dark:text-amber-300 mt-0.5">{pendingCount}</p>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-red-500/10 border border-red-500/20 shadow-2xs">
+                <p className="text-[11px] font-bold text-red-700 dark:text-red-300 uppercase tracking-wider">Absent</p>
+                <p className="text-2xl font-black text-red-700 dark:text-red-300 mt-0.5">{absentCount}</p>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-primary/10 border border-primary/20 shadow-2xs">
+                <p className="text-[11px] font-bold text-primary uppercase tracking-wider">Average Score</p>
+                <p className="text-2xl font-black text-primary mt-0.5">
+                  {averageScore !== null ? `${averageScore}/${selectedTest.totalMarks}` : '—'}
+                </p>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-purple-500/10 border border-purple-500/20 shadow-2xs">
+                <p className="text-[11px] font-bold text-purple-700 dark:text-purple-300 uppercase tracking-wider">Highest Mark</p>
+                <p className="text-2xl font-black text-purple-700 dark:text-purple-300 mt-0.5">
+                  {highestScore !== null ? `${highestScore}/${selectedTest.totalMarks}` : '—'}
+                </p>
+              </div>
+            </div>
+
+            {/* Filter & Search Bar */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-4 rounded-2xl bg-muted/30 border border-border/50">
+              <div className="relative flex-1 max-w-md">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search student by name, phone or roll..."
+                  value={studentMarksSearch}
+                  onChange={(e) => setStudentMarksSearch(e.target.value)}
+                  className="pl-10 h-10 rounded-xl bg-background border-border/60 text-sm"
+                />
+              </div>
+
+              {/* Status Filter Tabs */}
+              <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
+                {(['all', 'graded', 'pending', 'absent'] as const).map((filterOpt) => {
+                  const isActive = studentMarksFilter === filterOpt;
+                  const label = filterOpt === 'all'
+                    ? `All (${testStudents.length})`
+                    : filterOpt === 'graded'
+                    ? `Graded (${gradedCount})`
+                    : filterOpt === 'pending'
+                    ? `Pending (${pendingCount})`
+                    : `Absent (${absentCount})`;
+
+                  return (
+                    <button
+                      key={filterOpt}
+                      onClick={() => setStudentMarksFilter(filterOpt)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                        isActive
+                          ? 'bg-primary text-primary-foreground shadow-sm'
+                          : 'bg-background hover:bg-muted text-muted-foreground border border-border/50'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Students Marks Entry List */}
+            <div className="space-y-3">
+              {filteredStudents.map((student, idx) => {
+                const resultId = `${student.id}_${selectedTest.id}`;
+                const existingResult = selectedResults.find(r => r.studentId === student.id);
+                const isAbsent = Boolean(existingResult?.isAbsent);
+                const markVal = localMarks[student.id] ?? (existingResult ? String(existingResult.marksObtained) : '');
+                const numMark = markVal !== '' ? Number(markVal) : null;
+                const percent = numMark !== null && !isNaN(numMark)
+                  ? Math.round((numMark / selectedTest.totalMarks) * 100)
+                  : null;
+
+                const studentBatch = batches.find(b => b.id === student.batchId);
+
+                return (
+                  <div
+                    key={student.id}
+                    className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
+                      isAbsent
+                        ? 'bg-red-500/5 border-red-500/25'
+                        : percent !== null
+                        ? 'bg-card border-border hover:border-primary/40 shadow-xs'
+                        : 'bg-card/70 border-dashed border-border hover:border-border'
+                    }`}
+                  >
+                    {/* Student Info */}
+                    <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                      <div className={`h-11 w-11 rounded-2xl flex items-center justify-center font-black text-sm shrink-0 shadow-inner ${
+                        isAbsent
+                          ? 'bg-red-500/20 text-red-700 dark:text-red-300'
+                          : percent !== null && percent >= 75
+                          ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                          : percent !== null && percent >= 40
+                          ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300'
+                          : percent !== null
+                          ? 'bg-rose-500/20 text-rose-700 dark:text-rose-300'
+                          : 'bg-primary/10 text-primary'
+                      }`}>
+                        {student.name.charAt(0).toUpperCase()}
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-bold text-sm sm:text-base text-foreground leading-tight truncate">
+                            {student.name}
+                          </p>
+                          {studentBatch && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                              {studentBatch.name}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                          {student.phoneNo || student.whatsappNo || student.email || 'No phone recorded'}
+                          {student.parentWhatsApp && <span className="text-emerald-600 font-semibold ml-1.5">• Parent WA Active</span>}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Marks Input & Actions */}
+                    <div className="flex items-center gap-2.5 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-3 sm:pt-0 shrink-0">
+                      {/* Numeric Marks Input */}
+                      <div className="flex items-center gap-1.5">
+                        {isAbsent ? (
+                          <div className="h-10 px-3.5 rounded-xl bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300 flex items-center justify-center text-xs font-black tracking-wide border border-red-200 dark:border-red-900">
+                            ABSENT
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="number"
+                              min={0}
+                              max={selectedTest.totalMarks}
+                              value={markVal}
+                              placeholder="—"
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setLocalMarks(prev => ({ ...prev, [student.id]: val }));
+                              }}
+                              onBlur={(e) => handleSaveMarks(student.id, e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  handleSaveMarks(student.id, (e.target as HTMLInputElement).value);
+                                }
+                              }}
+                              className="w-20 sm:w-24 h-10 text-right font-black text-base rounded-xl border-2 border-border focus:border-primary"
+                            />
+                            <span className="text-xs text-muted-foreground font-bold whitespace-nowrap">
+                              / {selectedTest.totalMarks}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Percentage Badge */}
+                      {!isAbsent && percent !== null && (
+                        <div className={`px-2.5 py-1 rounded-xl text-xs font-black min-w-[50px] text-center ${
+                          percent >= 75
+                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300'
+                            : percent >= 40
+                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300'
+                            : 'bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300'
+                        }`}>
+                          {percent}%
+                        </div>
+                      )}
+
+                      {/* Absent Toggle Button */}
+                      <Button
+                        type="button"
+                        variant={isAbsent ? "destructive" : "outline"}
+                        size="sm"
+                        onClick={() => toggleAbsent(student.id)}
+                        className={`h-9 px-2.5 text-xs font-bold rounded-xl transition-all ${
+                          isAbsent
+                            ? 'bg-red-600 hover:bg-red-700 text-white'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        {isAbsent ? "Mark Present" : "Mark Absent"}
+                      </Button>
+
+                      {/* WhatsApp Share Button */}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleShareMarksWhatsApp(student)}
+                        className="h-9 px-2.5 rounded-xl border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10 gap-1.5"
+                        title="Send Marks to Parent via WhatsApp"
+                      >
+                        <MessageCircle className="h-4 w-4 text-emerald-600" />
+                        <span className="hidden md:inline text-xs font-bold">WhatsApp</span>
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {filteredStudents.length === 0 && (
+                <div className="text-center py-12 rounded-3xl border border-dashed p-8 bg-muted/10">
+                  <Award className="h-10 w-10 text-muted-foreground/40 mx-auto mb-2" />
+                  <p className="font-bold text-foreground">No students found</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {studentMarksFilter !== 'all'
+                      ? `No students in the '${studentMarksFilter}' category.`
+                      : 'No students assigned to the batches in this test.'}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          /* VIEW 2: TESTS DIRECTORY AND BATCH OVERVIEW */
+          <div className="space-y-6">
+            {/* Header with Title and Create Test Trigger */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-3xl bg-card border border-border shadow-sm">
+              <div>
+                <h3 className="text-2xl font-black text-foreground flex items-center gap-2.5">
+                  <Award className="h-7 w-7 text-primary" /> Tests & Marks Evaluation
+                </h3>
+                <div className="flex flex-wrap items-center gap-2 mt-1">
+                  <p className="text-xs sm:text-sm text-muted-foreground">
+                    Create batch tests, give marks to students, evaluate performance & notify parents
+                  </p>
+                  {!isFallbackTeacher && teacherSubjects.length > 0 && (
+                    <span className="text-[11px] font-black px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                      Your Subject{teacherSubjects.length > 1 ? 's' : ''}: {teacherSubjects.join(', ')}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5">
+                <Button
+                  onClick={() => {
+                    setNewTestName('');
+                    setNewTestSubject(teacherSubjects[0] || 'General');
+                    setNewTestBatchIds(teacherBatchIds.slice(0, 1));
+                    setNewTestTotalMarks('50');
+                    setNewTestDate(currentDateStr || getLocalDateString());
+                    setIsCreateTestOpen(true);
+                  }}
+                  className="h-12 px-6 rounded-2xl font-black gap-2 shadow-lg shadow-primary/20 text-sm"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Create New Test</span>
+                </Button>
+              </div>
+            </div>
+
+            {/* Quick Metrics Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+              <div className="p-4 rounded-2xl bg-card border border-border shadow-xs flex items-center gap-3.5">
+                <div className="h-12 w-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-black shrink-0">
+                  <Award className="h-6 w-6" />
+                </div>
+                <div>
+                  <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Your Tests</span>
+                  <p className="text-2xl font-black text-foreground mt-0.5">{teacherTests.length}</p>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-card border border-border shadow-xs flex items-center gap-3.5">
+                <div className="h-12 w-12 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-black shrink-0">
+                  <CheckSquare className="h-6 w-6" />
+                </div>
+                <div>
+                  <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider">Marks Given</span>
+                  <p className="text-2xl font-black text-emerald-700 dark:text-emerald-300 mt-0.5">{totalTeacherGraded}</p>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-card border border-border shadow-xs flex items-center gap-3.5">
+                <div className="h-12 w-12 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center font-black shrink-0">
+                  <BookOpen className="h-6 w-6" />
+                </div>
+                <div>
+                  <span className="text-[11px] font-bold text-amber-700 dark:text-amber-300 uppercase tracking-wider">Subjects</span>
+                  <p className="text-2xl font-black text-amber-700 dark:text-amber-300 mt-0.5">{teacherSubjects.length}</p>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-card border border-border shadow-xs flex items-center gap-3.5">
+                <div className="h-12 w-12 rounded-2xl bg-purple-500/10 text-purple-600 flex items-center justify-center font-black shrink-0">
+                  <Users className="h-6 w-6" />
+                </div>
+                <div>
+                  <span className="text-[11px] font-bold text-purple-700 dark:text-purple-300 uppercase tracking-wider">Batches</span>
+                  <p className="text-2xl font-black text-purple-700 dark:text-purple-300 mt-0.5">{teacherBatches.length}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Filters Row */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-4 rounded-2xl bg-card border border-border shadow-xs">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search tests by name or subject..."
+                  value={testSearch}
+                  onChange={(e) => setTestSearch(e.target.value)}
+                  className="pl-10 h-10 rounded-xl bg-background border-border/60 text-sm"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Subject Filter */}
+                <Select value={testSubjectFilter} onValueChange={setTestSubjectFilter}>
+                  <SelectTrigger className="h-10 rounded-xl text-xs font-bold w-[160px]">
+                    <SelectValue placeholder="All Subjects" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">
+                      {teacherSubjects.length > 0 ? `All My Subjects (${teacherSubjects.length})` : 'All My Subjects'}
+                    </SelectItem>
+                    {teacherSubjects.map(s => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* Batch Filter */}
+                <Select value={testBatchFilter} onValueChange={setTestBatchFilter}>
+                  <SelectTrigger className="h-10 rounded-xl text-xs font-bold w-[150px]">
+                    <SelectValue placeholder="All Batches" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Batches</SelectItem>
+                    {teacherBatches.map(b => (
+                      <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Tests Cards Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredTests.map((test) => {
+                const bIds = test.batchIds && test.batchIds.length > 0 ? test.batchIds : (test.batchId ? [test.batchId] : []);
+                const assignedBatches = batches.filter(b => bIds.includes(b.id));
+                const totalStudentsInTest = students.filter(s => bIds.includes(s.batchId)).length;
+                const resultsForTest = testResults.filter(r => r.testId === test.id);
+                const markedCount = resultsForTest.filter(r => !r.isAbsent).length;
+                const progressPct = totalStudentsInTest > 0
+                  ? Math.round((resultsForTest.length / totalStudentsInTest) * 100)
+                  : 0;
+
+                const validMarks = resultsForTest.filter(r => !r.isAbsent).map(r => r.marksObtained);
+                const avgMark = validMarks.length > 0
+                  ? Math.round((validMarks.reduce((a, b) => a + b, 0) / validMarks.length) * 10) / 10
+                  : null;
+
+                return (
+                  <div
+                    key={test.id}
+                    className="p-5 rounded-3xl bg-card border border-border shadow-sm hover:border-primary/50 transition-all flex flex-col justify-between group gap-4"
+                  >
+                    <div>
+                      {/* Top Badges */}
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <span className="px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider bg-primary/10 text-primary">
+                          {test.subject || 'General'}
+                        </span>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDeleteTest(test.id)}
+                            className="h-7 w-7 rounded-lg text-destructive hover:bg-destructive/10"
+                            title="Delete Test"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Test Title & Info */}
+                      <h4 className="font-black text-lg text-foreground group-hover:text-primary transition-colors line-clamp-1">
+                        {test.name}
+                      </h4>
+
+                      <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-muted-foreground font-medium">
+                        <span>📅 {test.date}</span>
+                        <span>•</span>
+                        <span>Max Marks: <strong className="text-foreground font-bold">{test.totalMarks}</strong></span>
+                      </div>
+
+                      {/* Batches Chips */}
+                      <div className="flex flex-wrap gap-1 mt-3">
+                        {assignedBatches.map(b => (
+                          <span key={b.id} className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-muted text-muted-foreground">
+                            {b.name}
+                          </span>
+                        ))}
+                      </div>
+
+                      {/* Grading Progress */}
+                      <div className="mt-4 p-3 rounded-2xl bg-muted/20 border border-border/40 space-y-1.5">
+                        <div className="flex items-center justify-between text-xs font-bold">
+                          <span className="text-muted-foreground">Grading Status</span>
+                          <span className="text-primary">{resultsForTest.length} of {totalStudentsInTest} ({progressPct}%)</span>
+                        </div>
+                        <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className="h-full bg-primary rounded-full transition-all"
+                            style={{ width: `${Math.min(100, progressPct)}%` }}
+                          />
+                        </div>
+                        {avgMark !== null && (
+                          <p className="text-[11px] text-muted-foreground mt-1">
+                            Class Avg: <strong className="text-foreground">{avgMark} / {test.totalMarks}</strong> ({Math.round((avgMark / test.totalMarks) * 100)}%)
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Give Marks Action Button */}
+                    <Button
+                      onClick={() => setSelectedTest(test)}
+                      className="w-full h-11 rounded-2xl font-black gap-2 text-sm shadow-md shadow-primary/10 group-hover:shadow-primary/25 transition-all mt-1"
+                    >
+                      <Award className="h-4 w-4" />
+                      <span>Give / Edit Marks</span>
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {filteredTests.length === 0 && (
+              <div className="text-center py-16 rounded-3xl border-2 border-dashed p-8 bg-card/50 space-y-3">
+                <div className="h-14 w-14 rounded-3xl bg-primary/10 text-primary flex items-center justify-center mx-auto">
+                  <Award className="h-7 w-7" />
+                </div>
+                <h4 className="text-lg font-black text-foreground">No tests recorded yet</h4>
+                <p className="text-xs text-muted-foreground max-w-md mx-auto">
+                  Create a new test to record exam scores and send performance alerts to parents directly.
+                </p>
+                <Button
+                  onClick={() => setIsCreateTestOpen(true)}
+                  className="rounded-2xl font-black px-6 h-11 text-xs gap-1.5 mt-2"
+                >
+                  <Plus className="h-4 w-4" /> Create Your First Test
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* DIALOG: CREATE NEW TEST */}
+        <Dialog open={isCreateTestOpen} onOpenChange={setIsCreateTestOpen}>
+          <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto rounded-[32px]">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-black flex items-center gap-2">
+                <Award className="h-6 w-6 text-primary" /> Create New Test
+              </DialogTitle>
+            </DialogHeader>
+
+            <form onSubmit={handleCreateTest} className="space-y-4 pt-2">
+              <div className="space-y-2">
+                <Label htmlFor="test-name" className="font-bold text-sm">Test Title / Exam Name</Label>
+                <Input
+                  id="test-name"
+                  placeholder="e.g., Weekly Unit Test 1, Midterm Exam"
+                  value={newTestName}
+                  onChange={(e) => setNewTestName(e.target.value)}
+                  required
+                  className="h-12 rounded-xl text-base"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label className="font-bold text-sm">Subject</Label>
+                  <Select value={newTestSubject || teacherSubjects[0] || ''} onValueChange={setNewTestSubject}>
+                    <SelectTrigger className="h-12 rounded-xl font-bold">
+                      <SelectValue placeholder={teacherSubjects.length > 0 ? "Select subject" : "No subjects assigned"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {teacherSubjects.map(s => (
+                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                      ))}
+                      {teacherSubjects.length === 0 && (
+                        <SelectItem value="none" disabled>No assigned subjects</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="test-total-marks" className="font-bold text-sm">Total / Max Marks</Label>
+                  <Input
+                    id="test-total-marks"
+                    type="number"
+                    min={1}
+                    value={newTestTotalMarks}
+                    onChange={(e) => setNewTestTotalMarks(e.target.value)}
+                    required
+                    className="h-12 rounded-xl text-base font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="test-date" className="font-bold text-sm">Test Conducted Date</Label>
+                  <Input
+                    id="test-date"
+                    type="date"
+                    value={newTestDate || currentDateStr || getLocalDateString()}
+                    onChange={(e) => setNewTestDate(e.target.value)}
+                    required
+                    className="h-12 rounded-xl"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="font-bold text-sm">Test Format</Label>
+                  <Select value={newTestType} onValueChange={(v: 'subjective' | 'mcq') => setNewTestType(v)}>
+                    <SelectTrigger className="h-12 rounded-xl font-bold">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="subjective">Subjective / Theory</SelectItem>
+                      <SelectItem value="mcq">Multiple Choice (MCQ)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Assign Batches Checkboxes */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between">
+                  <Label className="font-bold text-sm">Assign Batches</Label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setNewTestBatchIds(teacherBatches.map(b => b.id))}
+                      className="text-xs text-primary font-bold hover:underline"
+                    >
+                      Select All
+                    </button>
+                    <span className="text-muted-foreground text-xs">|</span>
+                    <button
+                      type="button"
+                      onClick={() => setNewTestBatchIds([])}
+                      className="text-xs text-muted-foreground font-bold hover:text-destructive"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2.5 rounded-2xl border bg-muted/20">
+                  {teacherBatches.map(batch => {
+                    const isChecked = newTestBatchIds.includes(batch.id);
+                    return (
+                      <label
+                        key={batch.id}
+                        className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-all ${
+                          isChecked
+                            ? 'bg-primary/10 border-primary text-foreground font-bold'
+                            : 'bg-background border-border/60 text-muted-foreground hover:border-border'
+                        }`}
+                      >
+                        <Checkbox
+                          checked={isChecked}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setNewTestBatchIds(prev => [...prev, batch.id]);
+                            } else {
+                              setNewTestBatchIds(prev => prev.filter(id => id !== batch.id));
+                            }
+                          }}
+                        />
+                        <span className="text-xs truncate">{batch.name}</span>
+                      </label>
+                    );
+                  })}
+                  {teacherBatches.length === 0 && (
+                    <p className="text-xs text-muted-foreground col-span-2 text-center py-2">
+                      No batches found.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <Button
+                type="submit"
+                className="w-full h-13 rounded-2xl font-black text-base shadow-xl shadow-primary/20 mt-3"
+              >
+                Create Test & Enter Marks
+              </Button>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  };
+
   return (
     <DashboardLayout role="teacher" title="Teacher Dashboard">
+      {/* Dev / Admin Mode Teacher Profile Switcher Banner */}
+      {(isDevOrAdminSession || isDevModeActive()) && allTeachers.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6 p-3 px-4 rounded-2xl bg-amber-500/10 border border-amber-500/25">
+          <div className="flex items-center gap-2 text-xs font-bold text-amber-900 dark:text-amber-200">
+            <Sparkles className="h-4 w-4 text-amber-600 shrink-0" />
+            <span>Dev / Admin Mode: Teacher View</span>
+            {currentTeacher && (
+              <span className="hidden sm:inline font-normal text-muted-foreground">
+                ({teacherSubjects.length > 0 ? teacherSubjects.join(', ') : 'No subjects assigned'})
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground font-medium">Switch Teacher:</span>
+            <Select 
+              value={currentTeacher?.id || ''} 
+              onValueChange={(val) => {
+                setDevSelectedTeacherId(val);
+                try { sessionStorage.setItem('sankalp_dev_teacher_id', val); } catch {}
+              }}
+            >
+              <SelectTrigger className="h-8 text-xs font-bold bg-background rounded-xl border-amber-500/40 w-[200px]">
+                <SelectValue placeholder="Select teacher" />
+              </SelectTrigger>
+              <SelectContent>
+                {allTeachers.map(t => {
+                  const subs = Array.isArray(t.assignedSubjects) ? t.assignedSubjects.join(', ') : '';
+                  return (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.name} {subs ? `(${subs})` : ''}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      )}
+
       <div className="hidden lg:flex items-center gap-3 mb-8">
         {tabOptions.map(tab => {
           const Icon = tab.icon;
@@ -1512,6 +2667,7 @@ const TeacherDashboard = () => {
         {activeTab === "classes" && renderClasses()}
         {activeTab === "timetable" && renderTimetable()}
         {activeTab === "attendance" && renderAttendance()}
+        {activeTab === "marks" && renderMarks()}
         {activeTab === "notes" && renderNotes()}
         {activeTab === "remarks" && renderRemarks()}
       </div>

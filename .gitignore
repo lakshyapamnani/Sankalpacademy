@@ -30,6 +30,8 @@ dist-electron/
 # Binaries & Scratch Files
 *.exe
 *.apk
+*.aab
+build-outputs/
 !public/*.apk
 !public/**/*.apk
 !staff/*.apk

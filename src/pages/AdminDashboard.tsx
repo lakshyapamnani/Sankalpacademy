@@ -229,12 +229,29 @@ const AdminDashboard = () => {
     'students', 'leads', 'attendance', 'timetable', 'classes', 'batches', 'tests', 'notes', 'remarks', 'notices', 'birthdays'
   ];
 
+  // Teacher Feature Permissions Options & Presets
+  const TEACHER_PERMISSIONS_OPTIONS = [
+    { id: 'classes', label: 'Classes & Sessions', desc: 'Class schedules & lecture tracking' },
+    { id: 'timetable', label: 'Timetable', desc: 'Weekly lecture timetable & schedule' },
+    { id: 'attendance', label: 'Daily Attendance', desc: 'Mark batch student attendance' },
+    { id: 'marks', label: 'Tests & Marks Entry', desc: 'Create tests & enter student marks' },
+    { id: 'notes', label: 'Study Material', desc: 'Upload chapter notes & PDF resources' },
+    { id: 'remarks', label: 'Student Remarks', desc: 'Appreciation & parent feedback' },
+  ];
+
+  const DEFAULT_TEACHER_ALLOWED_FEATURES = [
+    'classes', 'timetable', 'attendance', 'marks', 'notes', 'remarks'
+  ];
+
   const [newStaffAllowAdminUi, setNewStaffAllowAdminUi] = useState<boolean>(true);
   const [newStaffAllowedTabs, setNewStaffAllowedTabs] = useState<string[]>(DEFAULT_STAFF_ALLOWED_TABS);
 
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
   const [editStaffAllowAdminUi, setEditStaffAllowAdminUi] = useState<boolean>(true);
   const [editStaffAllowedTabs, setEditStaffAllowedTabs] = useState<string[]>([]);
+
+  const [newTeacherAllowedFeatures, setNewTeacherAllowedFeatures] = useState<string[]>(DEFAULT_TEACHER_ALLOWED_FEATURES);
+  const [editTeacherAllowedFeatures, setEditTeacherAllowedFeatures] = useState<string[]>(DEFAULT_TEACHER_ALLOWED_FEATURES);
 
   const currentUser = getCurrentUser();
   const loggedInStaff = useMemo(() => {
@@ -498,6 +515,7 @@ const AdminDashboard = () => {
   const [isImportingCSV, setIsImportingCSV] = useState<boolean>(false);
   const [editTestSubject, setEditTestSubject] = useState<string>('');
   const [testSearch, setTestSearch] = useState('');
+  const [adminTestBatchFilter, setAdminTestBatchFilter] = useState<string>('all');
 
   // Student Report State
   const [selectedStudentForReport, setSelectedStudentForReport] = useState<Student | null>(null);
@@ -2859,12 +2877,14 @@ const AdminDashboard = () => {
         email,
         password,
         assignedSubjects: finalSubjects,
+        allowedFeatures: newTeacherAllowedFeatures,
       };
       await addTeacher(newTeacher);
       loadData();
       setOpenDialog(null);
       setTeacherSubjectSelection([]);
       setCustomTeacherSubject('');
+      setNewTeacherAllowedFeatures(DEFAULT_TEACHER_ALLOWED_FEATURES);
       toast.success("Teacher account created successfully");
     } catch (error: any) {
       toast.error(formatFirebaseError(error.message));
@@ -2892,6 +2912,7 @@ const AdminDashboard = () => {
       const updates: Partial<Teacher> = {
         name: name.trim(),
         assignedSubjects: finalSubjects,
+        allowedFeatures: editTeacherAllowedFeatures,
       };
       if (password && password.trim()) {
         updates.password = password.trim();
@@ -2902,6 +2923,7 @@ const AdminDashboard = () => {
       setEditingTeacher(null);
       setEditTeacherSubjectSelection([]);
       setEditCustomTeacherSubject('');
+      setEditTeacherAllowedFeatures(DEFAULT_TEACHER_ALLOWED_FEATURES);
       loadData();
     } catch (error: any) {
       console.error("Error updating teacher:", error);
@@ -6072,26 +6094,87 @@ const AdminDashboard = () => {
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* Test List */}
                     <div className="lg:col-span-1 flex flex-col max-h-[65vh] space-y-3">
-                      <div className="relative mb-1 shrink-0">
-                        <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                        <Input
-                          placeholder="Search tests..."
-                          className="pl-9 h-10 rounded-xl bg-accent border-accent focus-visible:ring-primary"
-                          value={testSearch}
-                          onChange={(e) => setTestSearch(e.target.value)}
-                        />
+                      <div className="flex flex-col gap-2.5 mb-1 shrink-0">
+                        {/* Batch Filter Dropdown */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
+                              <Users className="h-3.5 w-3.5 text-primary" /> Filter by Batch
+                            </label>
+                            {adminTestBatchFilter !== 'all' && (
+                              <button
+                                type="button"
+                                onClick={() => setAdminTestBatchFilter('all')}
+                                className="text-[11px] text-primary hover:underline font-bold"
+                              >
+                                Show All
+                              </button>
+                            )}
+                          </div>
+                          <Select 
+                            value={adminTestBatchFilter} 
+                            onValueChange={(val) => {
+                              setAdminTestBatchFilter(val);
+                              // If current selected test does not belong to the newly selected batch, clear selection
+                              if (val !== 'all' && selectedTest) {
+                                const bIds = (selectedTest.batchIds && selectedTest.batchIds.length > 0)
+                                  ? selectedTest.batchIds
+                                  : (selectedTest.batchId ? [selectedTest.batchId] : []);
+                                if (!bIds.includes(val)) {
+                                  setSelectedTest(null);
+                                }
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="h-10 rounded-xl bg-accent border-accent text-xs font-bold">
+                              <SelectValue placeholder="All Batches" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All Batches ({batches.length})</SelectItem>
+                              {batches.map(b => (
+                                <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Search Input */}
+                        <div className="relative">
+                          <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            placeholder="Search tests by name or subject..."
+                            className="pl-9 h-10 rounded-xl bg-accent border-accent focus-visible:ring-primary text-sm"
+                            value={testSearch}
+                            onChange={(e) => setTestSearch(e.target.value)}
+                          />
+                        </div>
                       </div>
                       <div className="space-y-3 overflow-y-auto pr-2 flex-1">
                         {(() => {
                           const filteredTests = tests.filter(test => {
-                            const searchLower = testSearch.toLowerCase();
-                            const matchesName = test.name.toLowerCase().includes(searchLower);
-                            const matchesSubject = test.subject ? test.subject.toLowerCase().includes(searchLower) : false;
-                            const batchNames = (test.batchIds && test.batchIds.length > 0)
-                              ? test.batchIds.map(bid => batches.find(b => b.id === bid)?.name || '').filter(Boolean).join(' ')
-                              : (batches.find(b => b.id === test.batchId)?.name || '');
-                            const matchesBatch = batchNames.toLowerCase().includes(searchLower);
-                            return matchesName || matchesSubject || matchesBatch;
+                            // Filter by selected batch
+                            if (adminTestBatchFilter !== 'all') {
+                              const bIds = (test.batchIds && test.batchIds.length > 0)
+                                ? test.batchIds
+                                : (test.batchId ? [test.batchId] : []);
+                              if (!bIds.includes(adminTestBatchFilter)) {
+                                return false;
+                              }
+                            }
+
+                            // Search query filter
+                            if (testSearch.trim()) {
+                              const searchLower = testSearch.trim().toLowerCase();
+                              const matchesName = test.name.toLowerCase().includes(searchLower);
+                              const matchesSubject = test.subject ? test.subject.toLowerCase().includes(searchLower) : false;
+                              const batchNames = (test.batchIds && test.batchIds.length > 0)
+                                ? test.batchIds.map(bid => batches.find(b => b.id === bid)?.name || '').filter(Boolean).join(' ')
+                                : (batches.find(b => b.id === test.batchId)?.name || '');
+                              const matchesBatch = batchNames.toLowerCase().includes(searchLower);
+                              if (!matchesName && !matchesSubject && !matchesBatch) return false;
+                            }
+
+                            return true;
                           });
 
                           if (tests.length === 0) {
@@ -6103,10 +6186,16 @@ const AdminDashboard = () => {
                           }
 
                           if (filteredTests.length === 0) {
+                            const selectedBatchObj = batches.find(b => b.id === adminTestBatchFilter);
                             return (
-                              <p className="text-sm text-center py-8 text-muted-foreground border-2 border-dashed rounded-xl bg-accent/30">
-                                No matching tests found.
-                              </p>
+                              <div className="text-sm text-center py-8 px-4 text-muted-foreground border-2 border-dashed rounded-xl bg-accent/30 space-y-1">
+                                <p className="font-bold text-foreground">No tests found</p>
+                                <p className="text-xs">
+                                  {adminTestBatchFilter !== 'all'
+                                    ? `No tests assigned to ${selectedBatchObj?.name || 'this batch'}.`
+                                    : 'No tests match your search criteria.'}
+                                </p>
+                              </div>
                             );
                           }
 
@@ -7272,6 +7361,104 @@ const AdminDashboard = () => {
                                 />
                               </div>
                             </div>
+
+                            {/* Feature & Tab Permissions Section */}
+                            <div className="space-y-3 pt-3 border-t">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                <div>
+                                  <Label className="font-bold flex items-center gap-2 text-sm">
+                                    <Shield className="h-4 w-4 text-primary" /> Feature & Tab Access Permissions
+                                  </Label>
+                                  <p className="text-xs text-muted-foreground mt-0.5">
+                                    Select which features this teacher can access ({newTeacherAllowedFeatures.length} of {TEACHER_PERMISSIONS_OPTIONS.length} features enabled)
+                                  </p>
+                                </div>
+
+                                {/* Presets */}
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 text-[11px] px-2.5 font-bold rounded-lg"
+                                    onClick={() => setNewTeacherAllowedFeatures(TEACHER_PERMISSIONS_OPTIONS.map(o => o.id))}
+                                  >
+                                    All Features
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 text-[11px] px-2.5 font-bold rounded-lg border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10"
+                                    onClick={() => setNewTeacherAllowedFeatures(TEACHER_PERMISSIONS_OPTIONS.map(o => o.id).filter(id => id !== 'marks'))}
+                                  >
+                                    Except Marks
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 text-[11px] px-2.5 font-bold rounded-lg border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10"
+                                    onClick={() => setNewTeacherAllowedFeatures(['attendance', 'marks', 'remarks'])}
+                                  >
+                                    Attendance & Marks
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 text-[11px] px-2 text-muted-foreground hover:text-destructive"
+                                    onClick={() => setNewTeacherAllowedFeatures([])}
+                                  >
+                                    Clear All
+                                  </Button>
+                                </div>
+                              </div>
+
+                              {/* Checkbox Grid */}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-56 overflow-y-auto p-3 rounded-2xl border bg-muted/20">
+                                {TEACHER_PERMISSIONS_OPTIONS.map((opt) => {
+                                  const isChecked = newTeacherAllowedFeatures.includes(opt.id);
+                                  const isMarksFeature = opt.id === 'marks';
+                                  return (
+                                    <label
+                                      key={opt.id}
+                                      className={`flex items-start gap-3 p-2.5 rounded-xl border transition-all cursor-pointer ${
+                                        isChecked
+                                          ? isMarksFeature
+                                            ? 'bg-emerald-500/10 border-emerald-500/40 text-foreground'
+                                            : 'bg-primary/5 border-primary/25 text-foreground'
+                                          : 'bg-background/60 border-border/40 text-muted-foreground hover:border-border'
+                                      }`}
+                                    >
+                                      <Checkbox
+                                        checked={isChecked}
+                                        onCheckedChange={(checked) => {
+                                          if (checked) {
+                                            setNewTeacherAllowedFeatures(prev => [...prev, opt.id]);
+                                          } else {
+                                            setNewTeacherAllowedFeatures(prev => prev.filter(id => id !== opt.id));
+                                          }
+                                        }}
+                                        className="mt-0.5"
+                                      />
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className="text-xs font-bold leading-tight">{opt.label}</span>
+                                          {isMarksFeature && (
+                                            <span className="text-[10px] font-black px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+                                              Give Marks
+                                            </span>
+                                          )}
+                                        </div>
+                                        <p className="text-[11px] text-muted-foreground truncate leading-tight mt-0.5">{opt.desc}</p>
+                                      </div>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
                             <Button type="submit" className="w-full h-14 rounded-2xl font-black text-lg shadow-xl shadow-primary/20 mt-4">
                               Create Account
                             </Button>
@@ -7340,6 +7527,7 @@ const AdminDashboard = () => {
                                     setEditingTeacher(t);
                                     setEditTeacherSubjectSelection(t.assignedSubjects || t.assignedBatchIds || []);
                                     setEditCustomTeacherSubject('');
+                                    setEditTeacherAllowedFeatures(t.allowedFeatures || t.allowedTabs || DEFAULT_TEACHER_ALLOWED_FEATURES);
                                   }}
                                   className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-xl"
                                   title="Edit Teacher"
@@ -7367,6 +7555,41 @@ const AdminDashboard = () => {
                                 <span className="text-[10px] text-muted-foreground italic">No subjects assigned</span>
                               )}
                             </div>
+
+                            {/* Feature & Permissions Badges */}
+                            {(() => {
+                              const allowedList = t.allowedFeatures || t.allowedTabs || DEFAULT_TEACHER_ALLOWED_FEATURES;
+                              const hasMarksAccess = allowedList.includes('marks');
+                              return (
+                                <div className="flex flex-col gap-1.5 pt-2 border-t border-primary/10">
+                                  <div className="flex flex-wrap gap-1.5 items-center">
+                                    {hasMarksAccess ? (
+                                      <Badge className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20 text-[10px] font-bold gap-1 py-0.5">
+                                        <Award className="h-3 w-3" /> Marks Allowed
+                                      </Badge>
+                                    ) : (
+                                      <Badge className="bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20 text-[10px] font-bold gap-1 py-0.5">
+                                        <Shield className="h-3 w-3" /> Marks Blocked
+                                      </Badge>
+                                    )}
+                                    <Badge variant="secondary" className="text-[10px] font-bold py-0.5">
+                                      {allowedList.length} of {TEACHER_PERMISSIONS_OPTIONS.length} Features
+                                    </Badge>
+                                  </div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {allowedList.map(featureId => {
+                                      const match = TEACHER_PERMISSIONS_OPTIONS.find(o => o.id === featureId);
+                                      return (
+                                        <span key={featureId} className="text-[10px] bg-muted px-2 py-0.5 rounded-md text-muted-foreground font-medium">
+                                          {match?.label || featureId}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })()}
+
                             <div className="pt-2 border-t border-primary/10 mt-auto">
                               <button
                                 onClick={() => handleLoginAsTeacher(t)}
@@ -7384,7 +7607,7 @@ const AdminDashboard = () => {
 
                   {/* Edit Teacher Dialog */}
                   <Dialog open={!!editingTeacher} onOpenChange={(open) => { if (!open) setEditingTeacher(null); }}>
-                    <DialogContent className="max-h-[90vh] overflow-y-auto">
+                    <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto rounded-[32px]">
                       <DialogHeader>
                         <DialogTitle className="text-2xl font-black">Edit Teacher Account</DialogTitle>
                       </DialogHeader>
@@ -7454,6 +7677,104 @@ const AdminDashboard = () => {
                               />
                             </div>
                           </div>
+
+                          {/* Feature & Tab Permissions Section for Edit Teacher */}
+                          <div className="space-y-3 pt-3 border-t">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <div>
+                                <Label className="font-bold flex items-center gap-2 text-sm">
+                                  <Shield className="h-4 w-4 text-primary" /> Feature & Tab Access Permissions
+                                </Label>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  Select which features this teacher can access ({editTeacherAllowedFeatures.length} of {TEACHER_PERMISSIONS_OPTIONS.length} features enabled)
+                                </p>
+                              </div>
+
+                              {/* Presets */}
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 text-[11px] px-2.5 font-bold rounded-lg"
+                                  onClick={() => setEditTeacherAllowedFeatures(TEACHER_PERMISSIONS_OPTIONS.map(o => o.id))}
+                                >
+                                  All Features
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 text-[11px] px-2.5 font-bold rounded-lg border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10"
+                                  onClick={() => setEditTeacherAllowedFeatures(TEACHER_PERMISSIONS_OPTIONS.map(o => o.id).filter(id => id !== 'marks'))}
+                                >
+                                  Except Marks
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 text-[11px] px-2.5 font-bold rounded-lg border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10"
+                                  onClick={() => setEditTeacherAllowedFeatures(['attendance', 'marks', 'remarks'])}
+                                >
+                                  Attendance & Marks
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 text-[11px] px-2 text-muted-foreground hover:text-destructive"
+                                  onClick={() => setEditTeacherAllowedFeatures([])}
+                                >
+                                  Clear All
+                                </Button>
+                              </div>
+                            </div>
+
+                            {/* Checkbox Grid */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-56 overflow-y-auto p-3 rounded-2xl border bg-muted/20">
+                              {TEACHER_PERMISSIONS_OPTIONS.map((opt) => {
+                                const isChecked = editTeacherAllowedFeatures.includes(opt.id);
+                                const isMarksFeature = opt.id === 'marks';
+                                return (
+                                  <label
+                                    key={opt.id}
+                                    className={`flex items-start gap-3 p-2.5 rounded-xl border transition-all cursor-pointer ${
+                                      isChecked
+                                        ? isMarksFeature
+                                          ? 'bg-emerald-500/10 border-emerald-500/40 text-foreground'
+                                          : 'bg-primary/5 border-primary/25 text-foreground'
+                                        : 'bg-background/60 border-border/40 text-muted-foreground hover:border-border'
+                                    }`}
+                                  >
+                                    <Checkbox
+                                      checked={isChecked}
+                                      onCheckedChange={(checked) => {
+                                        if (checked) {
+                                          setEditTeacherAllowedFeatures(prev => [...prev, opt.id]);
+                                        } else {
+                                          setEditTeacherAllowedFeatures(prev => prev.filter(id => id !== opt.id));
+                                        }
+                                      }}
+                                      className="mt-0.5"
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="text-xs font-bold leading-tight">{opt.label}</span>
+                                        {isMarksFeature && (
+                                          <span className="text-[10px] font-black px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+                                            Give Marks
+                                          </span>
+                                        )}
+                                      </div>
+                                      <p className="text-[11px] text-muted-foreground truncate leading-tight mt-0.5">{opt.desc}</p>
+                                    </div>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+
                           <Button type="submit" className="w-full h-14 rounded-2xl font-black text-lg shadow-xl shadow-primary/20 mt-4">
                             Save Teacher Changes
                           </Button>
