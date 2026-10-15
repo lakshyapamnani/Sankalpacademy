@@ -51,15 +51,21 @@ const App = () => (
             <Route path="/student-dashboard" element={<StudentDashboard />} />
             <Route path="/staff-dashboard" element={<StaffDashboard />} />
             <Route path="/teacher-dashboard" element={<TeacherDashboard />} />
-            {/* App Download Portals */}
+            {/* App Download Portals - Singular, Plural & Dash Aliases */}
             <Route path="/studentapp" element={<AppDownloadPage appType="student" />} />
+            <Route path="/studentsapp" element={<AppDownloadPage appType="student" />} />
             <Route path="/student-app" element={<AppDownloadPage appType="student" />} />
+            <Route path="/students-app" element={<AppDownloadPage appType="student" />} />
+            <Route path="/students" element={<AppDownloadPage appType="student" />} />
             <Route path="/teachersapp" element={<AppDownloadPage appType="teacher" />} />
             <Route path="/teacherapp" element={<AppDownloadPage appType="teacher" />} />
             <Route path="/teacher-app" element={<AppDownloadPage appType="teacher" />} />
             <Route path="/teachers-app" element={<AppDownloadPage appType="teacher" />} />
+            <Route path="/teachers" element={<AppDownloadPage appType="teacher" />} />
             <Route path="/staffapp" element={<AppDownloadPage appType="staff" />} />
+            <Route path="/staffsapp" element={<AppDownloadPage appType="staff" />} />
             <Route path="/staff-app" element={<AppDownloadPage appType="staff" />} />
+            <Route path="/staffs-app" element={<AppDownloadPage appType="staff" />} />
             <Route path="/sankalpweb" element={<StaticRedirect to="/sankalpweb/index.html" />} />
             <Route path="/apps" element={<StaticRedirect to="/sankalpweb/index.html" />} />
             <Route path="*" element={<NotFound />} />
@@ -84,15 +90,21 @@ const App = () => (
             <Route path="/student-dashboard" element={<StudentDashboard />} />
             <Route path="/staff-dashboard" element={<StaffDashboard />} />
             <Route path="/teacher-dashboard" element={<TeacherDashboard />} />
-            {/* App Download Portals */}
+            {/* App Download Portals - Singular, Plural & Dash Aliases */}
             <Route path="/studentapp" element={<AppDownloadPage appType="student" />} />
+            <Route path="/studentsapp" element={<AppDownloadPage appType="student" />} />
             <Route path="/student-app" element={<AppDownloadPage appType="student" />} />
+            <Route path="/students-app" element={<AppDownloadPage appType="student" />} />
+            <Route path="/students" element={<AppDownloadPage appType="student" />} />
             <Route path="/teachersapp" element={<AppDownloadPage appType="teacher" />} />
             <Route path="/teacherapp" element={<AppDownloadPage appType="teacher" />} />
             <Route path="/teacher-app" element={<AppDownloadPage appType="teacher" />} />
             <Route path="/teachers-app" element={<AppDownloadPage appType="teacher" />} />
+            <Route path="/teachers" element={<AppDownloadPage appType="teacher" />} />
             <Route path="/staffapp" element={<AppDownloadPage appType="staff" />} />
+            <Route path="/staffsapp" element={<AppDownloadPage appType="staff" />} />
             <Route path="/staff-app" element={<AppDownloadPage appType="staff" />} />
+            <Route path="/staffs-app" element={<AppDownloadPage appType="staff" />} />
             <Route path="/sankalpweb" element={<StaticRedirect to="/sankalpweb/index.html" />} />
             <Route path="/apps" element={<StaticRedirect to="/sankalpweb/index.html" />} />
             <Route path="*" element={<NotFound />} />
