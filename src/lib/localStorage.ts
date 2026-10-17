@@ -269,6 +269,33 @@ export interface TimetableTemplate {
   createdAt: string;
 }
 
+export interface StudySession {
+  id: string;
+  studentId: string;
+  studentName: string;
+  batchId?: string;
+  batchName?: string;
+  durationMinutes: number;
+  durationSeconds: number;
+  type: 'focus' | 'break';
+  subject?: string;
+  completedAt: string;
+  date: string; // YYYY-MM-DD
+  interruptions?: number;
+}
+
+export interface StudentStudyStats {
+  studentId: string;
+  studentName: string;
+  batchId?: string;
+  batchName?: string;
+  totalSeconds: number;
+  totalMinutes: number;
+  totalHours: number;
+  sessionsCompleted: number; // completed focus sessions
+  lastActive: string; // ISO string
+}
+
 // Delete functions
 export const deleteStudent = (studentId: string): boolean => {
   try {
@@ -355,6 +382,8 @@ const STORAGE_KEYS = {
   TIMETABLE: 'smartclass_timetable',
   TIMETABLE_TEMPLATES: 'smartclass_timetable_templates',
   ROOMS: 'smartclass_rooms',
+  STUDY_SESSIONS: 'smartclass_study_sessions',
+  STUDY_STATS: 'smartclass_study_stats',
 };
 
 const DB_PATHS = {
@@ -381,6 +410,8 @@ const DB_PATHS = {
   TIMETABLE: 'timetable',
   TIMETABLE_TEMPLATES: 'timetable_templates',
   ROOMS: 'rooms',
+  STUDY_SESSIONS: 'studySessions',
+  STUDY_STATS: 'studyStats',
 };
 
 // Initialize default data
@@ -469,6 +500,14 @@ const initializeDefaultData = () => {
       ])
     );
   }
+
+  if (!localStorage.getItem(STORAGE_KEYS.STUDY_SESSIONS)) {
+    localStorage.setItem(STORAGE_KEYS.STUDY_SESSIONS, JSON.stringify([]));
+  }
+
+  if (!localStorage.getItem(STORAGE_KEYS.STUDY_STATS)) {
+    localStorage.setItem(STORAGE_KEYS.STUDY_STATS, JSON.stringify([]));
+  }
 };
 
 initializeDefaultData();
@@ -522,6 +561,8 @@ const syncRealtimeData = async () => {
     fetchCollectionFromRealtime<StudentRemark>(DB_PATHS.STUDENT_REMARKS),
     fetchCollectionFromRealtime<Notice>(DB_PATHS.NOTICES),
     fetchCollectionFromRealtime<TimetableLecture>(DB_PATHS.TIMETABLE),
+    fetchCollectionFromRealtime<StudySession>(DB_PATHS.STUDY_SESSIONS),
+    fetchCollectionFromRealtime<StudentStudyStats>(DB_PATHS.STUDY_STATS),
   ]);
 
   if (students) {
@@ -568,6 +609,12 @@ const syncRealtimeData = async () => {
   }
   if (timetableList) {
     saveToStorage(STORAGE_KEYS.TIMETABLE, timetableList);
+  }
+  if (studySessionsList) {
+    saveToStorage(STORAGE_KEYS.STUDY_SESSIONS, studySessionsList);
+  }
+  if (studyStatsList) {
+    saveToStorage(STORAGE_KEYS.STUDY_STATS, studyStatsList);
   }
 
   // Sync institute settings
@@ -735,6 +782,8 @@ export const subscribeToRealtimeUpdates = (onUpdate?: () => void): Unsubscribe =
     attachListener<StudentRemark>(DB_PATHS.STUDENT_REMARKS, STORAGE_KEYS.STUDENT_REMARKS, onUpdate),
     attachListener<Notice>(DB_PATHS.NOTICES, STORAGE_KEYS.NOTICES, onUpdate),
     attachListener<TimetableLecture>(DB_PATHS.TIMETABLE, STORAGE_KEYS.TIMETABLE, onUpdate),
+    attachListener<StudySession>(DB_PATHS.STUDY_SESSIONS, STORAGE_KEYS.STUDY_SESSIONS, onUpdate),
+    attachListener<StudentStudyStats>(DB_PATHS.STUDY_STATS, STORAGE_KEYS.STUDY_STATS, onUpdate),
   ];
 
   // Also subscribe to Institute Settings updates
@@ -2179,6 +2228,97 @@ export const resetRoomsToDefault = async (): Promise<string[]> => {
     console.error('Failed to reset rooms in Firebase', error);
   }
   return DEFAULT_ROOM_LIST;
+};
+
+// ─── Pomodoro & Study Timer Leaderboard ──────────────────────────────
+
+export const getStudySessions = (): StudySession[] => {
+  return getFromStorage<StudySession>(STORAGE_KEYS.STUDY_SESSIONS);
+};
+
+export const getStudySessionsByStudent = (studentId: string): StudySession[] => {
+  const all = getStudySessions();
+  return all.filter(s => s.studentId === studentId);
+};
+
+export const getStudentStudyStats = (): StudentStudyStats[] => {
+  return getFromStorage<StudentStudyStats>(STORAGE_KEYS.STUDY_STATS);
+};
+
+export const getStudentStudyStat = (studentId: string): StudentStudyStats | undefined => {
+  const all = getStudentStudyStats();
+  return all.find(s => s.studentId === studentId);
+};
+
+export const logStudySession = async (session: StudySession): Promise<StudentStudyStats> => {
+  // 1. Save session to local storage & Firebase
+  const sessions = getStudySessions();
+  saveToStorage(STORAGE_KEYS.STUDY_SESSIONS, [session, ...sessions]);
+  void writeItemToRealtime(DB_PATHS.STUDY_SESSIONS, session.id, session);
+
+  // 2. Aggregate student study stats
+  const allStats = getStudentStudyStats();
+  const existingIdx = allStats.findIndex(s => s.studentId === session.studentId);
+  const now = new Date().toISOString();
+
+  let updatedStat: StudentStudyStats;
+
+  if (existingIdx >= 0) {
+    const existing = allStats[existingIdx];
+    const newSeconds = Math.max(0, (existing.totalSeconds || 0) + session.durationSeconds);
+    const newMinutes = Math.round(newSeconds / 60);
+    const newHours = Number((newSeconds / 3600).toFixed(2));
+    const newSessions = (existing.sessionsCompleted || 0) + (session.type === 'focus' ? 1 : 0);
+
+    updatedStat = {
+      ...existing,
+      studentName: session.studentName || existing.studentName,
+      batchId: session.batchId || existing.batchId,
+      batchName: session.batchName || existing.batchName,
+      totalSeconds: newSeconds,
+      totalMinutes: newMinutes,
+      totalHours: newHours,
+      sessionsCompleted: newSessions,
+      lastActive: now,
+    };
+    allStats[existingIdx] = updatedStat;
+  } else {
+    const newSeconds = Math.max(0, session.durationSeconds);
+    const newMinutes = Math.round(newSeconds / 60);
+    const newHours = Number((newSeconds / 3600).toFixed(2));
+    updatedStat = {
+      studentId: session.studentId,
+      studentName: session.studentName,
+      batchId: session.batchId,
+      batchName: session.batchName,
+      totalSeconds: newSeconds,
+      totalMinutes: newMinutes,
+      totalHours: newHours,
+      sessionsCompleted: session.type === 'focus' ? 1 : 0,
+      lastActive: now,
+    };
+    allStats.push(updatedStat);
+  }
+
+  saveToStorage(STORAGE_KEYS.STUDY_STATS, allStats);
+  void writeItemToRealtime(DB_PATHS.STUDY_STATS, session.studentId, updatedStat);
+
+  return updatedStat;
+};
+
+export const resetStudentStudyStats = async (studentId: string): Promise<boolean> => {
+  try {
+    const allStats = getStudentStudyStats().filter(s => s.studentId !== studentId);
+    saveToStorage(STORAGE_KEYS.STUDY_STATS, allStats);
+    void removeItemFromRealtime(DB_PATHS.STUDY_STATS, studentId);
+
+    const allSessions = getStudySessions().filter(s => s.studentId !== studentId);
+    saveToStorage(STORAGE_KEYS.STUDY_SESSIONS, allSessions);
+    return true;
+  } catch (err) {
+    console.error('Failed to reset study stats', err);
+    return false;
+  }
 };
 
 

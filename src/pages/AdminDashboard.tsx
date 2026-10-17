@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit, ArrowLeft, Search, Download, MessageSquare, Eye, TrendingUp, FileText, Trash2, GraduationCap, LogIn, Key, Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Layers, Settings, Image, PenTool, Building, Save, Bell, Megaphone, Award, AlertTriangle, Star, ThumbsUp, ThumbsDown, Send, Filter, Check, Clock, ExternalLink, DoorOpen, RotateCcw, Laptop, Shield } from "lucide-react";
+import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit, ArrowLeft, Search, Download, MessageSquare, Eye, TrendingUp, FileText, Trash2, GraduationCap, LogIn, Key, Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Layers, Settings, Image, PenTool, Building, Save, Bell, Megaphone, Award, AlertTriangle, Star, ThumbsUp, ThumbsDown, Send, Filter, Check, Clock, ExternalLink, DoorOpen, RotateCcw, Laptop, Shield, Timer } from "lucide-react";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -14,6 +14,8 @@ import DashboardLayout, { SidebarItem } from "@/components/DashboardLayout";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { parseStudentCSV, downloadStudentCSVTemplate, ParsedCSVStudent } from "@/lib/csvUtils";
 import { AdminTimetableBuilder } from "@/components/timetable/AdminTimetableBuilder";
+import { PomodoroAdminSection } from "@/components/pomodoro/PomodoroAdminSection";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   getStudents,
   getClasses,
@@ -188,7 +190,7 @@ const AdminDashboard = () => {
     return `${year}-${month}-${day}`;
   };
 
-  const [activeTab, setActiveTab] = useState<'batches' | 'students' | 'leads' | 'staff' | 'teachers' | 'classes' | 'timetable' | 'fees' | 'tests' | 'attendance' | 'birthdays' | 'notes' | 'remarks' | 'notices' | 'settings'>('students');
+  const [activeTab, setActiveTab] = useState<'batches' | 'students' | 'leads' | 'staff' | 'teachers' | 'classes' | 'timetable' | 'fees' | 'tests' | 'attendance' | 'birthdays' | 'notes' | 'remarks' | 'notices' | 'settings' | 'pomodoro'>('students');
   const [currentDateStr, setCurrentDateStr] = useState<string>('');
 
   useEffect(() => {
@@ -222,11 +224,12 @@ const AdminDashboard = () => {
     { id: 'teachers', label: 'Faculty / Teachers', desc: 'Faculty directory & subjects' },
     { id: 'staff', label: 'Staff Accounts', desc: 'Office staff & permissions' },
     { id: 'birthdays', label: 'Birthdays', desc: 'Birthday reminders' },
+    { id: 'pomodoro', label: 'Study Leaderboard & Pomodoro', desc: 'Student study hours, rankings & live timer stats' },
     { id: 'settings', label: 'Institute Settings', desc: 'Branding, logo & settings' },
   ];
 
   const DEFAULT_STAFF_ALLOWED_TABS = [
-    'students', 'leads', 'attendance', 'timetable', 'classes', 'batches', 'tests', 'notes', 'remarks', 'notices', 'birthdays'
+    'students', 'leads', 'attendance', 'timetable', 'classes', 'batches', 'tests', 'notes', 'remarks', 'notices', 'birthdays', 'pomodoro'
   ];
 
   // Teacher Feature Permissions Options & Presets
@@ -3085,6 +3088,7 @@ const AdminDashboard = () => {
     { id: 'notes', label: 'Notes', icon: FileText, action: () => setActiveTab('notes') },
     { id: 'remarks', label: 'Remarks', icon: MessageSquare, action: () => setActiveTab('remarks') },
     { id: 'notices', label: 'Notices', icon: Bell, action: () => setActiveTab('notices') },
+    { id: 'pomodoro', label: 'Study Leaderboard', icon: Timer, action: () => setActiveTab('pomodoro') },
     { id: 'birthdays', label: 'Birthdays', icon: Cake, action: () => setActiveTab('birthdays') },
     { id: 'settings', label: 'Settings', icon: Settings, action: () => setActiveTab('settings') },
   ];
@@ -8844,7 +8848,23 @@ const AdminDashboard = () => {
                       Customize institute branding, fee receipt details, and configure classrooms & room numbers.
                     </p>
                   </div>
+                  <ThemeToggle variant="pill" />
                 </div>
+
+                {/* Appearance Card */}
+                <Card className="p-5 rounded-2xl border shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h4 className="text-base font-bold text-foreground flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-primary" /> Display Appearance & Theme
+                      </h4>
+                      <p className="text-xs text-muted-foreground">
+                        Toggle between Light and Dark interface modes across the admin portal.
+                      </p>
+                    </div>
+                  </div>
+                  <ThemeToggle variant="card" />
+                </Card>
 
                 <form onSubmit={handleSaveSettings} className="space-y-6">
                   {/* Institute Profile Card */}
@@ -9744,6 +9764,13 @@ const AdminDashboard = () => {
                     )}
                   </div>
                 </Card>
+              </div>
+            )}
+
+            {/* STUDY LEADERBOARD & POMODORO TAB */}
+            {activeTab === 'pomodoro' && isTabPermitted('pomodoro') && (
+              <div className="space-y-6">
+                <PomodoroAdminSection />
               </div>
             )}
           </div>

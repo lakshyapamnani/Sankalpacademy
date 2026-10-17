@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { GraduationCap, LogOut, Bell, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { clearCurrentUser, getCurrentUser, isDevModeActive, switchDevRole } from "@/lib/localStorage";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export interface SidebarItem {
   id: string;
@@ -111,6 +112,7 @@ const DashboardLayout = ({ children, role, title, sidebarItems = [], activeSideb
                 </button>
               </div>
             )}
+            <ThemeToggle className="h-7 w-7 sm:h-8 sm:w-8" />
             <Button variant="ghost" size="icon" aria-label="Notifications" className="h-7 w-7 sm:h-8 sm:w-8">
               <Bell className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </Button>

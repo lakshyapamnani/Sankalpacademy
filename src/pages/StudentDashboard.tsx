@@ -3,11 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Calendar, BookOpen, Brain, FileText, Home, Bot, UserCircle, MessageSquare, CheckSquare, LogOut, Award, Star, AlertTriangle, Bell, Megaphone, Sparkles, Trophy, CheckCircle2, ArrowRight, Clock } from "lucide-react";
+import { Calendar, BookOpen, Brain, FileText, Home, Bot, UserCircle, MessageSquare, CheckSquare, LogOut, Award, Star, AlertTriangle, Bell, Megaphone, Sparkles, Trophy, CheckCircle2, ArrowRight, Clock, Timer } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { toast } from "sonner";
 import { StudentTimetableSection } from "@/components/timetable/StudentTimetableSection";
+import { PomodoroStudentSection } from "@/components/pomodoro/PomodoroStudentSection";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   getClasses,
   getClassesByBatch,
@@ -58,9 +60,10 @@ const calculateAttendancePercentage = (records: AttendanceRecord[]): number => {
   return Math.round((presentCount / records.length) * 100);
 };
 
-const tabOptions: { id: "home" | "timetable" | "attendance" | "notes" | "remarks" | "ai" | "tests" | "profile"; label: string; icon: LucideIcon }[] = [
+const tabOptions: { id: "home" | "timetable" | "attendance" | "notes" | "remarks" | "ai" | "tests" | "profile" | "pomodoro"; label: string; icon: LucideIcon }[] = [
   { id: "home", label: "Home", icon: Home },
   { id: "timetable", label: "Timetable", icon: Clock },
+  { id: "pomodoro", label: "Pomodoro", icon: Timer },
   { id: "attendance", label: "Attendance", icon: Calendar },
   { id: "notes", label: "Notes", icon: BookOpen },
   { id: "remarks", label: "Remarks", icon: MessageSquare },
@@ -100,7 +103,7 @@ const StudentDashboard = () => {
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, number>>({});
   const [testCompleted, setTestCompleted] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<"home" | "timetable" | "attendance" | "notes" | "remarks" | "ai" | "tests" | "profile">("home");
+  const [activeTab, setActiveTab] = useState<"home" | "timetable" | "attendance" | "notes" | "remarks" | "ai" | "tests" | "profile" | "pomodoro">("home");
 
   const subjectAttendanceBreakdown = useMemo(() => {
     const map: Record<string, { total: number; present: number; absent: number }> = {};
@@ -638,6 +641,17 @@ const StudentDashboard = () => {
           </div>
         </Card>
 
+        {/* App Appearance & Theme Card */}
+        <Card className="p-5 rounded-2xl border shadow-xs space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-black flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-primary" />
+              App Appearance & Theme
+            </h3>
+          </div>
+          <ThemeToggle variant="card" />
+        </Card>
+
         {renderAttendanceSection()}
       </div>
     );
@@ -792,6 +806,7 @@ const StudentDashboard = () => {
         </Card>
       );
       case "tests": return renderTestsCard();
+      case "pomodoro": return <PomodoroStudentSection currentStudent={currentStudent} />;
       case "profile": return renderProfile();
       default: return null;
     }
@@ -818,6 +833,7 @@ const StudentDashboard = () => {
             );
           })}
         </div>
+        <ThemeToggle variant="pill" />
       </div>
 
       {/* Main Content Area */}
@@ -1012,7 +1028,7 @@ const StudentDashboard = () => {
 
       {/* Instagram-style Bottom Nav for Mobile */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-card border-t border-border/40 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)] z-40 supports-[backdrop-filter]:bg-card/80 backdrop-blur-lg">
-        <div className="flex items-center justify-around px-2 py-1.5">
+        <div className="flex items-center justify-between sm:justify-around px-1 py-1.5 overflow-x-auto no-scrollbar gap-1">
           {tabOptions.filter(tab => tab.id !== 'ai').map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -1021,7 +1037,7 @@ const StudentDashboard = () => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className="flex flex-col items-center gap-0.5 p-1 min-w-[50px] transition-colors relative"
+                className="flex flex-col items-center gap-0.5 p-1 min-w-[46px] sm:min-w-[50px] shrink-0 transition-colors relative"
               >
                 <div className={`p-1.5 rounded-xl transition-all duration-300 ${isActive ? 'bg-primary/10' : ''}`}>
                   <Icon 
