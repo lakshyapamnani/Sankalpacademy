@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { GraduationCap, User, BookOpen, Shield } from "lucide-react";
 import { toast } from "sonner";
 import { clearCurrentUser, authenticateUser, getCurrentUser, setCurrentUser, switchDevRole, getStaff } from "@/lib/localStorage";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 type UserRole = "admin" | "student" | "staff" | "teacher";
 
@@ -131,7 +132,10 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
 
   if (!selectedRole) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-accent/5 flex flex-col p-4">
+      <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-accent/5 flex flex-col p-4 relative">
+        <div className="absolute top-4 right-4 z-10">
+          <ThemeToggle />
+        </div>
         <div className="flex-1 flex items-center justify-center">
           <div className="w-full max-w-5xl">
             <div className="text-center mb-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -181,7 +185,10 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
   const Icon = currentRole.icon;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-accent/5 flex flex-col p-4">
+    <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-accent/5 flex flex-col p-4 relative">
+      <div className="absolute top-4 right-4 z-10">
+        <ThemeToggle />
+      </div>
       <div className="flex-1 flex items-center justify-center">
         <Card className="w-full max-w-md p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
           {!isForced && (
