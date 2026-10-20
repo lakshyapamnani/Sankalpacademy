@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Calendar, BookOpen, Brain, FileText, Home, Bot, UserCircle, MessageSquare, CheckSquare, LogOut, Award, Star, AlertTriangle, Bell, Megaphone, Sparkles, Trophy, CheckCircle2, ArrowRight, Clock, Timer } from "lucide-react";
+import { Calendar, BookOpen, Brain, FileText, Home, Bot, UserCircle, MessageSquare, CheckSquare, LogOut, Award, Star, AlertTriangle, Bell, Megaphone, Sparkles, Trophy, CheckCircle2, ArrowRight, Clock, Timer, Flame } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { toast } from "sonner";
@@ -37,6 +37,9 @@ import {
   isClassPast,
   format12h,
   getTimetableLectures,
+  getStudentStudyStat,
+  getStudentHighestSession,
+  StudentStudyStats,
   TimetableLecture,
   ClassNotification,
   AttendanceRecord,
@@ -49,6 +52,7 @@ import {
   StudentRemark,
   Notice
 } from "@/lib/localStorage";
+import { formatStudyDuration } from "@/lib/pomodoroUtils";
 import { registerForPushNotifications } from "@/lib/messaging";
 import { sendPromptToGemini } from "@/lib/gemini";
 
@@ -64,7 +68,6 @@ const tabOptions: { id: "home" | "timetable" | "attendance" | "notes" | "remarks
   { id: "home", label: "Home", icon: Home },
   { id: "timetable", label: "Timetable", icon: Clock },
   { id: "pomodoro", label: "Pomodoro", icon: Timer },
-  { id: "attendance", label: "Attendance", icon: Calendar },
   { id: "notes", label: "Notes", icon: BookOpen },
   { id: "remarks", label: "Remarks", icon: MessageSquare },
   { id: "ai", label: "AI", icon: Bot },
@@ -87,6 +90,8 @@ const StudentDashboard = () => {
   const [currentStudent, setCurrentStudent] = useState<Student | null>(null);
   const [myClasses, setMyClasses] = useState<Class[]>([]);
   const [classLookup, setClassLookup] = useState<Record<string, Class>>({});
+  const [studyStat, setStudyStat] = useState<StudentStudyStats | null>(null);
+  const [highestSession, setHighestSession] = useState<{ durationSeconds: number; durationMinutes: number; completedAt?: string; subject?: string } | null>(null);
   
   // New States
   const [tests, setTests] = useState<Test[]>([]);
@@ -109,10 +114,11 @@ const StudentDashboard = () => {
     const map: Record<string, { total: number; present: number; absent: number }> = {};
     
     attendance.forEach(record => {
-      const classItem = classLookup[record.classId];
-      // Skip orphaned records whose class no longer exists
-      if (!classItem) return;
-      const subject = classItem.subject || "General";
+      let subject = "Daily Attendance";
+      if (record.classId && record.classId !== "daily") {
+        const classItem = classLookup[record.classId];
+        subject = classItem?.subject || "Class Lecture";
+      }
       if (!map[subject]) {
         map[subject] = { total: 0, present: 0, absent: 0 };
       }
@@ -128,10 +134,9 @@ const StudentDashboard = () => {
   }, [attendance, classLookup]);
 
   const renderAttendanceSection = () => {
-    // Only count attendance for classes that still exist
-    const validAttendance = attendance.filter(r => classLookup[r.classId]);
-    const totalClassesCount = validAttendance.length;
-    const presentClassesCount = validAttendance.filter(r => normalizeStatus(r.status) === 'present').length;
+    // Count all marked attendance records for this student
+    const totalClassesCount = attendance.length;
+    const presentClassesCount = attendance.filter(r => normalizeStatus(r.status) === 'present').length;
     const absentClassesCount = totalClassesCount - presentClassesCount;
 
     return (
@@ -202,6 +207,60 @@ const StudentDashboard = () => {
             )}
           </div>
         </div>
+
+        {/* Attendance Records Log */}
+        {attendance.length > 0 && (
+          <div className="pt-4 border-t">
+            <h4 className="text-sm font-black uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-primary" /> Recent Attendance History
+            </h4>
+            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+              {[...attendance]
+                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                .map((rec, idx) => {
+                  const isPresent = normalizeStatus(rec.status) === "present";
+                  let subjectTitle = "Daily Attendance";
+                  if (rec.classId && rec.classId !== "daily") {
+                    subjectTitle = classLookup[rec.classId]?.subject || "Class Lecture";
+                  }
+                  return (
+                    <div
+                      key={rec.id || idx}
+                      className="p-3 rounded-xl border bg-card flex items-center justify-between text-xs"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className={`w-2.5 h-2.5 rounded-full ${
+                            isPresent ? "bg-emerald-500 ring-2 ring-emerald-500/20" : "bg-destructive ring-2 ring-destructive/20"
+                          }`}
+                        />
+                        <div>
+                          <p className="font-bold text-foreground text-sm">{subjectTitle}</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {new Date(rec.date).toLocaleDateString("en-US", {
+                              weekday: "short",
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                      <span
+                        className={`px-2.5 py-1 rounded-full text-xs font-black uppercase tracking-wider ${
+                          isPresent
+                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                            : "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
+                        }`}
+                      >
+                        {isPresent ? "Present" : "Absent"}
+                      </span>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        )}
       </Card>
     );
   };
@@ -252,6 +311,8 @@ const StudentDashboard = () => {
     setTestResults([]);
     setBatches([]);
     setTimetableLectures([]);
+    setStudyStat(null);
+    setHighestSession(null);
   };
 
   const loadData = () => {
@@ -289,6 +350,12 @@ const StudentDashboard = () => {
       return;
     }
 
+    // Study Stats & Highest Self-Study Session
+    const stat = getStudentStudyStat(student.id);
+    setStudyStat(stat || null);
+    const highest = getStudentHighestSession(student.id);
+    setHighestSession(highest || null);
+
     // Classes
     const allClasses = getClasses();
     const lookup = allClasses.reduce<Record<string, Class>>((acc, cls) => {
@@ -319,8 +386,7 @@ const StudentDashboard = () => {
       studentAttendance = getAttendance();
     }
     setAttendance(studentAttendance);
-    const validAttendance = studentAttendance.filter(r => lookup[r.classId]);
-    setAttendancePercentage(calculateAttendancePercentage(validAttendance.length > 0 ? validAttendance : studentAttendance));
+    setAttendancePercentage(calculateAttendancePercentage(studentAttendance));
 
     // Tests
     let batchTests = student.batchId ? getTestsByBatch(student.batchId) : [];
@@ -636,7 +702,89 @@ const StudentDashboard = () => {
             <div>
               <h2 className="text-2xl font-bold">{currentStudent?.name}</h2>
               <p className="text-sm text-muted-foreground">{currentStudent?.email}</p>
-              <p className="text-sm font-medium mt-1">Batch: {batchDisplayName}</p>
+              <div className="flex flex-wrap items-center gap-2 mt-1">
+                <span className="text-sm font-medium">Batch: {batchDisplayName}</span>
+                {currentStudent?.rollNo && (
+                  <span className="text-xs bg-muted px-2 py-0.5 rounded-full font-bold text-muted-foreground">
+                    Roll: {currentStudent.rollNo}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        {/* Highest Self-Study Session & Pomodoro Stats Card */}
+        <Card className="p-6 space-y-4 border shadow-xs bg-gradient-to-br from-card via-card to-emerald-500/[0.03]">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-4">
+            <div>
+              <h3 className="text-xl font-black text-foreground flex items-center gap-2">
+                <Flame className="h-5 w-5 text-emerald-500 fill-emerald-500/20" /> Self-Study & Pomodoro Record
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Track your personal highest self-study session and total focus hours
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setActiveTab("pomodoro")}
+              className="text-xs font-bold rounded-xl self-start sm:self-auto"
+            >
+              <Timer className="w-3.5 h-3.5 mr-1 text-primary" />
+              Open Pomodoro
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Highest Session Hero Card */}
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-transparent border-2 border-emerald-500/25 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                    Highest Self-Study Session
+                  </span>
+                  <Trophy className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <p className="text-2xl sm:text-3xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
+                  {highestSession?.durationSeconds && highestSession.durationSeconds > 0
+                    ? formatStudyDuration(highestSession.durationSeconds)
+                    : "0 mins"}
+                </p>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-2 font-medium">
+                {highestSession?.completedAt
+                  ? `Achieved on ${new Date(highestSession.completedAt).toLocaleDateString()}`
+                  : "Start a focus timer to set your record"}
+              </p>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-card border flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
+                  Total Focus Time
+                </span>
+                <p className="text-2xl sm:text-3xl font-black text-primary mt-1">
+                  {(studyStat?.totalHours || 0).toFixed(1)} hrs
+                </p>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-2 font-medium">
+                {formatStudyDuration(studyStat?.totalSeconds || 0)} total study
+              </p>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-card border flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
+                  Completed Sessions
+                </span>
+                <p className="text-2xl sm:text-3xl font-black text-foreground mt-1">
+                  {studyStat?.sessionsCompleted || 0}
+                </p>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-2 font-medium">
+                Focus sessions logged
+              </p>
             </div>
           </div>
         </Card>
@@ -652,6 +800,7 @@ const StudentDashboard = () => {
           <ThemeToggle variant="card" />
         </Card>
 
+        {/* Class-wise Attendance Section */}
         {renderAttendanceSection()}
       </div>
     );
@@ -786,7 +935,7 @@ const StudentDashboard = () => {
     switch(activeTab) {
       case "home": return renderClassesCard();
       case "timetable": return renderTimetableCard();
-      case "attendance": return renderAttendanceSection();
+      case "attendance": return renderProfile();
       case "notes": return renderNotesCard();
       case "remarks": return renderRemarksCard();
       case "ai": return (

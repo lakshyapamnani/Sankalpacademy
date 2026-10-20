@@ -31,9 +31,13 @@ dist-electron/
 *.exe
 *.apk
 *.aab
-build-outputs/
+build-outputs/*
+!build-outputs/*-release.aab
+!build-outputs/*-release.apk
 !public/*.apk
 !public/**/*.apk
+!public/*.aab
+!public/**/*.aab
 !staff/*.apk
 !student/*.apk
 scratch/

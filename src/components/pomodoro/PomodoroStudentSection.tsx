@@ -28,7 +28,8 @@ import {
   Medal,
   Crown,
   Search,
-  Users
+  Users,
+  Square
 } from "lucide-react";
 import { toast } from "sonner";
 import { soundManager } from "@/lib/soundUtils";
@@ -41,6 +42,7 @@ import {
   logStudySession, 
   getStudySessionsByStudent,
   getStudentStudyStat,
+  getStudentHighestSession,
   StudySession
 } from "@/lib/localStorage";
 import { computeLeaderboard, formatStudyDuration, isToday, isThisWeek } from "@/lib/pomodoroUtils";
@@ -93,6 +95,7 @@ export const PomodoroStudentSection: React.FC<PomodoroStudentSectionProps> = ({ 
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [todaySeconds, setTodaySeconds] = useState<number>(0);
   const [totalHours, setTotalHours] = useState<number>(0);
+  const [highestSessionSeconds, setHighestSessionSeconds] = useState<number>(0);
 
   // References for anti-cheat interval & visibility
   const isRunningRef = useRef<boolean>(isRunning);
@@ -127,6 +130,10 @@ export const PomodoroStudentSection: React.FC<PomodoroStudentSectionProps> = ({ 
       .filter(s => s.type === "focus" && isToday(s.completedAt || s.date))
       .reduce((acc, curr) => acc + (curr.durationSeconds || 0), 0);
     setTodaySeconds(todaySum);
+
+    const highest = getStudentHighestSession(currentStudent.id);
+    const maxSec = Math.max(highest?.durationSeconds || 0, stat?.highestSessionSeconds || 0);
+    setHighestSessionSeconds(maxSec);
   }, [currentStudent]);
 
   // Periodic quote rotation
@@ -343,6 +350,61 @@ export const PomodoroStudentSection: React.FC<PomodoroStudentSectionProps> = ({ 
     setIsInterrupted(false);
     setTimeLeft(mode === "focus" ? FOCUS_TIME_SECONDS : BREAK_TIME_SECONDS);
     secondsSpentInCurrentSessionRef.current = 0;
+  };
+
+  const handleStop = async () => {
+    // Determine elapsed seconds in current session
+    const elapsedSeconds = secondsSpentInCurrentSessionRef.current > 0
+      ? secondsSpentInCurrentSessionRef.current
+      : (mode === "focus" ? Math.max(0, FOCUS_TIME_SECONDS - timeLeft) : 0);
+
+    if (elapsedSeconds <= 0 && !isRunning) {
+      toast.info("No active study session to stop.");
+      return;
+    }
+
+    setIsRunning(false);
+
+    if (elapsedSeconds >= 5 && currentStudent) {
+      soundManager.playBreakComplete();
+      const studentBatch = batches.find(b => b.id === currentStudent.batchId);
+      const effectiveSubject = customSubject.trim() || selectedSubject;
+
+      const newSession: StudySession = {
+        id: Date.now().toString(),
+        studentId: currentStudent.id,
+        studentName: currentStudent.name,
+        batchId: currentStudent.batchId,
+        batchName: studentBatch?.name || "Unassigned",
+        durationMinutes: Math.max(1, Math.round(elapsedSeconds / 60)),
+        durationSeconds: elapsedSeconds,
+        type: "focus",
+        subject: effectiveSubject,
+        completedAt: new Date().toISOString(),
+        date: new Date().toISOString().split("T")[0],
+        interruptions: interruptionCount,
+      };
+
+      try {
+        await logStudySession(newSession);
+        loadStudentStats();
+        toast.success("Study Session Stopped & Saved!", {
+          description: `Logged ${formatStudyDuration(elapsedSeconds)} with timestamp to leaderboard.`,
+        });
+      } catch (e) {
+        console.error("Failed to log study session", e);
+      }
+    } else if (elapsedSeconds < 5 && elapsedSeconds > 0) {
+      toast.info("Session too short", {
+        description: "Study sessions under 5 seconds are not logged to the leaderboard.",
+      });
+    }
+
+    // Reset back to initial state so clicking start again restarts fresh
+    setTimeLeft(mode === "focus" ? FOCUS_TIME_SECONDS : BREAK_TIME_SECONDS);
+    secondsSpentInCurrentSessionRef.current = 0;
+    setIsInterrupted(false);
+    setInterruptionCount(0);
   };
 
   const handleSwitchMode = (targetMode: "focus" | "break") => {
@@ -595,27 +657,40 @@ export const PomodoroStudentSection: React.FC<PomodoroStudentSectionProps> = ({ 
                 </div>
 
                 {/* Primary Timer Action Controls */}
-                <div className="flex items-center gap-3 mt-8">
+                <div className="flex flex-wrap items-center justify-center gap-3 mt-8">
                   {!isRunning ? (
                     <Button
                       onClick={handleStart}
                       size="lg"
-                      className="rounded-2xl px-8 py-6 text-base font-black shadow-lg shadow-primary/25 hover:shadow-xl transition-all"
+                      className="rounded-2xl px-7 py-6 text-base font-black shadow-lg shadow-primary/25 hover:shadow-xl transition-all"
                     >
                       <Play className="w-5 h-5 mr-2 fill-current" />
-                      Start Focus
+                      {secondsSpentInCurrentSessionRef.current > 0 || timeLeft < totalTimeForCurrentMode ? "Resume Focus" : "Start Focus"}
                     </Button>
                   ) : (
                     <Button
                       onClick={handlePause}
                       variant="secondary"
                       size="lg"
-                      className="rounded-2xl px-8 py-6 text-base font-black border hover:bg-muted"
+                      className="rounded-2xl px-7 py-6 text-base font-black border hover:bg-muted"
                     >
                       <Pause className="w-5 h-5 mr-2" />
                       Pause
                     </Button>
                   )}
+
+                  {/* Stop Button: Saves elapsed time to leaderboard & resets session */}
+                  <Button
+                    onClick={handleStop}
+                    variant="destructive"
+                    size="lg"
+                    disabled={!isRunning && (secondsSpentInCurrentSessionRef.current === 0 && timeLeft === totalTimeForCurrentMode)}
+                    className="rounded-2xl px-6 py-6 text-base font-black shadow-md hover:shadow-lg transition-all"
+                    title="Stop Session & Save to Leaderboard"
+                  >
+                    <Square className="w-4 h-4 mr-2 fill-current" />
+                    Stop
+                  </Button>
 
                   <Button
                     onClick={handleReset}
@@ -714,6 +789,18 @@ export const PomodoroStudentSection: React.FC<PomodoroStudentSectionProps> = ({ 
                   <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">All Time</span>
                   <span className="text-lg font-black text-amber-600 dark:text-amber-400">
                     {totalHours.toFixed(1)} hrs
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20 col-span-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Flame className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <div>
+                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Highest Self-Study</span>
+                      <span className="text-[11px] text-muted-foreground">Personal Best Session</span>
+                    </div>
+                  </div>
+                  <span className="text-sm font-black text-emerald-600 dark:text-emerald-400">
+                    {highestSessionSeconds > 0 ? formatStudyDuration(highestSessionSeconds) : "0 mins"}
                   </span>
                 </div>
               </div>

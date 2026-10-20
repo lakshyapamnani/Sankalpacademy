@@ -293,6 +293,8 @@ export interface StudentStudyStats {
   totalMinutes: number;
   totalHours: number;
   sessionsCompleted: number; // completed focus sessions
+  highestSessionSeconds?: number; // duration in seconds of highest session
+  highestSessionDate?: string; // timestamp of highest session
   lastActive: string; // ISO string
 }
 
@@ -2269,6 +2271,10 @@ export const logStudySession = async (session: StudySession): Promise<StudentStu
     const newMinutes = Math.round(newSeconds / 60);
     const newHours = Number((newSeconds / 3600).toFixed(2));
     const newSessions = (existing.sessionsCompleted || 0) + (session.type === 'focus' ? 1 : 0);
+    const prevHighest = existing.highestSessionSeconds || 0;
+    const isNewHighest = session.durationSeconds >= prevHighest;
+    const newHighest = Math.max(prevHighest, session.durationSeconds);
+    const highestDate = isNewHighest ? (session.completedAt || now) : (existing.highestSessionDate || now);
 
     updatedStat = {
       ...existing,
@@ -2279,6 +2285,8 @@ export const logStudySession = async (session: StudySession): Promise<StudentStu
       totalMinutes: newMinutes,
       totalHours: newHours,
       sessionsCompleted: newSessions,
+      highestSessionSeconds: newHighest,
+      highestSessionDate: highestDate,
       lastActive: now,
     };
     allStats[existingIdx] = updatedStat;
@@ -2295,6 +2303,8 @@ export const logStudySession = async (session: StudySession): Promise<StudentStu
       totalMinutes: newMinutes,
       totalHours: newHours,
       sessionsCompleted: session.type === 'focus' ? 1 : 0,
+      highestSessionSeconds: session.durationSeconds,
+      highestSessionDate: session.completedAt || now,
       lastActive: now,
     };
     allStats.push(updatedStat);
@@ -2304,6 +2314,29 @@ export const logStudySession = async (session: StudySession): Promise<StudentStu
   void writeItemToRealtime(DB_PATHS.STUDY_STATS, session.studentId, updatedStat);
 
   return updatedStat;
+};
+
+export const getStudentHighestSession = (studentId: string): { durationSeconds: number; durationMinutes: number; completedAt?: string; subject?: string } | null => {
+  const sessions = getStudySessionsByStudent(studentId).filter(s => s.type === 'focus');
+  if (sessions.length > 0) {
+    const best = sessions.reduce((prev, curr) => ((curr.durationSeconds || 0) > (prev.durationSeconds || 0) ? curr : prev), sessions[0]);
+    return {
+      durationSeconds: best.durationSeconds || 0,
+      durationMinutes: best.durationMinutes || Math.round((best.durationSeconds || 0) / 60),
+      completedAt: best.completedAt,
+      subject: best.subject,
+    };
+  }
+  const stat = getStudentStudyStat(studentId);
+  if (stat?.highestSessionSeconds) {
+    return {
+      durationSeconds: stat.highestSessionSeconds,
+      durationMinutes: Math.round(stat.highestSessionSeconds / 60),
+      completedAt: stat.highestSessionDate,
+      subject: 'Self Study',
+    };
+  }
+  return null;
 };
 
 export const resetStudentStudyStats = async (studentId: string): Promise<boolean> => {
