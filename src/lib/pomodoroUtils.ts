@@ -19,6 +19,7 @@ export interface RankedStudent {
   totalMinutes: number;
   totalHours: number;
   sessionsCompleted: number;
+  highestSessionSeconds: number;
   lastActive?: string;
 }
 
@@ -48,17 +49,21 @@ export const isThisWeek = (dateStr: string): boolean => {
 };
 
 /**
- * Formats seconds into human-readable "X hrs Y mins" or "Y mins Zs"
+ * Formats seconds into human-readable "X hrs Y mins", "Y mins Zs", or "Zs"
  */
 export const formatStudyDuration = (totalSeconds: number): string => {
   if (!totalSeconds || totalSeconds <= 0) return "0 mins";
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = Math.floor(totalSeconds % 60);
 
   if (hours > 0) {
     return minutes > 0 ? `${hours}h ${minutes}m` : `${hours} hrs`;
   }
-  return `${minutes} mins`;
+  if (minutes > 0) {
+    return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes} mins`;
+  }
+  return `${seconds}s`;
 };
 
 /**
@@ -147,6 +152,11 @@ export const computeLeaderboard = (
     const totalHours = Number((totalSeconds / 3600).toFixed(2));
     const sessionsCompleted = data?.sessions || 0;
 
+    const studentSessions = allSessions.filter(s => s.studentId === student.id);
+    const maxFromSessions = studentSessions.reduce((max, s) => Math.max(max, s.durationSeconds || 0), 0);
+    const statItem = allStats.find(s => s.studentId === student.id);
+    const highestSessionSeconds = Math.max(statItem?.highestSessionSeconds || 0, maxFromSessions);
+
     const batchName = student.batchId ? batchLookup.get(student.batchId) || 'Unassigned' : 'Unassigned';
 
     rankedList.push({
@@ -160,6 +170,7 @@ export const computeLeaderboard = (
       totalMinutes,
       totalHours,
       sessionsCompleted,
+      highestSessionSeconds,
       lastActive: data?.lastActive,
     });
   });

@@ -23,7 +23,8 @@ import {
   Download,
   Trash2,
   Eye,
-  Timer
+  Timer,
+  ExternalLink
 } from "lucide-react";
 import { toast } from "sonner";
 import { 
@@ -87,6 +88,7 @@ export const PomodoroAdminSection: React.FC = () => {
   const handleOpenStudentLogs = (student: RankedStudent) => {
     setSelectedStudentForLogs(student);
     const logs = getStudySessionsByStudent(student.studentId);
+    logs.sort((a, b) => new Date(b.completedAt || b.date).getTime() - new Date(a.completedAt || a.date).getTime());
     setStudentSessions(logs);
   };
 
@@ -254,11 +256,15 @@ export const PomodoroAdminSection: React.FC = () => {
       {rankedStudents.length >= 3 && !searchQuery && rankedStudents[0].totalSeconds > 0 && (
         <div className="grid grid-cols-3 gap-3 sm:gap-4 pt-4 pb-2 items-end max-w-2xl mx-auto">
           {/* 2nd Place */}
-          <Card className="p-3 sm:p-4 text-center rounded-2xl border-2 border-slate-300 dark:border-slate-700 bg-slate-500/5 order-1">
+          <Card 
+            onClick={() => handleOpenStudentLogs(rankedStudents[1])}
+            className="p-3 sm:p-4 text-center rounded-2xl border-2 border-slate-300 dark:border-slate-700 bg-slate-500/5 order-1 cursor-pointer hover:border-slate-400 hover:shadow-md transition-all group"
+            title="Click to view all study sessions"
+          >
             <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-100 flex items-center justify-center font-black mx-auto mb-2 text-sm sm:text-base shadow-xs">
               🥈 2
             </div>
-            <p className="font-black text-xs sm:text-sm truncate">{rankedStudents[1].name}</p>
+            <p className="font-black text-xs sm:text-sm truncate group-hover:text-primary group-hover:underline">{rankedStudents[1].name}</p>
             <p className="text-[10px] text-muted-foreground truncate">{rankedStudents[1].batchName}</p>
             <Badge variant="secondary" className="mt-2 text-[10px] font-bold">
               {rankedStudents[1].totalHours.toFixed(1)} hrs
@@ -266,11 +272,15 @@ export const PomodoroAdminSection: React.FC = () => {
           </Card>
 
           {/* 1st Place (Gold) */}
-          <Card className="p-4 sm:p-6 text-center rounded-3xl border-2 border-amber-400 bg-gradient-to-b from-amber-500/15 via-amber-500/5 to-transparent order-2 -translate-y-2 shadow-lg shadow-amber-500/10">
+          <Card 
+            onClick={() => handleOpenStudentLogs(rankedStudents[0])}
+            className="p-4 sm:p-6 text-center rounded-3xl border-2 border-amber-400 bg-gradient-to-b from-amber-500/15 via-amber-500/5 to-transparent order-2 -translate-y-2 shadow-lg shadow-amber-500/10 cursor-pointer hover:border-amber-500 transition-all group"
+            title="Click to view all study sessions"
+          >
             <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-amber-400 text-amber-950 flex items-center justify-center font-black mx-auto mb-2 text-base sm:text-xl shadow-md ring-4 ring-amber-300/50">
               👑 1
             </div>
-            <p className="font-black text-sm sm:text-base text-amber-950 dark:text-amber-200 truncate">
+            <p className="font-black text-sm sm:text-base text-amber-950 dark:text-amber-200 truncate group-hover:underline">
               {rankedStudents[0].name}
             </p>
             <p className="text-[11px] text-muted-foreground truncate">{rankedStudents[0].batchName}</p>
@@ -280,11 +290,15 @@ export const PomodoroAdminSection: React.FC = () => {
           </Card>
 
           {/* 3rd Place */}
-          <Card className="p-3 sm:p-4 text-center rounded-2xl border-2 border-amber-700/40 bg-amber-700/5 order-3">
+          <Card 
+            onClick={() => handleOpenStudentLogs(rankedStudents[2])}
+            className="p-3 sm:p-4 text-center rounded-2xl border-2 border-amber-700/40 bg-amber-700/5 order-3 cursor-pointer hover:border-amber-700/60 hover:shadow-md transition-all group"
+            title="Click to view all study sessions"
+          >
             <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-amber-700/20 text-amber-800 dark:text-amber-200 flex items-center justify-center font-black mx-auto mb-2 text-sm sm:text-base shadow-xs">
               🥉 3
             </div>
-            <p className="font-black text-xs sm:text-sm truncate">{rankedStudents[2].name}</p>
+            <p className="font-black text-xs sm:text-sm truncate group-hover:text-primary group-hover:underline">{rankedStudents[2].name}</p>
             <p className="text-[10px] text-muted-foreground truncate">{rankedStudents[2].batchName}</p>
             <Badge variant="secondary" className="mt-2 text-[10px] font-bold">
               {rankedStudents[2].totalHours.toFixed(1)} hrs
@@ -302,7 +316,7 @@ export const PomodoroAdminSection: React.FC = () => {
               Full Student Study Leaderboard
             </h4>
             <p className="text-xs text-muted-foreground">
-              Ranked strictly by verified study hours ({timeframe === "all-time" ? "All Time" : timeframe === "week" ? "This Week" : "Today"})
+              Ranked strictly by verified study hours ({timeframe === "all-time" ? "All Time" : timeframe === "week" ? "This Week" : "Today"}). Click student name to view all sessions.
             </p>
           </div>
           <Badge variant="outline" className="text-xs">
@@ -342,7 +356,15 @@ export const PomodoroAdminSection: React.FC = () => {
                   </td>
                   <td className="py-3.5 px-4 font-bold text-foreground">
                     <div>
-                      <p className="text-sm font-bold">{student.name}</p>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenStudentLogs(student)}
+                        className="text-left font-bold text-sm text-foreground hover:text-primary hover:underline flex items-center gap-1.5 transition-colors cursor-pointer group"
+                        title={`Click to view all study sessions for ${student.name}`}
+                      >
+                        <span className="group-hover:text-primary">{student.name}</span>
+                        <ExternalLink className="w-3 h-3 opacity-60 group-hover:opacity-100 text-primary shrink-0 transition-opacity" />
+                      </button>
                       {student.rollNo && (
                         <p className="text-[10px] text-muted-foreground">Roll No: {student.rollNo}</p>
                       )}
@@ -372,7 +394,7 @@ export const PomodoroAdminSection: React.FC = () => {
                         title="View Detailed Study Logs"
                       >
                         <Eye className="w-3.5 h-3.5 mr-1" />
-                        Logs
+                        Sessions
                       </Button>
                       <Button
                         size="sm"
@@ -404,10 +426,13 @@ export const PomodoroAdminSection: React.FC = () => {
       {/* Student Study Logs Modal */}
       {selectedStudentForLogs && (
         <Dialog open={!!selectedStudentForLogs} onOpenChange={() => setSelectedStudentForLogs(null)}>
-          <DialogContent className="max-w-lg rounded-3xl p-6">
+          <DialogContent className="max-w-xl rounded-3xl p-6">
             <DialogHeader>
               <DialogTitle className="text-lg font-black flex items-center justify-between">
-                <span>{selectedStudentForLogs.name} • Study History</span>
+                <span className="flex items-center gap-2">
+                  <Flame className="w-5 h-5 text-primary" />
+                  {selectedStudentForLogs.name} • Study Sessions
+                </span>
                 <Badge className="bg-primary/10 text-primary border-primary/20">
                   {selectedStudentForLogs.totalHours.toFixed(1)} hrs Total
                 </Badge>
@@ -415,38 +440,70 @@ export const PomodoroAdminSection: React.FC = () => {
             </DialogHeader>
 
             <div className="space-y-4 my-2">
-              <div className="flex items-center justify-between text-xs text-muted-foreground border-b pb-2">
-                <span>Batch: <strong className="text-foreground">{selectedStudentForLogs.batchName}</strong></span>
-                <span>Sessions: <strong className="text-foreground">{studentSessions.length}</strong></span>
+              <div className="grid grid-cols-3 gap-2.5 p-3 rounded-2xl bg-muted/40 border text-center">
+                <div>
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Batch</span>
+                  <span className="text-xs font-bold text-foreground truncate block">{selectedStudentForLogs.batchName}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Sessions</span>
+                  <span className="text-xs font-bold text-foreground block">{studentSessions.length} recorded</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Highest Session</span>
+                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 block">
+                    {formatStudyDuration(
+                      selectedStudentForLogs.highestSessionSeconds || 
+                      (studentSessions.length > 0 ? Math.max(...studentSessions.map(s => s.durationSeconds || 0)) : 0)
+                    )}
+                  </span>
+                </div>
               </div>
 
-              <div className="space-y-2 max-h-72 overflow-y-auto pr-1 divide-y">
+              <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
                 {studentSessions.map((session, i) => (
-                  <div key={session.id || i} className="pt-2 pb-2 flex items-center justify-between text-xs">
+                  <div key={session.id || i} className="p-3 rounded-2xl border bg-card/60 flex items-center justify-between text-xs hover:border-primary/30 transition-colors">
                     <div>
-                      <p className="font-bold text-foreground">
-                        {session.subject || "Self Study"}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">
-                        {new Date(session.completedAt || session.date).toLocaleString()}
+                      <div className="flex items-center gap-2">
+                        <p className="font-bold text-foreground text-sm">
+                          {session.subject || "Self Study"}
+                        </p>
+                        <Badge variant="outline" className="text-[10px] py-0 px-1.5 font-bold uppercase tracking-wider text-primary border-primary/20">
+                          {session.type || "focus"}
+                        </Badge>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        {new Date(session.completedAt || session.date).toLocaleString('en-US', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
                         {session.interruptions ? ` • ${session.interruptions} interruptions` : ""}
                       </p>
                     </div>
-                    <Badge variant="outline" className="font-mono text-xs">
-                      {session.durationMinutes} mins
-                    </Badge>
+                    <div className="text-right">
+                      <span className="font-mono text-sm font-extrabold text-primary block">
+                        {formatStudyDuration(session.durationSeconds || session.durationMinutes * 60)}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {session.durationMinutes} mins
+                      </span>
+                    </div>
                   </div>
                 ))}
 
                 {studentSessions.length === 0 && (
-                  <div className="py-8 text-center text-muted-foreground text-xs">
-                    No individual session logs recorded for this student yet.
+                  <div className="py-10 text-center text-muted-foreground text-xs space-y-2">
+                    <Timer className="w-8 h-8 mx-auto text-muted-foreground/30" />
+                    <p className="font-medium">No individual study session logs recorded for this student yet.</p>
                   </div>
                 )}
               </div>
             </div>
 
-            <DialogFooter className="flex items-center justify-between sm:justify-between">
+            <DialogFooter className="flex items-center justify-between sm:justify-between pt-2 border-t">
               <Button
                 variant="destructive"
                 size="sm"
