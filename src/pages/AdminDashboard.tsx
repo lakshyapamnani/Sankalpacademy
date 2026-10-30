@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit, ArrowLeft, Search, Download, MessageSquare, Eye, TrendingUp, FileText, Trash2, GraduationCap, LogIn, Key, Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Layers, Settings, Image, PenTool, Building, Save, Bell, Megaphone, Award, AlertTriangle, Star, ThumbsUp, ThumbsDown, Send, Filter, Check, Clock, ExternalLink, DoorOpen, RotateCcw, Laptop, Shield, Timer } from "lucide-react";
+import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit, ArrowLeft, Search, Download, MessageSquare, Eye, TrendingUp, FileText, Trash2, GraduationCap, LogIn, Key, Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Layers, Settings, Image, PenTool, Building, Save, Bell, Megaphone, Award, AlertTriangle, Star, ThumbsUp, ThumbsDown, Send, Filter, Check, Clock, ExternalLink, DoorOpen, RotateCcw, Laptop, Shield, Timer, Sparkles } from "lucide-react";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -9110,13 +9110,13 @@ const AdminDashboard = () => {
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {batches.map(batch => {
-                          const timing = settingsBatchTimings[batch.id] || {
+                          const timing = (settingsBatchTimings && settingsBatchTimings[batch.id]) || {
                             batchId: batch.id,
-                            batchName: batch.name,
+                            batchName: batch.name || 'Batch',
                             startTime: '16:00',
                             endTime: '20:00',
                             defaultLecturesPerWeek: 2,
-                            isCombinedBatch: batch.name.toLowerCase().includes('&') || batch.name.toLowerCase().includes('and'),
+                            isCombinedBatch: ((batch.name || '').toLowerCase().includes('&') || (batch.name || '').toLowerCase().includes('and')),
                           };
 
                           return (
@@ -9268,7 +9268,7 @@ const AdminDashboard = () => {
                           <DoorOpen className="h-5 w-5 text-primary" /> Classrooms & Room Numbers
                         </h4>
                         <Badge variant="secondary" className="font-semibold text-xs px-2.5 py-0.5">
-                          {roomsList.length} Active {roomsList.length === 1 ? 'Room' : 'Rooms'}
+                          {Array.isArray(roomsList) ? roomsList.length : 0} Active {(roomsList?.length === 1) ? 'Room' : 'Rooms'}
                         </Badge>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
@@ -9310,7 +9310,7 @@ const AdminDashboard = () => {
                   </form>
 
                   {/* Configured Rooms Grid */}
-                  {roomsList.length > 0 ? (
+                  {Array.isArray(roomsList) && roomsList.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                       {roomsList.map((room) => (
                         <div

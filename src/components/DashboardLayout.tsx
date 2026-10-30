@@ -47,12 +47,20 @@ const DashboardLayout = ({ children, role, title, sidebarItems = [], activeSideb
 
   const handleLogout = () => {
     clearCurrentUser();
-    if (role === "student") {
-      navigate("/student");
-    } else if (role === "teacher" || role === "staff") {
+    try {
+      sessionStorage.removeItem('sankalp_dev_teacher_id');
+    } catch {}
+
+    if (role === "admin") {
+      navigate("/admin");
+    } else if (role === "teacher") {
       navigate("/teacher");
+    } else if (role === "staff") {
+      navigate("/staff");
+    } else if (role === "student") {
+      navigate("/student");
     } else {
-      navigate("/login");
+      navigate("/admin");
     }
   };
 

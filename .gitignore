@@ -38,6 +38,8 @@ build-outputs/*
 !public/**/*.apk
 !public/*.aab
 !public/**/*.aab
+!sankalpaab/
+!sankalpaab/**
 !staff/*.apk
 !student/*.apk
 scratch/

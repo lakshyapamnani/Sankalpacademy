@@ -57,6 +57,8 @@ import {
   updateTimetableLecture,
   deleteTimetableLecture,
   clearAllTimetableLectures,
+  getWeekTimetableLectures,
+  saveWeekTimetableLectures,
   validateTimetableLecture,
   getTeachersForSubject,
   getRooms,
@@ -145,6 +147,20 @@ export const AdminTimetableBuilder = ({
   // Week Selector (defaults to current week)
   const [currentWeekDate, setCurrentWeekDate] = useState<Date>(new Date());
   const weekInfo = useMemo(() => getWeekInfo(currentWeekDate), [currentWeekDate]);
+  const currentRealWeekInfo = useMemo(() => getWeekInfo(new Date()), []);
+  const isCurrentWeek = weekInfo.startDate === currentRealWeekInfo.startDate;
+
+  // Active Week's Timetable Lectures (Managed locally by week)
+  const [localWeekLectures, setLocalWeekLectures] = useState<TimetableLecture[]>(() =>
+    getWeekTimetableLectures(weekInfo.startDate)
+  );
+
+  // Reload active week's lectures when weekInfo changes or timetableLectures change
+  useEffect(() => {
+    setLocalWeekLectures(getWeekTimetableLectures(weekInfo.startDate));
+  }, [weekInfo.startDate, timetableLectures]);
+
+  const effectiveWeekLectures = localWeekLectures;
 
   // Secondary Filters for Single Batch View
   const [filterTeacherId, setFilterTeacherId] = useState<string>('all');
@@ -517,7 +533,7 @@ export const AdminTimetableBuilder = ({
     }
 
     // 3. Validate against database lectures using validateTimetableLecture
-    const currentLectures = [...timetableLectures];
+    const currentLectures = [...effectiveWeekLectures];
     const candidateLecturesToSave: TimetableLecture[] = [];
 
     for (let i = 0; i < formSlots.length; i++) {
@@ -660,6 +676,7 @@ export const AdminTimetableBuilder = ({
     try {
       const ok = await deleteTimetableLecture(timetableId);
       if (ok) {
+        setLocalWeekLectures(prev => prev.filter(l => l.timetableId !== timetableId));
         toast.success(`Lecture "${lectureName}" removed.`);
         onDataChange();
       } else {
@@ -671,16 +688,17 @@ export const AdminTimetableBuilder = ({
     }
   };
 
-  // Handle clear all lectures across entire timetable
+  // Handle clear all lectures for the active week
   const handleClearAllLectures = async () => {
-    if (timetableLectures.length === 0) {
-      toast.info('No lectures to clear.');
+    if (effectiveWeekLectures.length === 0) {
+      toast.info('No lectures to clear for this week.');
       return;
     }
     setIsClearingAllLectures(true);
     try {
-      const count = await clearAllTimetableLectures();
-      toast.success(`Successfully cleared all ${count} scheduled lecture(s).`);
+      await saveWeekTimetableLectures(weekInfo.startDate, []);
+      setLocalWeekLectures([]);
+      toast.success(`Successfully cleared all scheduled lectures for ${weekInfo.label}.`);
       onDataChange();
     } catch (err) {
       console.error('Clear all lectures error:', err);
@@ -690,18 +708,20 @@ export const AdminTimetableBuilder = ({
     }
   };
 
-  // Handle clear all lectures for currently selected batch
+  // Handle clear lectures for currently selected batch in the active week
   const handleClearBatchLectures = async () => {
     if (!selectedBatchId) return;
-    const batchLecturesCount = timetableLectures.filter(l => l.batchId === selectedBatchId).length;
+    const batchLecturesCount = effectiveWeekLectures.filter(l => l.batchId === selectedBatchId).length;
     if (batchLecturesCount === 0) {
-      toast.info('No lectures to clear for this batch.');
+      toast.info('No lectures to clear for this batch in this week.');
       return;
     }
     setIsClearingAllLectures(true);
     try {
-      const count = await clearAllTimetableLectures({ batchId: selectedBatchId });
-      toast.success(`Cleared ${count} lecture(s) for ${selectedBatch?.name || 'batch'}.`);
+      const remaining = effectiveWeekLectures.filter(l => l.batchId !== selectedBatchId);
+      await saveWeekTimetableLectures(weekInfo.startDate, remaining);
+      setLocalWeekLectures(remaining);
+      toast.success(`Cleared ${batchLecturesCount} lecture(s) for ${selectedBatch?.name || 'batch'} in ${weekInfo.label}.`);
       onDataChange();
     } catch (err) {
       console.error('Clear batch lectures error:', err);
@@ -728,9 +748,30 @@ export const AdminTimetableBuilder = ({
     setCurrentWeekDate(new Date());
   };
 
-  // Filter lectures for Single Batch View
+  // Copy current week timetable into this week (for previous or future weeks)
+  const handleCopyFromCurrentWeek = async () => {
+    const currentLectures = getWeekTimetableLectures(currentRealWeekInfo.startDate);
+    if (currentLectures.length === 0) {
+      toast.info('Current week has no scheduled lectures to copy.');
+      return;
+    }
+    const cloned: TimetableLecture[] = currentLectures.map(l => ({
+      ...l,
+      timetableId: `tt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      effectiveFrom: weekInfo.startDate,
+      effectiveTo: weekInfo.endDate,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+    await saveWeekTimetableLectures(weekInfo.startDate, cloned);
+    setLocalWeekLectures(cloned);
+    toast.success(`Copied ${cloned.length} lecture(s) from current week to ${weekInfo.label}!`);
+    onDataChange();
+  };
+
+  // Filter lectures for Single Batch View using active week's local state
   const singleBatchLectures = useMemo(() => {
-    return timetableLectures.filter(l => {
+    return effectiveWeekLectures.filter(l => {
       if (selectedBatchId && l.batchId !== selectedBatchId) return false;
       if (selectedDivision !== 'All' && l.divisionId && l.divisionId !== selectedDivision) return false;
       if (filterTeacherId !== 'all') {
@@ -742,7 +783,7 @@ export const AdminTimetableBuilder = ({
       return true;
     });
   }, [
-    timetableLectures,
+    effectiveWeekLectures,
     selectedBatchId,
     selectedDivision,
     filterTeacherId,
@@ -968,6 +1009,22 @@ export const AdminTimetableBuilder = ({
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
+            {!isCurrentWeek && (
+              <div className="flex flex-wrap items-center justify-between text-xs mt-2 pt-1 border-t border-border/50 gap-2">
+                <span className="text-amber-600 dark:text-amber-400 font-extrabold text-[11px] flex items-center gap-1">
+                  <Clock className="h-3 w-3" /> Previous Week Timetable (Local State: {effectiveWeekLectures.length} lecture{effectiveWeekLectures.length === 1 ? '' : 's'})
+                </span>
+                {effectiveWeekLectures.length === 0 && (
+                  <button
+                    type="button"
+                    onClick={handleCopyFromCurrentWeek}
+                    className="text-[11px] text-primary hover:underline font-bold"
+                  >
+                    + Copy Current Week Schedule
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </Card>
@@ -978,7 +1035,7 @@ export const AdminTimetableBuilder = ({
       {activeView === 'planner' && (
         <TimetablePlannerMatrix
           batches={batches}
-          timetableLectures={timetableLectures}
+          timetableLectures={effectiveWeekLectures}
           effectiveWeek={weekInfo}
           showSunday={showSunday}
           onAddLecture={(batch, day) => handleOpenAddLecture(batch, day)}
@@ -1232,7 +1289,7 @@ export const AdminTimetableBuilder = ({
       {activeView === 'printable' && (
         <TimetablePrintView
           batches={batches}
-          timetableLectures={timetableLectures}
+          timetableLectures={effectiveWeekLectures}
           effectiveWeek={weekInfo}
           academicYear={selectedAcademicYear}
           showSunday={showSunday}

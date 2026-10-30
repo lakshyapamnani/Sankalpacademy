@@ -1946,6 +1946,77 @@ export const getTimetableByTeacher = (teacherId: string): TimetableLecture[] => 
     });
 };
 
+const getMondayDateString = (d: Date = new Date()): string => {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = (day + 6) % 7;
+  date.setDate(date.getDate() - diff);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const dayStr = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${dayStr}`;
+};
+
+export const getWeekTimetableLectures = (weekStartDate: string): TimetableLecture[] => {
+  const localKey = `sankalp_timetable_week_${weekStartDate}`;
+  const localData = typeof localStorage !== 'undefined' ? localStorage.getItem(localKey) : null;
+  if (localData) {
+    try {
+      const parsed = JSON.parse(localData);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // fallback
+    }
+  }
+
+  const all = getTimetableLectures();
+  const weekLectures = all.filter(l => l.effectiveFrom === weekStartDate);
+  if (weekLectures.length > 0) {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(localKey, JSON.stringify(weekLectures));
+    }
+    return weekLectures;
+  }
+
+  // If this weekStartDate matches current week, anchor existing master timetable to this week
+  const currentWeekMonday = getMondayDateString(new Date());
+  if (weekStartDate === currentWeekMonday) {
+    const currentWeekLecs = all.filter(l => !l.effectiveFrom || l.effectiveFrom === weekStartDate);
+    if (currentWeekLecs.length > 0) {
+      const tagged = currentWeekLecs.map(l => ({ ...l, effectiveFrom: weekStartDate }));
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(localKey, JSON.stringify(tagged));
+      }
+      return tagged;
+    }
+  }
+
+  return [];
+};
+
+export const saveWeekTimetableLectures = async (weekStartDate: string, lectures: TimetableLecture[]): Promise<void> => {
+  const localKey = `sankalp_timetable_week_${weekStartDate}`;
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(localKey, JSON.stringify(lectures));
+  }
+
+  // Merge into master timetable storage
+  const all = getTimetableLectures();
+  const weekLectureIds = new Set(lectures.map(l => l.timetableId));
+  const filtered = all.filter(l => l.effectiveFrom !== weekStartDate && !weekLectureIds.has(l.timetableId));
+  const updated = [...filtered, ...lectures];
+  saveToStorage(STORAGE_KEYS.TIMETABLE, updated);
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('sankalp_timetable_changed', { detail: updated }));
+    window.dispatchEvent(new Event('storage'));
+  }
+
+  for (const lec of lectures) {
+    void writeItemToRealtime(DB_PATHS.TIMETABLE, lec.timetableId, lec);
+  }
+};
+
 export const addTimetableLecture = async (lecture: TimetableLecture): Promise<void> => {
   const current = getTimetableLectures();
   const teacherIds = getLectureTeacherIds(lecture);
@@ -1970,6 +2041,17 @@ export const addTimetableLecture = async (lecture: TimetableLecture): Promise<vo
   );
   const updated = [...deduplicated, normalizedLecture];
   saveToStorage(STORAGE_KEYS.TIMETABLE, updated);
+
+  if (normalizedLecture.effectiveFrom && typeof localStorage !== 'undefined') {
+    const weekKey = `sankalp_timetable_week_${normalizedLecture.effectiveFrom}`;
+    try {
+      const raw = localStorage.getItem(weekKey);
+      const existing: TimetableLecture[] = raw ? JSON.parse(raw) : [];
+      const filteredWeek = existing.filter(l => l.timetableId !== normalizedLecture.timetableId);
+      localStorage.setItem(weekKey, JSON.stringify([...filteredWeek, normalizedLecture]));
+    } catch {}
+  }
+
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('sankalp_timetable_changed', { detail: updated }));
   }
@@ -1996,6 +2078,28 @@ export const addTimetableLecturesBulk = async (lectures: TimetableLecture[]): Pr
   const deduplicated = current.filter(l => !idsToReplace.has(l.timetableId));
   const updated = [...deduplicated, ...normalizedLectures];
   saveToStorage(STORAGE_KEYS.TIMETABLE, updated);
+
+  if (typeof localStorage !== 'undefined') {
+    const byWeek = new Map<string, TimetableLecture[]>();
+    normalizedLectures.forEach(l => {
+      if (l.effectiveFrom) {
+        const list = byWeek.get(l.effectiveFrom) || [];
+        list.push(l);
+        byWeek.set(l.effectiveFrom, list);
+      }
+    });
+    byWeek.forEach((lecs, weekStart) => {
+      const weekKey = `sankalp_timetable_week_${weekStart}`;
+      try {
+        const raw = localStorage.getItem(weekKey);
+        const existing: TimetableLecture[] = raw ? JSON.parse(raw) : [];
+        const newIds = new Set(lecs.map(l => l.timetableId));
+        const filteredWeek = existing.filter(l => !newIds.has(l.timetableId));
+        localStorage.setItem(weekKey, JSON.stringify([...filteredWeek, ...lecs]));
+      } catch {}
+    });
+  }
+
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('sankalp_timetable_changed', { detail: updated }));
   }
@@ -2030,6 +2134,22 @@ export const updateTimetableLecture = async (
     };
     current[index] = updatedLecture;
     saveToStorage(STORAGE_KEYS.TIMETABLE, current);
+
+    if (typeof localStorage !== 'undefined' && updatedLecture.effectiveFrom) {
+      const weekKey = `sankalp_timetable_week_${updatedLecture.effectiveFrom}`;
+      try {
+        const raw = localStorage.getItem(weekKey);
+        if (raw) {
+          const list: TimetableLecture[] = JSON.parse(raw);
+          const idx = list.findIndex(l => l.timetableId === timetableId);
+          if (idx !== -1) {
+            list[idx] = updatedLecture;
+            localStorage.setItem(weekKey, JSON.stringify(list));
+          }
+        }
+      } catch {}
+    }
+
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('sankalp_timetable_changed', { detail: current }));
     }
@@ -2089,6 +2209,26 @@ export const deleteTimetableLecture = async (timetableId: string): Promise<boole
     }
 
     saveToStorage(STORAGE_KEYS.TIMETABLE, updated);
+
+    if (typeof localStorage !== 'undefined') {
+      const deletedIds = new Set(idsToDelete);
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('sankalp_timetable_week_')) {
+          try {
+            const raw = localStorage.getItem(k);
+            if (raw) {
+              const list: TimetableLecture[] = JSON.parse(raw);
+              const filtered = list.filter(l => !deletedIds.has(l.timetableId));
+              if (filtered.length !== list.length) {
+                localStorage.setItem(k, JSON.stringify(filtered));
+              }
+            }
+          } catch {}
+        }
+      }
+    }
+
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('sankalp_timetable_changed', { detail: updated }));
     }
