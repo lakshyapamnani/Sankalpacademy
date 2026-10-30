@@ -647,7 +647,17 @@ export const TimetablePrintView = ({
                                     rowSpan={dayLectures.length}
                                     className="py-2 px-3 font-black text-slate-900 align-top border-r border-slate-200 bg-slate-50/50"
                                   >
-                                    {day}
+                                    <div className="font-black text-slate-900 leading-tight">{day}</div>
+                                    {(() => {
+                                      const dayObj = effectiveWeek?.days?.find(
+                                        d => d.dayName.toLowerCase() === day.toLowerCase()
+                                      );
+                                      return dayObj?.displayDate ? (
+                                        <div className="text-[10px] font-semibold text-slate-500 leading-tight mt-0.5">
+                                          {dayObj.displayDate}
+                                        </div>
+                                      ) : null;
+                                    })()}
                                   </td>
                                 ) : null}
                                 <td className="py-2 px-3 font-bold text-slate-800 whitespace-nowrap">
