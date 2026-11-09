@@ -1,7 +1,7 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "com.sankalpacademy.student"
+    namespace = "com.sankalpacademy.studentapp"
     compileSdk = rootProject.ext.compileSdkVersion
 
     signingConfigs {
@@ -14,7 +14,7 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.sankalpacademy.student"
+        applicationId "com.sankalpacademy.studentapp"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
