@@ -70,13 +70,22 @@ export const TeacherTimetableSection = ({
   const weekInfo = useMemo(() => getWeekInfo(new Date()), []);
 
   // Filter lectures assigned to this teacher (or all for dev master)
-  // Teacher sees lecture if their teacherId exists in teacherIds or teacherId (Requirement 23)
+  // Deduplicate slots so a teacher doesn't see duplicate cards for the same class
   const teacherLectures = useMemo(() => {
-    return allLectures.filter(l => {
+    const raw = allLectures.filter(l => {
       if (isMasterUser) return true;
       const ids = getLectureTeacherIds(l);
       return ids.includes(currentTeacherId);
     });
+
+    const slotMap = new Map<string, TimetableLecture>();
+    for (const l of raw) {
+      const slotKey = `${l.batchId || ''}_${(l.divisionId || '')}_${(l.day || '').toLowerCase()}_${l.startTime}_${l.endTime}`;
+      if (!slotMap.has(slotKey)) {
+        slotMap.set(slotKey, { ...l });
+      }
+    }
+    return Array.from(slotMap.values());
   }, [allLectures, currentTeacherId, isMasterUser]);
 
   // Helper to check if attendance has been taken for a specific lecture on a specific date

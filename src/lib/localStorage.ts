@@ -610,7 +610,8 @@ const syncRealtimeData = async () => {
     saveToStorage(STORAGE_KEYS.NOTICES, noticesList);
   }
   if (timetableList) {
-    saveToStorage(STORAGE_KEYS.TIMETABLE, timetableList);
+    const cleanedTimetable = deduplicateTimetableList(timetableList);
+    saveToStorage(STORAGE_KEYS.TIMETABLE, cleanedTimetable);
   }
   if (studySessionsList) {
     saveToStorage(STORAGE_KEYS.STUDY_SESSIONS, studySessionsList);
@@ -751,7 +752,12 @@ const attachListener = <T>(
     snapshot => {
       const data = snapshot.val();
       const items = data ? (Object.values(data) as T[]) : [];
-      saveToStorage(storageKey, items);
+      if (storageKey === STORAGE_KEYS.TIMETABLE) {
+        const cleaned = deduplicateTimetableList(items as unknown as TimetableLecture[]);
+        saveToStorage(storageKey, cleaned);
+      } else {
+        saveToStorage(storageKey, items);
+      }
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('sankalp_realtime_sync', { detail: { key: storageKey, count: items.length } }));
         if (storageKey === STORAGE_KEYS.TIMETABLE) {
@@ -1946,7 +1952,7 @@ export const getTimetableByTeacher = (teacherId: string): TimetableLecture[] => 
     });
 };
 
-const getMondayDateString = (d: Date = new Date()): string => {
+export const getMondayDateString = (d: Date = new Date()): string => {
   const date = new Date(d);
   const day = date.getDay();
   const diff = (day + 6) % 7;
@@ -1957,13 +1963,71 @@ const getMondayDateString = (d: Date = new Date()): string => {
   return `${year}-${month}-${dayStr}`;
 };
 
+export const deduplicateTimetableList = (lectures: TimetableLecture[]): TimetableLecture[] => {
+  if (!Array.isArray(lectures) || lectures.length === 0) return [];
+
+  const slotMap = new Map<string, TimetableLecture>();
+  const redundantIds: string[] = [];
+
+  for (const lecture of lectures) {
+    if (!lecture || !lecture.timetableId) continue;
+    const weekKey = lecture.effectiveFrom || 'none';
+    const dayStr = (lecture.day || '').toLowerCase();
+    const batchKey = lecture.batchId || '';
+    const divKey = lecture.divisionId || '';
+    const slotKey = `${batchKey}_${divKey}_${dayStr}_${lecture.startTime}_${lecture.endTime}_${weekKey}`;
+
+    const existing = slotMap.get(slotKey);
+    if (!existing) {
+      slotMap.set(slotKey, { ...lecture });
+    } else {
+      redundantIds.push(lecture.timetableId);
+
+      const existingSubjects = (existing.subjectNames && existing.subjectNames.length > 0)
+        ? existing.subjectNames
+        : (existing.subjectName || '').split(/\s*(?:&|\+|\band\b|,)\s*/i).filter(Boolean);
+      const newSubjects = (lecture.subjectNames && lecture.subjectNames.length > 0)
+        ? lecture.subjectNames
+        : (lecture.subjectName || '').split(/\s*(?:&|\+|\band\b|,)\s*/i).filter(Boolean);
+      const mergedSubjects = Array.from(new Set([...existingSubjects, ...newSubjects])).filter(Boolean);
+      const mergedSubjectName = mergedSubjects.length > 0 ? mergedSubjects.join(' & ') : existing.subjectName;
+
+      const existingTeachers = getLectureTeacherNames(existing);
+      const newTeachers = getLectureTeacherNames(lecture);
+      const mergedTeachers = Array.from(new Set([...existingTeachers, ...newTeachers])).filter(Boolean);
+
+      const existingTeacherIds = getLectureTeacherIds(existing);
+      const newTeacherIds = getLectureTeacherIds(lecture);
+      const mergedTeacherIds = Array.from(new Set([...existingTeacherIds, ...newTeacherIds])).filter(Boolean);
+
+      slotMap.set(slotKey, {
+        ...existing,
+        subjectName: mergedSubjectName,
+        subjectNames: mergedSubjects,
+        teacherName: mergedTeachers.join(' + ') || existing.teacherName,
+        teacherNames: mergedTeachers,
+        teacherIds: mergedTeacherIds,
+        roomName: lecture.roomName || existing.roomName || 'Room 1',
+      });
+    }
+  }
+
+  if (redundantIds.length > 0) {
+    redundantIds.forEach(id => {
+      void removeItemFromRealtime(DB_PATHS.TIMETABLE, id);
+    });
+  }
+
+  return Array.from(slotMap.values());
+};
+
 export const getWeekTimetableLectures = (weekStartDate: string): TimetableLecture[] => {
   const localKey = `sankalp_timetable_week_${weekStartDate}`;
   const localData = typeof localStorage !== 'undefined' ? localStorage.getItem(localKey) : null;
-  if (localData) {
+  if (localData !== null) {
     try {
       const parsed = JSON.parse(localData);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) return deduplicateTimetableList(parsed);
     } catch {
       // fallback
     }
@@ -1972,23 +2036,11 @@ export const getWeekTimetableLectures = (weekStartDate: string): TimetableLectur
   const all = getTimetableLectures();
   const weekLectures = all.filter(l => l.effectiveFrom === weekStartDate);
   if (weekLectures.length > 0) {
+    const cleaned = deduplicateTimetableList(weekLectures);
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(localKey, JSON.stringify(weekLectures));
+      localStorage.setItem(localKey, JSON.stringify(cleaned));
     }
-    return weekLectures;
-  }
-
-  // If this weekStartDate matches current week, anchor existing master timetable to this week
-  const currentWeekMonday = getMondayDateString(new Date());
-  if (weekStartDate === currentWeekMonday) {
-    const currentWeekLecs = all.filter(l => !l.effectiveFrom || l.effectiveFrom === weekStartDate);
-    if (currentWeekLecs.length > 0) {
-      const tagged = currentWeekLecs.map(l => ({ ...l, effectiveFrom: weekStartDate }));
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(localKey, JSON.stringify(tagged));
-      }
-      return tagged;
-    }
+    return cleaned;
   }
 
   return [];
@@ -1996,15 +2048,35 @@ export const getWeekTimetableLectures = (weekStartDate: string): TimetableLectur
 
 export const saveWeekTimetableLectures = async (weekStartDate: string, lectures: TimetableLecture[]): Promise<void> => {
   const localKey = `sankalp_timetable_week_${weekStartDate}`;
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(localKey, JSON.stringify(lectures));
+  const currentWeekMonday = getMondayDateString(new Date());
+
+  const all = getTimetableLectures();
+  const previousInWeek = all.filter(l =>
+    l.effectiveFrom === weekStartDate ||
+    (weekStartDate === currentWeekMonday && !l.effectiveFrom)
+  );
+
+  const newLectureIds = new Set(lectures.map(l => l.timetableId));
+  const removedLectures = previousInWeek.filter(l => !newLectureIds.has(l.timetableId));
+
+  for (const removed of removedLectures) {
+    void removeItemFromRealtime(DB_PATHS.TIMETABLE, removed.timetableId);
   }
 
-  // Merge into master timetable storage
-  const all = getTimetableLectures();
-  const weekLectureIds = new Set(lectures.map(l => l.timetableId));
-  const filtered = all.filter(l => l.effectiveFrom !== weekStartDate && !weekLectureIds.has(l.timetableId));
-  const updated = [...filtered, ...lectures];
+  const normalizedLectures = deduplicateTimetableList(
+    lectures.map(l => ({
+      ...l,
+      effectiveFrom: l.effectiveFrom || weekStartDate,
+    }))
+  );
+
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(localKey, JSON.stringify(normalizedLectures));
+  }
+
+  const previousIds = new Set(previousInWeek.map(l => l.timetableId));
+  const otherWeeks = all.filter(l => !previousIds.has(l.timetableId) && !newLectureIds.has(l.timetableId));
+  const updated = deduplicateTimetableList([...otherWeeks, ...normalizedLectures]);
   saveToStorage(STORAGE_KEYS.TIMETABLE, updated);
 
   if (typeof window !== 'undefined') {
@@ -2012,7 +2084,7 @@ export const saveWeekTimetableLectures = async (weekStartDate: string, lectures:
     window.dispatchEvent(new Event('storage'));
   }
 
-  for (const lec of lectures) {
+  for (const lec of normalizedLectures) {
     void writeItemToRealtime(DB_PATHS.TIMETABLE, lec.timetableId, lec);
   }
 };
@@ -2021,6 +2093,7 @@ export const addTimetableLecture = async (lecture: TimetableLecture): Promise<vo
   const current = getTimetableLectures();
   const teacherIds = getLectureTeacherIds(lecture);
   const teacherNames = getLectureTeacherNames(lecture);
+  const effectiveFrom = lecture.effectiveFrom || getMondayDateString(new Date());
 
   const normalizedLecture: TimetableLecture = {
     ...lecture,
@@ -2028,26 +2101,46 @@ export const addTimetableLecture = async (lecture: TimetableLecture): Promise<vo
     teacherNames,
     teacherId: teacherIds[0] || lecture.teacherId || '',
     teacherName: teacherNames[0] || lecture.teacherName || '',
+    effectiveFrom,
   };
 
-  // Prevent any exact duplicate from being added locally
+  const removedDuplicates = current.filter(
+    l => l.timetableId !== normalizedLecture.timetableId &&
+      l.batchId === normalizedLecture.batchId &&
+      (l.day || '').toLowerCase() === (normalizedLecture.day || '').toLowerCase() &&
+      l.startTime === normalizedLecture.startTime &&
+      l.endTime === normalizedLecture.endTime &&
+      (l.effectiveFrom || effectiveFrom) === effectiveFrom
+  );
+
+  for (const rem of removedDuplicates) {
+    void removeItemFromRealtime(DB_PATHS.TIMETABLE, rem.timetableId);
+  }
+
   const deduplicated = current.filter(
     l => l.timetableId !== normalizedLecture.timetableId &&
       !(l.batchId === normalizedLecture.batchId &&
-        l.day === normalizedLecture.day &&
+        (l.day || '').toLowerCase() === (normalizedLecture.day || '').toLowerCase() &&
         l.startTime === normalizedLecture.startTime &&
         l.endTime === normalizedLecture.endTime &&
-        l.subjectName.toLowerCase() === normalizedLecture.subjectName.toLowerCase())
+        (l.effectiveFrom || effectiveFrom) === effectiveFrom)
   );
-  const updated = [...deduplicated, normalizedLecture];
+
+  const updated = deduplicateTimetableList([...deduplicated, normalizedLecture]);
   saveToStorage(STORAGE_KEYS.TIMETABLE, updated);
 
-  if (normalizedLecture.effectiveFrom && typeof localStorage !== 'undefined') {
-    const weekKey = `sankalp_timetable_week_${normalizedLecture.effectiveFrom}`;
+  if (typeof localStorage !== 'undefined') {
+    const weekKey = `sankalp_timetable_week_${effectiveFrom}`;
     try {
       const raw = localStorage.getItem(weekKey);
       const existing: TimetableLecture[] = raw ? JSON.parse(raw) : [];
-      const filteredWeek = existing.filter(l => l.timetableId !== normalizedLecture.timetableId);
+      const filteredWeek = existing.filter(
+        l => l.timetableId !== normalizedLecture.timetableId &&
+          !(l.batchId === normalizedLecture.batchId &&
+            (l.day || '').toLowerCase() === (normalizedLecture.day || '').toLowerCase() &&
+            l.startTime === normalizedLecture.startTime &&
+            l.endTime === normalizedLecture.endTime)
+      );
       localStorage.setItem(weekKey, JSON.stringify([...filteredWeek, normalizedLecture]));
     } catch {}
   }
@@ -2055,7 +2148,6 @@ export const addTimetableLecture = async (lecture: TimetableLecture): Promise<vo
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('sankalp_timetable_changed', { detail: updated }));
   }
-  // Async non-blocking write to Firebase Realtime Database
   void writeItemToRealtime(DB_PATHS.TIMETABLE, normalizedLecture.timetableId, normalizedLecture);
 };
 
@@ -2195,10 +2287,10 @@ export const deleteTimetableLecture = async (timetableId: string): Promise<boole
       updated = current.filter(l => {
         const isMatch = l.timetableId === timetableId ||
           (l.batchId === target.batchId &&
-           l.day === target.day &&
+           (l.day || '').toLowerCase() === (target.day || '').toLowerCase() &&
            l.startTime === target.startTime &&
            l.endTime === target.endTime &&
-           l.subjectName.toLowerCase() === target.subjectName.toLowerCase());
+           (!target.effectiveFrom || !l.effectiveFrom || l.effectiveFrom === target.effectiveFrom));
         if (isMatch && l.timetableId !== timetableId) {
           idsToDelete.push(l.timetableId);
         }
@@ -2257,14 +2349,57 @@ export const clearAllTimetableLectures = async (filter?: {
       return true;
     });
 
-    if (toDelete.length === 0) return 0;
+    if (toDelete.length === 0) {
+      // Even if current is empty in memory, clean up any week keys in localStorage
+      if (typeof localStorage !== 'undefined') {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith('sankalp_timetable_week_')) {
+            if (!filter?.effectiveFrom || k === `sankalp_timetable_week_${filter.effectiveFrom}`) {
+              keysToRemove.push(k);
+            }
+          }
+        }
+        keysToRemove.forEach(k => localStorage.removeItem(k));
+      }
+      return 0;
+    }
 
     const idsToDelete = new Set(toDelete.map(l => l.timetableId));
     const remaining = current.filter(l => !idsToDelete.has(l.timetableId));
 
     saveToStorage(STORAGE_KEYS.TIMETABLE, remaining);
+
+    if (typeof localStorage !== 'undefined') {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('sankalp_timetable_week_')) {
+          if (!filter?.effectiveFrom || k === `sankalp_timetable_week_${filter.effectiveFrom}`) {
+            keysToRemove.push(k);
+          }
+        }
+      }
+      keysToRemove.forEach(k => {
+        if (filter?.batchId) {
+          try {
+            const raw = localStorage.getItem(k);
+            if (raw) {
+              const list: TimetableLecture[] = JSON.parse(raw);
+              const remainingWeek = list.filter(l => l.batchId !== filter.batchId);
+              localStorage.setItem(k, JSON.stringify(remainingWeek));
+            }
+          } catch {}
+        } else {
+          localStorage.removeItem(k);
+        }
+      });
+    }
+
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('sankalp_timetable_changed', { detail: remaining }));
+      window.dispatchEvent(new Event('storage'));
     }
 
     // Delete from Firebase in parallel

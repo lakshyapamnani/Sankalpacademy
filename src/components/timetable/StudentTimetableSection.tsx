@@ -46,19 +46,59 @@ export const StudentTimetableSection = ({
   const weekInfo = useMemo(() => getWeekInfo(new Date()), []);
 
   // Filter lectures belonging strictly to this student's batch & division
-  // Multi-teacher lecture appears ONLY ONCE (Requirement 32)
+  // Deduplicate and merge lectures occupying the same day and time slot
   const studentLectures = useMemo(() => {
     if (!studentBatchId) return [];
-    const seen = new Set<string>();
-    return allLectures.filter(l => {
+
+    const rawFiltered = allLectures.filter(l => {
       if (l.batchId !== studentBatchId) return false;
       if (studentDivisionId && l.divisionId && l.divisionId !== studentDivisionId) {
         return false;
       }
-      if (seen.has(l.timetableId)) return false;
-      seen.add(l.timetableId);
       return true;
     });
+
+    const slotMap = new Map<string, TimetableLecture>();
+
+    for (const l of rawFiltered) {
+      const slotKey = `${(l.day || '').toLowerCase()}_${l.startTime}_${l.endTime}`;
+      const existing = slotMap.get(slotKey);
+
+      if (!existing) {
+        slotMap.set(slotKey, { ...l });
+      } else {
+        // Merge combined lecture details (e.g. Hindi & Math)
+        const existingSubjects = (existing.subjectNames && existing.subjectNames.length > 0)
+          ? existing.subjectNames
+          : (existing.subjectName || '').split(/\s*(?:&|\+|\band\b|,)\s*/i).filter(Boolean);
+        const newSubjects = (l.subjectNames && l.subjectNames.length > 0)
+          ? l.subjectNames
+          : (l.subjectName || '').split(/\s*(?:&|\+|\band\b|,)\s*/i).filter(Boolean);
+
+        const mergedSubjects = Array.from(new Set([...existingSubjects, ...newSubjects])).filter(Boolean);
+        const mergedSubjectName = mergedSubjects.length > 0 ? mergedSubjects.join(' & ') : existing.subjectName;
+
+        const existingTeachers = getLectureTeacherNames(existing);
+        const newTeachers = getLectureTeacherNames(l);
+        const mergedTeachers = Array.from(new Set([...existingTeachers, ...newTeachers])).filter(Boolean);
+
+        const existingTeacherIds = getLectureTeacherIds(existing);
+        const newTeacherIds = getLectureTeacherIds(l);
+        const mergedTeacherIds = Array.from(new Set([...existingTeacherIds, ...newTeacherIds])).filter(Boolean);
+
+        slotMap.set(slotKey, {
+          ...existing,
+          subjectName: mergedSubjectName,
+          subjectNames: mergedSubjects,
+          teacherName: mergedTeachers.join(' + ') || existing.teacherName,
+          teacherNames: mergedTeachers,
+          teacherIds: mergedTeacherIds,
+          roomName: l.roomName || existing.roomName || 'Room 1',
+        });
+      }
+    }
+
+    return Array.from(slotMap.values());
   }, [allLectures, studentBatchId, studentDivisionId]);
 
   // TODAY'S CLASSES (sorted by start time)
