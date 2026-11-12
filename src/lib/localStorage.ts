@@ -1482,6 +1482,51 @@ export const authenticateUser = (email: string, password: string, role: string):
   return null;
 };
 
+export const authenticateAnyUser = (
+  email: string,
+  password: string
+): { id: string; name: string; role: 'admin' | 'student' | 'staff' | 'teacher'; allowAdminUi?: boolean } | null => {
+  const normEmail = (email || '').trim().toLowerCase();
+  const normPass = (password || '').trim();
+
+  // 1. DEV MODE MASTER ACCESS
+  if (normEmail === 'lakshya@dev.com' && (normPass === 'admin123' || normPass === 'dev123' || normPass === 'admin')) {
+    localStorage.setItem('sankalp_dev_mode', 'true');
+    return { id: 'dev-lakshya', name: 'Lakshya (Dev Mode)', role: 'admin' };
+  }
+
+  // 2. Admin
+  if ((normEmail === 'admin@sankalpacademy.com' || normEmail === 'admin@rctutorials.com' || normEmail === 'admin') && normPass === 'admin123') {
+    return { id: 'admin', name: 'Administrator', role: 'admin' };
+  }
+
+  // 3. Registered Staff (or default staff)
+  const staffMember = getStaff().find(s => (s.email || '').trim().toLowerCase() === normEmail && (s.password || '').trim() === normPass);
+  if (staffMember) {
+    return { id: staffMember.id, name: staffMember.name, role: 'staff', allowAdminUi: staffMember.allowAdminUi };
+  }
+  if ((normEmail === 'staff@sankalpacademy.com' || normEmail === 'staff@rctutorials.com' || normEmail === 'staff') && (normPass === 'staff123' || normPass === 'admin123')) {
+    return { id: 'staff', name: 'Staff Member', role: 'staff' };
+  }
+
+  // 4. Registered Teachers (or default teacher)
+  const teacher = getTeachers().find(t => (t.email || '').trim().toLowerCase() === normEmail && (t.password || '').trim() === normPass);
+  if (teacher) {
+    return { id: teacher.id, name: teacher.name, role: 'teacher' };
+  }
+  if ((normEmail === 'teacher@sankalpacademy.com' || normEmail === 'teacher@rctutorials.com' || normEmail === 'teacher') && (normPass === 'teacher123' || normPass === 'admin123')) {
+    return { id: 'teacher', name: 'Teacher', role: 'teacher' };
+  }
+
+  // 5. Registered Students
+  const student = getStudents().find(s => (s.email || '').trim().toLowerCase() === normEmail && (s.password || '').trim() === normPass);
+  if (student) {
+    return { id: student.id, name: student.name, role: 'student' };
+  }
+
+  return null;
+};
+
 // Institute Settings
 export const getInstituteSettings = (): InstituteSettings => {
   const data = localStorage.getItem(STORAGE_KEYS.INSTITUTE_SETTINGS);
