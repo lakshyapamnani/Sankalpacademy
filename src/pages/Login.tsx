@@ -17,13 +17,14 @@ interface LoginProps {
   unified?: boolean;
 }
 
-const Login = ({ defaultRole, forceRole, unified }: LoginProps) => {
+const Login = ({ defaultRole, forceRole, unified = true }: LoginProps) => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const roleParam = searchParams.get("role") as UserRole | null;
   const validRoles: UserRole[] = ["admin", "student", "staff", "teacher"];
-  const effectiveDefaultRole = unified ? undefined : (defaultRole || (roleParam && validRoles.includes(roleParam) ? roleParam : undefined));
-  const isForced = unified || forceRole || !!(roleParam && validRoles.includes(roleParam));
+  const isUnified = unified && !(forceRole && defaultRole && defaultRole !== 'student');
+  const effectiveDefaultRole = isUnified ? undefined : (defaultRole || (roleParam && validRoles.includes(roleParam) ? roleParam : undefined));
+  const isForced = isUnified || forceRole || !!(roleParam && validRoles.includes(roleParam));
 
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(effectiveDefaultRole || null);
   const [email, setEmail] = useState("");
@@ -40,7 +41,7 @@ const Login = ({ defaultRole, forceRole, unified }: LoginProps) => {
       return;
     }
 
-    if (unified) {
+    if (isUnified) {
       if (existing) {
         if (existing.role === 'staff') {
           const staffMember = getStaff().find(s => s.id === existing.id);
@@ -66,7 +67,7 @@ const Login = ({ defaultRole, forceRole, unified }: LoginProps) => {
       navigate(`/${existing.role}-dashboard`);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveDefaultRole, unified]);
+  }, [effectiveDefaultRole, isUnified]);
 
   const roles = [
     {
@@ -119,7 +120,7 @@ const Login = ({ defaultRole, forceRole, unified }: LoginProps) => {
       return;
     }
 
-    if (unified) {
+    if (isUnified) {
       const authResult = authenticateAnyUser(email, password);
       if (!authResult) {
         toast.error("Invalid credentials");
@@ -164,7 +165,7 @@ const Login = ({ defaultRole, forceRole, unified }: LoginProps) => {
     navigate(`/${userRole}-dashboard`);
   };
 
-  if (!selectedRole && !unified) {
+  if (!selectedRole && !isUnified) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-accent/5 flex flex-col p-4 relative">
         <div className="absolute top-4 right-4 z-10">
@@ -235,10 +236,13 @@ const Login = ({ defaultRole, forceRole, unified }: LoginProps) => {
           )}
 
           <div className="text-center mb-8">
-            {unified ? (
+            {isUnified ? (
               <>
                 <img
                   src="./icons/sankalp_logo.jpeg"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = "/icons/sankalp_logo.jpeg";
+                  }}
                   alt="Sankalp Academy Logo"
                   className="w-20 h-20 mx-auto rounded-full object-cover border-4 border-primary/10 shadow-xl mb-4"
                 />
@@ -288,7 +292,7 @@ const Login = ({ defaultRole, forceRole, unified }: LoginProps) => {
             </Button>
           </form>
 
-          {(unified || selectedRole === 'staff' || selectedRole === 'student' || selectedRole === 'teacher') && (
+          {(isUnified || selectedRole === 'staff' || selectedRole === 'student' || selectedRole === 'teacher') && (
             <p className="text-center text-xs text-muted-foreground mt-4">
               Accounts are created in the Admin panel
             </p>
