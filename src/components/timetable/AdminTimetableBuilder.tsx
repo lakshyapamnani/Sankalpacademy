@@ -688,17 +688,14 @@ export const AdminTimetableBuilder = ({
     }
   };
 
-  // Handle clear all lectures for the active week
+  // Handle clear all scheduled lectures permanently
   const handleClearAllLectures = async () => {
-    if (effectiveWeekLectures.length === 0) {
-      toast.info('No lectures to clear for this week.');
-      return;
-    }
     setIsClearingAllLectures(true);
     try {
       await saveWeekTimetableLectures(weekInfo.startDate, []);
+      await clearAllTimetableLectures();
       setLocalWeekLectures([]);
-      toast.success(`Successfully cleared all scheduled lectures for ${weekInfo.label}.`);
+      toast.success(`Successfully cleared all scheduled lectures.`);
       onDataChange();
     } catch (err) {
       console.error('Clear all lectures error:', err);
@@ -884,10 +881,10 @@ export const AdminTimetableBuilder = ({
             >
               {showSunday ? 'Hide Sunday' : '+ Show Sunday'}
             </Button>
-            {timetableLectures.length > 0 && (
+            {(timetableLectures.length > 0 || effectiveWeekLectures.length > 0) && (
               <DeleteDialog
                 title="Clear All Scheduled Lectures"
-                description={`Are you sure you want to clear all ${timetableLectures.length} scheduled lectures across all batches? This will delete all lectures permanently from the database and cannot be undone.`}
+                description={`Are you sure you want to clear scheduled lectures? This will delete all lectures permanently from the database and cannot be undone.`}
                 onDelete={handleClearAllLectures}
               >
                 <Button

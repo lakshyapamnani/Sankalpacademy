@@ -37,6 +37,8 @@ import {
   isClassPast,
   format12h,
   getTimetableLectures,
+  getWeekTimetableLectures,
+  getMondayDateString,
   getStudentStudyStat,
   getStudentHighestSession,
   StudentStudyStats,
@@ -316,7 +318,8 @@ const StudentDashboard = () => {
   };
 
   const loadData = () => {
-    setTimetableLectures(getTimetableLectures());
+    const currentWeekMonday = getMondayDateString(new Date());
+    setTimetableLectures(getWeekTimetableLectures(currentWeekMonday));
     const user = getCurrentUser();
     if (!user) {
       resetData();
@@ -377,8 +380,8 @@ const StudentDashboard = () => {
     }
     setNotes(batchNotes);
 
-    // Timetable
-    setTimetableLectures(getTimetableLectures());
+    // Timetable for current week
+    setTimetableLectures(getWeekTimetableLectures(currentWeekMonday));
 
     // Attendance
     let studentAttendance = getStudentAttendance(student.id);

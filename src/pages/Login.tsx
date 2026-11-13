@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { GraduationCap, User, BookOpen, Shield } from "lucide-react";
 import { toast } from "sonner";
-import { clearCurrentUser, authenticateUser, getCurrentUser, setCurrentUser, switchDevRole, getStaff } from "@/lib/localStorage";
+import { clearCurrentUser, authenticateUser, authenticateAnyUser, getCurrentUser, setCurrentUser, switchDevRole, getStaff } from "@/lib/localStorage";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 type UserRole = "admin" | "student" | "staff" | "teacher";
@@ -14,15 +14,16 @@ type UserRole = "admin" | "student" | "staff" | "teacher";
 interface LoginProps {
   defaultRole?: UserRole;
   forceRole?: boolean;
+  unified?: boolean;
 }
 
-const Login = ({ defaultRole, forceRole }: LoginProps) => {
+const Login = ({ defaultRole, forceRole, unified }: LoginProps) => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const roleParam = searchParams.get("role") as UserRole | null;
   const validRoles: UserRole[] = ["admin", "student", "staff", "teacher"];
-  const effectiveDefaultRole = defaultRole || (roleParam && validRoles.includes(roleParam) ? roleParam : undefined);
-  const isForced = forceRole || !!(roleParam && validRoles.includes(roleParam));
+  const effectiveDefaultRole = unified ? undefined : (defaultRole || (roleParam && validRoles.includes(roleParam) ? roleParam : undefined));
+  const isForced = unified || forceRole || !!(roleParam && validRoles.includes(roleParam));
 
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(effectiveDefaultRole || null);
   const [email, setEmail] = useState("");
@@ -39,6 +40,20 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
       return;
     }
 
+    if (unified) {
+      if (existing) {
+        if (existing.role === 'staff') {
+          const staffMember = getStaff().find(s => s.id === existing.id);
+          if (staffMember?.allowAdminUi) {
+            navigate('/admin-dashboard');
+            return;
+          }
+        }
+        navigate(`/${existing.role}-dashboard`);
+      }
+      return;
+    }
+
     if (effectiveDefaultRole) {
       setSelectedRole(effectiveDefaultRole);
       if (existing && existing.role !== effectiveDefaultRole) {
@@ -51,7 +66,7 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
       navigate(`/${existing.role}-dashboard`);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveDefaultRole]);
+  }, [effectiveDefaultRole, unified]);
 
   const roles = [
     {
@@ -104,6 +119,25 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
       return;
     }
 
+    if (unified) {
+      const authResult = authenticateAnyUser(email, password);
+      if (!authResult) {
+        toast.error("Invalid credentials");
+        return;
+      }
+
+      setCurrentUser({ id: authResult.id, role: authResult.role, name: authResult.name });
+      toast.success(`Welcome back, ${authResult.name}!`);
+
+      if (authResult.role === 'staff' && authResult.allowAdminUi) {
+        navigate('/admin-dashboard');
+        return;
+      }
+
+      navigate(`/${authResult.role}-dashboard`);
+      return;
+    }
+
     const user = authenticateUser(email, password, selectedRole || 'student');
     
     if (!user) {
@@ -130,7 +164,7 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
     navigate(`/${userRole}-dashboard`);
   };
 
-  if (!selectedRole) {
+  if (!selectedRole && !unified) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-accent/5 flex flex-col p-4 relative">
         <div className="absolute top-4 right-4 z-10">
@@ -201,11 +235,27 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
           )}
 
           <div className="text-center mb-8">
-            <div className={`w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br ${currentRole.color} flex items-center justify-center mb-4 shadow-lg`}>
-              <Icon className="h-10 w-10 text-white" />
-            </div>
-            <h2 className="text-3xl font-bold mb-2">{currentRole.title} Login</h2>
-            <p className="text-muted-foreground">{currentRole.description}</p>
+            {unified ? (
+              <>
+                <img
+                  src="./icons/sankalp_logo.jpeg"
+                  alt="Sankalp Academy Logo"
+                  className="w-20 h-20 mx-auto rounded-full object-cover border-4 border-primary/10 shadow-xl mb-4"
+                />
+                <h2 className="text-2xl sm:text-3xl font-bold mb-2">Sankalp Academy Login Portal</h2>
+                <p className="text-sm text-muted-foreground">
+                  Sign in with your Student, Teacher, Staff, or Admin credentials
+                </p>
+              </>
+            ) : (
+              <>
+                <div className={`w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br ${currentRole.color} flex items-center justify-center mb-4 shadow-lg`}>
+                  <Icon className="h-10 w-10 text-white" />
+                </div>
+                <h2 className="text-3xl font-bold mb-2">{currentRole.title} Login</h2>
+                <p className="text-muted-foreground">{currentRole.description}</p>
+              </>
+            )}
           </div>
 
           <form onSubmit={handleLogin} className="space-y-5">
@@ -238,7 +288,7 @@ const Login = ({ defaultRole, forceRole }: LoginProps) => {
             </Button>
           </form>
 
-          {(selectedRole === 'staff' || selectedRole === 'student' || selectedRole === 'teacher') && (
+          {(unified || selectedRole === 'staff' || selectedRole === 'student' || selectedRole === 'teacher') && (
             <p className="text-center text-xs text-muted-foreground mt-4">
               Accounts are created in the Admin panel
             </p>

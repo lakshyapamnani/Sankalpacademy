@@ -51,16 +51,14 @@ const DashboardLayout = ({ children, role, title, sidebarItems = [], activeSideb
       sessionStorage.removeItem('sankalp_dev_teacher_id');
     } catch {}
 
-    if (role === "admin") {
+    const isElectron =
+      typeof window !== 'undefined' &&
+      (window.location.protocol === 'file:' || navigator.userAgent.toLowerCase().includes('electron'));
+
+    if (isElectron) {
       navigate("/admin");
-    } else if (role === "teacher") {
-      navigate("/teacher");
-    } else if (role === "staff") {
-      navigate("/staff");
-    } else if (role === "student") {
-      navigate("/student");
     } else {
-      navigate("/admin");
+      navigate("/login");
     }
   };
 

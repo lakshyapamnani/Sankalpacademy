@@ -58,6 +58,8 @@ import {
   markAttendance,
   getAttendance,
   getTimetableLectures,
+  getWeekTimetableLectures,
+  getMondayDateString,
   TimetableLecture,
   getNotes,
   addNote,
@@ -183,7 +185,8 @@ const TeacherDashboard = () => {
     setTeachers(getTeachers());
     setNotes(getNotes());
     setRemarks(getStudentRemarks());
-    setTimetableLectures(getTimetableLectures());
+    const currentWeekMonday = getMondayDateString(new Date());
+    setTimetableLectures(getWeekTimetableLectures(currentWeekMonday));
     setTests(getTests());
     setTestResults(getTestResults());
   };

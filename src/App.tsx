@@ -45,12 +45,12 @@ const App = () => (
               <Route path="/select-role" element={<Login defaultRole="admin" forceRole={true} />} />
               <Route path="/admin-dashboard" element={<AdminDashboard />} />
               <Route path="/admin-dashboard/batches/:batchId" element={<BatchDetails />} />
-              <Route path="/student" element={<Login defaultRole="student" forceRole={true} />} />
+              <Route path="/student" element={<Login unified={true} />} />
               <Route path="/teacher" element={<Login defaultRole="teacher" forceRole={true} />} />
               <Route path="/rctstaff" element={<Login defaultRole="staff" forceRole={true} />} />
-              <Route path="/rctstudent" element={<Login defaultRole="student" forceRole={true} />} />
+              <Route path="/rctstudent" element={<Login unified={true} />} />
               <Route path="/sastaff" element={<Login defaultRole="staff" forceRole={true} />} />
-              <Route path="/sastudent" element={<Login defaultRole="student" forceRole={true} />} />
+              <Route path="/sastudent" element={<Login unified={true} />} />
               <Route path="/student-dashboard" element={<StudentDashboard />} />
               <Route path="/staff-dashboard" element={<StaffDashboard />} />
               <Route path="/teacher-dashboard" element={<TeacherDashboard />} />
@@ -78,15 +78,15 @@ const App = () => (
           <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <Routes>
               <Route path="/" element={<Navigate to="/student" replace />} />
-              <Route path="/student" element={<Login defaultRole="student" forceRole={true} />} />
+              <Route path="/student" element={<Login unified={true} />} />
               <Route path="/admin" element={<Login defaultRole="admin" forceRole={true} />} />
               <Route path="/teacher" element={<Login defaultRole="teacher" forceRole={true} />} />
               <Route path="/staff" element={<Login defaultRole="staff" forceRole={true} />} />
               <Route path="/rctstaff" element={<Login defaultRole="staff" forceRole={true} />} />
-              <Route path="/rctstudent" element={<Login defaultRole="student" forceRole={true} />} />
+              <Route path="/rctstudent" element={<Login unified={true} />} />
               <Route path="/sastaff" element={<Login defaultRole="staff" forceRole={true} />} />
-              <Route path="/sastudent" element={<Login defaultRole="student" forceRole={true} />} />
-              <Route path="/login" element={<Login defaultRole="student" forceRole={true} />} />
+              <Route path="/sastudent" element={<Login unified={true} />} />
+              <Route path="/login" element={<Login unified={true} />} />
               <Route path="/select-role" element={<Login />} />
               <Route path="/admin-dashboard" element={<AdminDashboard />} />
               <Route path="/admin-dashboard/batches/:batchId" element={<BatchDetails />} />
