@@ -85,6 +85,11 @@ export interface FeeRecord {
   paymentFrequency?: 'monthly' | '2_months' | '3_months' | '6_months' | 'custom_interval' | 'custom_dates' | 'custom' | string;
   emiIntervalMonths?: number;
   customInstallmentDates?: string[];
+  isClosed?: boolean;
+  closedDate?: string;
+  closedReason?: string;
+  originalTotalFees?: number;
+  settledAmount?: number;
 }
 
 export interface MCQQuestion {
@@ -1233,6 +1238,58 @@ export const deleteFeeRecord = async (studentId: string): Promise<boolean> => {
     console.error('Error deleting fee record:', error);
     return false;
   }
+};
+
+export const closeStudentFeeRecord = async (
+  studentId: string,
+  reason?: string,
+  closeDate?: string
+): Promise<FeeRecord | null> => {
+  const record = await getFeeRecordByStudent(studentId);
+  if (!record) return null;
+
+  const downPayment = Number(record.downPayment) || 0;
+  const paymentsTotal = (record.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  const totalPaid = downPayment + paymentsTotal;
+
+  const originalTotalFees = record.originalTotalFees && record.originalTotalFees > 0 
+    ? record.originalTotalFees 
+    : (record.totalFees || 0);
+
+  const updatedRecord: FeeRecord = {
+    ...record,
+    isClosed: true,
+    closedDate: closeDate || new Date().toISOString(),
+    closedReason: reason?.trim() || 'Student left midway',
+    originalTotalFees: originalTotalFees,
+    settledAmount: totalPaid,
+    totalFees: totalPaid, // Settle total fees till last transaction!
+  };
+
+  await updateFeeRecord(updatedRecord);
+  return updatedRecord;
+};
+
+export const reopenStudentFeeRecord = async (
+  studentId: string
+): Promise<FeeRecord | null> => {
+  const record = await getFeeRecordByStudent(studentId);
+  if (!record) return null;
+
+  const originalTotal = record.originalTotalFees && record.originalTotalFees > 0 
+    ? record.originalTotalFees 
+    : record.totalFees;
+
+  const updatedRecord: FeeRecord = {
+    ...record,
+    isClosed: false,
+    closedDate: undefined,
+    closedReason: undefined,
+    totalFees: originalTotal,
+  };
+
+  await updateFeeRecord(updatedRecord);
+  return updatedRecord;
 };
 
 // ─── Receipt Counter (Global Auto-Increment) ────────────────────────────────

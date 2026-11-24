@@ -52,46 +52,46 @@ const CircularProgress: React.FC<{
   glowColor,
   label,
 }) => {
-  const safePercentage = Math.min(100, Math.max(0, isNaN(percentage) ? 0 : percentage));
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (safePercentage / 100) * circumference;
+    const safePercentage = Math.min(100, Math.max(0, isNaN(percentage) ? 0 : percentage));
+    const radius = (size - strokeWidth) / 2;
+    const circumference = 2 * Math.PI * radius;
+    const strokeDashoffset = circumference - (safePercentage / 100) * circumference;
 
-  return (
-    <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="transform -rotate-90">
-        {/* Background Circle */}
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="transparent"
-          strokeWidth={strokeWidth}
-          className={bgStrokeClass}
-        />
-        {/* Progress Circle */}
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="transparent"
-          strokeWidth={strokeWidth}
-          strokeDasharray={circumference}
-          strokeDashoffset={strokeDashoffset}
-          strokeLinecap="round"
-          className={`transition-all duration-700 ease-out ${colorClass}`}
-          style={glowColor ? { filter: `drop-shadow(0 0 6px ${glowColor})` } : undefined}
-        />
-      </svg>
-      <div className="absolute flex flex-col items-center justify-center text-center">
-        <span className="text-xs font-black tracking-tight leading-none">
-          {safePercentage.toFixed(safePercentage % 1 === 0 ? 0 : 1)}%
-        </span>
-        {label && <span className="text-[9px] text-muted-foreground font-medium mt-0.5">{label}</span>}
+    return (
+      <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
+        <svg width={size} height={size} className="transform -rotate-90">
+          {/* Background Circle */}
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="transparent"
+            strokeWidth={strokeWidth}
+            className={bgStrokeClass}
+          />
+          {/* Progress Circle */}
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="transparent"
+            strokeWidth={strokeWidth}
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+            className={`transition-all duration-700 ease-out ${colorClass}`}
+            style={glowColor ? { filter: `drop-shadow(0 0 6px ${glowColor})` } : undefined}
+          />
+        </svg>
+        <div className="absolute flex flex-col items-center justify-center text-center">
+          <span className="text-xs font-black tracking-tight leading-none">
+            {safePercentage.toFixed(safePercentage % 1 === 0 ? 0 : 1)}%
+          </span>
+          {label && <span className="text-[9px] text-muted-foreground font-medium mt-0.5">{label}</span>}
+        </div>
       </div>
-    </div>
-  );
-};
+    );
+  };
 
 export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
   students,
@@ -180,6 +180,9 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
 
   // Helper to determine a student's payment status
   const getStudentStatus = (student: Student, record?: FeeRecord) => {
+    if (record?.isClosed) {
+      return "full_settled";
+    }
     if (!record || !record.totalFees || record.totalFees <= 0) {
       return "unpaid"; // No fee structure configured or 0 total
     }
@@ -317,6 +320,7 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
     let totalDue = 0;
 
     let fullyPaidCount = 0;
+    let fullSettledCount = 0;
     let partiallyPaidCount = 0;
     let unpaidCount = 0;
     let overdueCount = 0;
@@ -438,7 +442,8 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
 
       // Status classification
       const status = getStudentStatus(student, record);
-      if (status === "fully_paid") fullyPaidCount++;
+      if (status === "full_settled") fullSettledCount++;
+      else if (status === "fully_paid") fullyPaidCount++;
       else if (status === "partially_paid") partiallyPaidCount++;
       else if (status === "overdue") overdueCount++;
       else unpaidCount++;
@@ -469,6 +474,8 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
       structurePercent,
       fullyPaidCount,
       fullyPaidPercent: totalStudentsCount > 0 ? (fullyPaidCount / totalStudentsCount) * 100 : 0,
+      fullSettledCount,
+      fullSettledPercent: totalStudentsCount > 0 ? (fullSettledCount / totalStudentsCount) * 100 : 0,
       partiallyPaidCount,
       partiallyPaidPercent: totalStudentsCount > 0 ? (partiallyPaidCount / totalStudentsCount) * 100 : 0,
       unpaidCount,
@@ -706,6 +713,7 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
             >
               <option value="all">All Statuses</option>
               <option value="fully_paid">Fully Paid</option>
+              <option value="full_settled">Full Settled (Closed)</option>
               <option value="partially_paid">Partially Paid</option>
               <option value="unpaid">Unpaid</option>
               <option value="overdue">Overdue</option>
@@ -960,6 +968,22 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
               </p>
             </div>
 
+            {/* Full Settled (Closed Midway) */}
+            <div className="p-3 rounded-xl border bg-teal-500/5 border-teal-500/20 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-teal-700 dark:text-teal-400 flex items-center gap-1">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> Full Settled
+                </span>
+                <span className="text-xs font-bold text-teal-600">
+                  {metrics.fullSettledPercent.toFixed(0)}%
+                </span>
+              </div>
+              <p className="text-lg font-bold text-foreground">
+                {metrics.fullSettledCount}{" "}
+                <span className="text-xs font-normal text-muted-foreground">students</span>
+              </p>
+            </div>
+
             {/* Partially Paid */}
             <div className="p-3 rounded-xl border bg-blue-500/5 border-blue-500/20 space-y-1">
               <div className="flex items-center justify-between">
@@ -993,7 +1017,7 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
             </div>
 
             {/* Overdue */}
-            <div className="p-3 rounded-xl border bg-rose-500/5 border-rose-500/20 space-y-1">
+            <div className="col-span-2 p-3 rounded-xl border bg-rose-500/5 border-rose-500/20 space-y-1">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-rose-700 dark:text-rose-400 flex items-center gap-1">
                   <AlertTriangle className="h-3.5 w-3.5" /> Overdue
@@ -1044,11 +1068,10 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
               <div
                 className="bg-emerald-500 h-full rounded-full transition-all duration-500"
                 style={{
-                  width: `${
-                    metrics.totalReceived > 0
+                  width: `${metrics.totalReceived > 0
                       ? (metrics.modeAggregates.cash.amount / metrics.totalReceived) * 100
                       : 0
-                  }%`,
+                    }%`,
                 }}
               />
             </div>
@@ -1074,11 +1097,10 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
               <div
                 className="bg-blue-500 h-full rounded-full transition-all duration-500"
                 style={{
-                  width: `${
-                    metrics.totalReceived > 0
+                  width: `${metrics.totalReceived > 0
                       ? (metrics.modeAggregates.upi.amount / metrics.totalReceived) * 100
                       : 0
-                  }%`,
+                    }%`,
                 }}
               />
             </div>
@@ -1104,11 +1126,10 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
               <div
                 className="bg-purple-500 h-full rounded-full transition-all duration-500"
                 style={{
-                  width: `${
-                    metrics.totalReceived > 0
+                  width: `${metrics.totalReceived > 0
                       ? (metrics.modeAggregates.card.amount / metrics.totalReceived) * 100
                       : 0
-                  }%`,
+                    }%`,
                 }}
               />
             </div>
@@ -1134,11 +1155,10 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
               <div
                 className="bg-indigo-500 h-full rounded-full transition-all duration-500"
                 style={{
-                  width: `${
-                    metrics.totalReceived > 0
+                  width: `${metrics.totalReceived > 0
                       ? (metrics.modeAggregates.bank_transfer.amount / metrics.totalReceived) * 100
                       : 0
-                  }%`,
+                    }%`,
                 }}
               />
             </div>
@@ -1164,11 +1184,10 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
               <div
                 className="bg-amber-500 h-full rounded-full transition-all duration-500"
                 style={{
-                  width: `${
-                    metrics.totalReceived > 0
+                  width: `${metrics.totalReceived > 0
                       ? (metrics.modeAggregates.cheque.amount / metrics.totalReceived) * 100
                       : 0
-                  }%`,
+                    }%`,
                 }}
               />
             </div>
@@ -1194,11 +1213,10 @@ export const FeesDashboardOverview: React.FC<FeesDashboardOverviewProps> = ({
               <div
                 className="bg-slate-500 h-full rounded-full transition-all duration-500"
                 style={{
-                  width: `${
-                    metrics.totalReceived > 0
+                  width: `${metrics.totalReceived > 0
                       ? (metrics.modeAggregates.other.amount / metrics.totalReceived) * 100
                       : 0
-                  }%`,
+                    }%`,
                 }}
               />
             </div>
