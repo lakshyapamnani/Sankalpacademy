@@ -39,17 +39,18 @@ const App = () => (
         {isElectron ? (
           <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <Routes>
-              <Route path="/" element={<Navigate to="/admin" replace />} />
-              <Route path="/admin" element={<Login defaultRole="admin" forceRole={true} />} />
-              <Route path="/login" element={<Login defaultRole="admin" forceRole={true} />} />
-              <Route path="/select-role" element={<Login defaultRole="admin" forceRole={true} />} />
+              <Route path="/" element={<Navigate to="/student" replace />} />
+              <Route path="/admin" element={<Login defaultRole="admin" forceRole={true} unified={false} />} />
+              <Route path="/login" element={<Login unified={true} />} />
+              <Route path="/select-role" element={<Login unified={true} />} />
               <Route path="/admin-dashboard" element={<AdminDashboard />} />
               <Route path="/admin-dashboard/batches/:batchId" element={<BatchDetails />} />
               <Route path="/student" element={<Login unified={true} />} />
-              <Route path="/teacher" element={<Login defaultRole="teacher" forceRole={true} />} />
-              <Route path="/rctstaff" element={<Login defaultRole="staff" forceRole={true} />} />
+              <Route path="/teacher" element={<Login defaultRole="teacher" forceRole={true} unified={false} />} />
+              <Route path="/staff" element={<Login defaultRole="staff" forceRole={true} unified={false} />} />
+              <Route path="/rctstaff" element={<Login defaultRole="staff" forceRole={true} unified={false} />} />
               <Route path="/rctstudent" element={<Login unified={true} />} />
-              <Route path="/sastaff" element={<Login defaultRole="staff" forceRole={true} />} />
+              <Route path="/sastaff" element={<Login defaultRole="staff" forceRole={true} unified={false} />} />
               <Route path="/sastudent" element={<Login unified={true} />} />
               <Route path="/student-dashboard" element={<StudentDashboard />} />
               <Route path="/staff-dashboard" element={<StaffDashboard />} />
@@ -79,15 +80,15 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Navigate to="/student" replace />} />
               <Route path="/student" element={<Login unified={true} />} />
-              <Route path="/admin" element={<Login defaultRole="admin" forceRole={true} />} />
-              <Route path="/teacher" element={<Login defaultRole="teacher" forceRole={true} />} />
-              <Route path="/staff" element={<Login defaultRole="staff" forceRole={true} />} />
-              <Route path="/rctstaff" element={<Login defaultRole="staff" forceRole={true} />} />
+              <Route path="/admin" element={<Login defaultRole="admin" forceRole={true} unified={false} />} />
+              <Route path="/teacher" element={<Login defaultRole="teacher" forceRole={true} unified={false} />} />
+              <Route path="/staff" element={<Login defaultRole="staff" forceRole={true} unified={false} />} />
+              <Route path="/rctstaff" element={<Login defaultRole="staff" forceRole={true} unified={false} />} />
               <Route path="/rctstudent" element={<Login unified={true} />} />
-              <Route path="/sastaff" element={<Login defaultRole="staff" forceRole={true} />} />
+              <Route path="/sastaff" element={<Login defaultRole="staff" forceRole={true} unified={false} />} />
               <Route path="/sastudent" element={<Login unified={true} />} />
               <Route path="/login" element={<Login unified={true} />} />
-              <Route path="/select-role" element={<Login />} />
+              <Route path="/select-role" element={<Login unified={true} />} />
               <Route path="/admin-dashboard" element={<AdminDashboard />} />
               <Route path="/admin-dashboard/batches/:batchId" element={<BatchDetails />} />
               <Route path="/student-dashboard" element={<StudentDashboard />} />

@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit, ArrowLeft, Search, Download, MessageSquare, Eye, TrendingUp, FileText, Trash2, GraduationCap, LogIn, Key, Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Layers, Settings, Image, PenTool, Building, Save, Bell, Megaphone, Award, AlertTriangle, Star, ThumbsUp, ThumbsDown, Send, Filter, Check, Clock, ExternalLink, DoorOpen, RotateCcw, Laptop, Shield, Timer, Sparkles } from "lucide-react";
+import { Users, BookOpen, Calendar, BarChart3, Plus, UserPlus, UserMinus, IndianRupee, Printer, CheckSquare, ClipboardCheck, Cake, Edit, ArrowLeft, Search, Download, MessageSquare, Eye, TrendingUp, FileText, Trash2, GraduationCap, LogIn, Key, Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Layers, Settings, Image, PenTool, Building, Save, Bell, Megaphone, Award, AlertTriangle, Star, ThumbsUp, ThumbsDown, Send, Filter, Check, Clock, ExternalLink, DoorOpen, RotateCcw, Laptop, Shield, Timer, Sparkles } from "lucide-react";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -32,6 +32,8 @@ import {
   getFeeRecordByStudent,
   getFeeRecords,
   updateFeeRecord,
+  closeStudentFeeRecord,
+  reopenStudentFeeRecord,
   addFeePayment,
   getNextAutoReceiptNo,
   initReceiptCounter,
@@ -336,6 +338,12 @@ const AdminDashboard = () => {
   const [receiptSearchQuery, setReceiptSearchQuery] = useState<string>("");
   const [receiptSearchResults, setReceiptSearchResults] = useState<FeeSearchResult[]>([]);
   const [isSearchingReceipt, setIsSearchingReceipt] = useState(false);
+
+  // Close Student (Left Midway) State
+  const [isCloseStudentModalOpen, setIsCloseStudentModalOpen] = useState(false);
+  const [closeStudentDate, setCloseStudentDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [closeStudentReason, setCloseStudentReason] = useState<string>("Student left midway");
+  const [isClosingStudent, setIsClosingStudent] = useState(false);
 
   // Fee Structure Form State
   const [feeFormTotalFees, setFeeFormTotalFees] = useState<string>("");
@@ -882,6 +890,58 @@ const AdminDashboard = () => {
     toast.success(`Fee structure updated for ${selectedStudentForFees.name}`);
   };
 
+  const handleOpenCloseStudentModal = () => {
+    if (!selectedStudentForFees || !feeRecord) return;
+    setCloseStudentDate(new Date().toISOString().split('T')[0]);
+    setCloseStudentReason("Student left midway");
+    setIsCloseStudentModalOpen(true);
+  };
+
+  const handleConfirmCloseStudent = async () => {
+    if (!selectedStudentForFees || !feeRecord) return;
+    setIsClosingStudent(true);
+    try {
+      const updated = await closeStudentFeeRecord(
+        selectedStudentForFees.id,
+        closeStudentReason,
+        closeStudentDate
+      );
+      if (updated) {
+        setFeeRecord(updated);
+        const freshRecords = await getFeeRecords();
+        setAllFeeRecords(freshRecords || []);
+        setIsCloseStudentModalOpen(false);
+        const settledAmt = updated.settledAmount ?? updated.totalFees;
+        toast.success(`${selectedStudentForFees.name}'s fees settled till last transaction (₹${settledAmt.toLocaleString('en-IN')}) as Full Settled.`);
+      } else {
+        toast.error("Failed to close student fee record.");
+      }
+    } catch (err) {
+      console.error("Error closing student:", err);
+      toast.error("An error occurred while closing student.");
+    } finally {
+      setIsClosingStudent(false);
+    }
+  };
+
+  const handleReopenStudentFee = async () => {
+    if (!selectedStudentForFees || !feeRecord) return;
+    try {
+      const updated = await reopenStudentFeeRecord(selectedStudentForFees.id);
+      if (updated) {
+        setFeeRecord(updated);
+        const freshRecords = await getFeeRecords();
+        setAllFeeRecords(freshRecords || []);
+        toast.success(`${selectedStudentForFees.name}'s fee account reopened successfully.`);
+      } else {
+        toast.error("Failed to reopen student fee record.");
+      }
+    } catch (err) {
+      console.error("Error reopening student fee:", err);
+      toast.error("An error occurred while reopening fee record.");
+    }
+  };
+
   const handleAssignBatchFeeStructure = async (targetBatchStudents: Student[], targetBatchName: string) => {
     const totalFees = Number(batchFeeTotalFees);
     const downPayment = Number(batchFeeDownPayment) || 0;
@@ -966,6 +1026,10 @@ const AdminDashboard = () => {
 
   const handleAddPayment = async () => {
     if (!selectedStudentForFees || !feeRecord || !paymentAmount) return;
+    if (feeRecord.isClosed) {
+      toast.error("This student account is closed and full settled. Please reopen the account before recording new payments.");
+      return;
+    }
     const amount = Number(paymentAmount);
     if (isNaN(amount) || amount <= 0) {
       toast.error("Please enter a valid amount");
@@ -1215,7 +1279,9 @@ const AdminDashboard = () => {
         const latestReceipt = latestPayment?.receiptNo || (latestPayment ? `RCPT-${latestPayment.id.slice(-6).toUpperCase()}` : '-');
 
         let status = 'UNPAID';
-        if (totalFees > 0) {
+        if (record?.isClosed) {
+          status = 'FULL SETTLED';
+        } else if (totalFees > 0) {
           if (totalPaid >= totalFees) status = 'FULLY PAID';
           else if (totalPaid > 0) status = 'PARTIALLY PAID';
         }
@@ -1226,11 +1292,11 @@ const AdminDashboard = () => {
           `"${(student.studentClass || '-').replace(/"/g, '""')}"`,
           `"${student.email.replace(/"/g, '""')}"`,
           `"${(student.phoneNo || "").replace(/"/g, '""')}"`,
-          totalFees,
+          record?.isClosed ? (record.originalTotalFees || totalFees) : totalFees,
           downPayment,
           record ? record.emiMonths : 0,
           totalPaid,
-          remaining,
+          record?.isClosed ? 0 : remaining,
           `"${latestDate}"`,
           `"${latestMode}"`,
           `"${latestReceipt}"`,
@@ -1608,6 +1674,9 @@ const AdminDashboard = () => {
     const downPayment = Number(record.downPayment) || 0;
     const paymentsTotal = (record.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
     const totalPaid = downPayment + paymentsTotal;
+    if (record.isClosed) {
+      return `Dear Parent, this is to confirm from ${instituteSettings.name || 'Sankalp Academy'} that the fee account for ${student.name} has been closed and fully settled till the last transaction (Total Paid: ₹${totalPaid.toLocaleString('en-IN')}). There is no outstanding balance due.\nThank you! - ${instituteSettings.name || 'Sankalp Academy'}`;
+    }
     const remaining = Math.max(0, (Number(record.totalFees) || 0) - totalPaid);
     const sched = getStudentInstallmentSchedule(record);
     const nextPending = sched.installments.find(i => i.status === 'pending' || i.status === 'partial');
@@ -5036,18 +5105,29 @@ const AdminDashboard = () => {
                                   Students ({filteredBatchStudents.length})
                                 </h4>
                                 <div className="space-y-1 max-h-[48vh] overflow-y-auto pr-1">
-                                  {filteredBatchStudents.map(s => (
-                                    <div 
-                                      key={s.id} 
-                                      onClick={() => handleSelectStudentForFees(s)}
-                                      className={`p-3 rounded-xl cursor-pointer transition-all duration-200 border border-transparent ${selectedStudentForFees?.id === s.id ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/20' : 'hover:bg-accent hover:border-accent border-transparent'}`}
-                                    >
-                                      <p className="font-semibold text-sm">{s.name}</p>
-                                      <p className={`text-xs ${selectedStudentForFees?.id === s.id ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
-                                        {s.phoneNo || s.email}
-                                      </p>
-                                    </div>
-                                  ))}
+                                  {filteredBatchStudents.map(s => {
+                                    const sRecord = allFeeRecords.find(r => r.studentId === s.id);
+                                    const isSelected = selectedStudentForFees?.id === s.id;
+                                    return (
+                                      <div 
+                                        key={s.id} 
+                                        onClick={() => handleSelectStudentForFees(s)}
+                                        className={`p-3 rounded-xl cursor-pointer transition-all duration-200 border ${isSelected ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/20 border-primary' : 'hover:bg-accent hover:border-accent border-transparent'}`}
+                                      >
+                                        <div className="flex items-center justify-between gap-1.5">
+                                          <p className="font-semibold text-sm line-clamp-1">{s.name}</p>
+                                          {sRecord?.isClosed && (
+                                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 ${isSelected ? 'bg-white/20 text-white' : 'bg-teal-500/15 text-teal-700 dark:text-teal-400 border border-teal-500/30'}`}>
+                                              Full Settled
+                                            </span>
+                                          )}
+                                        </div>
+                                        <p className={`text-xs ${isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+                                          {s.phoneNo || s.email}
+                                        </p>
+                                      </div>
+                                    );
+                                  })}
                                   {filteredBatchStudents.length === 0 && (
                                     <p className="text-sm text-muted-foreground text-center py-6">No students found.</p>
                                   )}
@@ -5081,11 +5161,14 @@ const AdminDashboard = () => {
                                     <SelectValue placeholder="Choose a student" />
                                   </SelectTrigger>
                                   <SelectContent className="max-h-60">
-                                    {filteredBatchStudents.map((s) => (
-                                      <SelectItem key={s.id} value={s.id}>
-                                        {s.name} ({s.phoneNo || s.email})
-                                      </SelectItem>
-                                    ))}
+                                    {filteredBatchStudents.map((s) => {
+                                      const sRecord = allFeeRecords.find(r => r.studentId === s.id);
+                                      return (
+                                        <SelectItem key={s.id} value={s.id}>
+                                          {s.name} {sRecord?.isClosed ? "• Full Settled" : ""} ({s.phoneNo || s.email})
+                                        </SelectItem>
+                                      );
+                                    })}
                                     {filteredBatchStudents.length === 0 && (
                                       <div className="p-3 text-xs text-muted-foreground text-center">No students found</div>
                                     )}
@@ -5106,12 +5189,38 @@ const AdminDashboard = () => {
                                     <div className="space-y-6">
                                       <div className="flex justify-between items-start border-b pb-4">
                                         <div>
-                                          <h3 className="text-2xl font-bold">{selectedStudentForFees.name}</h3>
+                                          <div className="flex items-center gap-2.5">
+                                            <h3 className="text-2xl font-bold">{selectedStudentForFees.name}</h3>
+                                            {feeRecord?.isClosed && (
+                                              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/30 flex items-center gap-1">
+                                                <CheckCircle2 className="h-3.5 w-3.5" /> Full Settled (Left Midway)
+                                              </span>
+                                            )}
+                                          </div>
                                           <p className="text-sm text-muted-foreground">{selectedStudentForFees.collegeName || "No School specified"} • {selectedStudentForFees.studentClass || "No Class specified"}</p>
                                         </div>
                                         
                                         {feeRecord && (
                                           <div className="flex flex-wrap gap-2 items-center">
+                                            {!feeRecord.isClosed ? (
+                                              <Button 
+                                                onClick={handleOpenCloseStudentModal} 
+                                                variant="outline" 
+                                                className="gap-1.5 shrink-0 border-rose-500/40 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 text-xs font-semibold"
+                                                title="Close student fee account if student leaves midway"
+                                              >
+                                                <UserMinus className="h-4 w-4" /> Close Student (Left Midway)
+                                              </Button>
+                                            ) : (
+                                              <Button 
+                                                onClick={handleReopenStudentFee} 
+                                                variant="outline" 
+                                                className="gap-1.5 shrink-0 border-teal-500/40 text-teal-700 dark:text-teal-300 hover:bg-teal-500/10 text-xs font-semibold"
+                                                title="Reopen student fee account"
+                                              >
+                                                <RotateCcw className="h-4 w-4" /> Reopen Account
+                                              </Button>
+                                            )}
                                             <Button 
                                               onClick={handleOpenEditStudentFee} 
                                               variant="outline" 
@@ -5422,21 +5531,50 @@ const AdminDashboard = () => {
                                   ) : (
                                     <div className="space-y-6">
                                       
+                                      {feeRecord.isClosed && (
+                                        <div className="bg-teal-500/10 border border-teal-500/30 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+                                          <div className="flex items-start gap-3">
+                                            <CheckCircle2 className="h-5 w-5 text-teal-600 dark:text-teal-400 mt-0.5 shrink-0" />
+                                            <div>
+                                              <p className="text-sm font-bold text-teal-800 dark:text-teal-200">
+                                                Fee Account Status: Full Settled (Student Left in Between)
+                                              </p>
+                                              <p className="text-xs text-muted-foreground mt-0.5">
+                                                Fees settled till last transaction: <strong>₹{(Number(feeRecord.totalFees) || 0).toLocaleString('en-IN')}</strong> of original course fees <strong>₹{(Number(feeRecord.originalTotalFees || feeRecord.totalFees)).toLocaleString('en-IN')}</strong>. Outstanding balance cleared to ₹0.
+                                                {feeRecord.closedReason && <span className="block mt-0.5 text-xs text-foreground/80 font-medium">Reason: {feeRecord.closedReason}</span>}
+                                                {feeRecord.closedDate && <span className="block mt-0.5 text-[11px] text-muted-foreground">Closed date: {new Date(feeRecord.closedDate.includes('T') ? feeRecord.closedDate : feeRecord.closedDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>}
+                                              </p>
+                                            </div>
+                                          </div>
+                                          <Button 
+                                            size="sm" 
+                                            variant="outline" 
+                                            className="text-xs h-8 border-teal-500/40 text-teal-700 dark:text-teal-300 hover:bg-teal-500/15 shrink-0"
+                                            onClick={handleReopenStudentFee}
+                                          >
+                                            <RotateCcw className="h-3.5 w-3.5 mr-1.5" /> Reopen Account
+                                          </Button>
+                                        </div>
+                                      )}
+
                                       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                                         {(() => {
                                           const total = feeRecord.totalFees || 0;
                                           const downPayment = Number(feeRecord.downPayment) || 0;
                                           const paymentsTotal = feeRecord.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
                                           const totalPaid = downPayment + paymentsTotal;
-                                          const remainingBalance = Math.max(0, total - totalPaid);
+                                          const remainingBalance = feeRecord.isClosed ? 0 : Math.max(0, total - totalPaid);
                                           const months = Math.max(1, feeRecord.emiMonths || 1);
-                                          const dynamicEmi = Math.ceil(remainingBalance / months);
+                                          const dynamicEmi = feeRecord.isClosed ? 0 : Math.ceil(remainingBalance / months);
 
                                           return (
                                             <>
                                               <div className="bg-card border rounded-lg p-3">
-                                                <p className="text-xs text-muted-foreground">Total Fees</p>
+                                                <p className="text-xs text-muted-foreground">{feeRecord.isClosed ? "Settled Total Fees" : "Total Fees"}</p>
                                                 <p className="text-lg font-semibold">₹{feeRecord.totalFees.toLocaleString('en-IN')}</p>
+                                                {feeRecord.isClosed && feeRecord.originalTotalFees && (
+                                                  <p className="text-[10px] text-muted-foreground line-through">Orig: ₹{feeRecord.originalTotalFees.toLocaleString('en-IN')}</p>
+                                                )}
                                               </div>
                                               <div className="bg-card border rounded-lg p-3">
                                                 <p className="text-xs text-muted-foreground">Down Payment</p>
@@ -5448,11 +5586,15 @@ const AdminDashboard = () => {
                                               </div>
                                               <div className="bg-card border rounded-lg p-3">
                                                 <p className="text-xs text-muted-foreground">Remaining</p>
-                                                <p className="text-lg font-semibold text-red-500">₹{remainingBalance.toLocaleString('en-IN')}</p>
+                                                <p className={`text-lg font-semibold ${feeRecord.isClosed ? "text-teal-600 dark:text-teal-400" : "text-red-500"}`}>
+                                                  {feeRecord.isClosed ? "₹0 (Full Settled)" : `₹${remainingBalance.toLocaleString('en-IN')}`}
+                                                </p>
                                               </div>
                                               <div className="bg-card border rounded-lg p-3">
                                                 <p className="text-xs text-muted-foreground">Adjusted EMI</p>
-                                                <p className="text-lg font-semibold text-blue-600">₹{Number(dynamicEmi).toLocaleString('en-IN')}</p>
+                                                <p className={`text-lg font-semibold ${feeRecord.isClosed ? "text-teal-600 dark:text-teal-400" : "text-blue-600"}`}>
+                                                  {feeRecord.isClosed ? "₹0 (Settled)" : `₹${Number(dynamicEmi).toLocaleString('en-IN')}`}
+                                                </p>
                                               </div>
                                             </>
                                           );
@@ -5460,112 +5602,126 @@ const AdminDashboard = () => {
                                       </div>
 
                                       
-                                      <div className="bg-accent/40 p-4 rounded-xl space-y-3 max-w-xl">
-                                        <div className="flex flex-wrap items-end gap-3">
-                                          <div className="flex-1 min-w-[130px]">
-                                            <Label htmlFor="paymentAmount">Add Payment Amount</Label>
-                                            <div className="relative">
-                                              <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                      {feeRecord.isClosed ? (
+                                        <div className="bg-teal-500/5 border border-teal-500/20 rounded-2xl p-4 text-center space-y-2 max-w-xl">
+                                          <div className="flex items-center justify-center gap-1.5 text-teal-700 dark:text-teal-300 font-semibold text-sm">
+                                            <CheckCircle2 className="h-4 w-4" /> Account Full Settled
+                                          </div>
+                                          <p className="text-xs text-muted-foreground">
+                                            This student left in between and the fee account was settled till the last transaction. If the student rejoins, reopen the account to record new payments.
+                                          </p>
+                                          <Button size="sm" variant="outline" className="text-xs h-8 border-teal-500/30 text-teal-700 dark:text-teal-300 hover:bg-teal-500/10" onClick={handleReopenStudentFee}>
+                                            <RotateCcw className="h-3 w-3 mr-1.5" /> Reopen Account to Record Payments
+                                          </Button>
+                                        </div>
+                                      ) : (
+                                        <div className="bg-accent/40 p-4 rounded-xl space-y-3 max-w-xl">
+                                          <div className="flex flex-wrap items-end gap-3">
+                                            <div className="flex-1 min-w-[130px]">
+                                              <Label htmlFor="paymentAmount">Add Payment Amount</Label>
+                                              <div className="relative">
+                                                <IndianRupee className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                                <Input 
+                                                  id="paymentAmount" 
+                                                  type="number" 
+                                                  className="pl-8" 
+                                                  placeholder="Amount" 
+                                                  value={paymentAmount}
+                                                  onChange={(e) => setPaymentAmount(e.target.value)}
+                                                />
+                                              </div>
+                                            </div>
+                                            <div className="w-28 sm:w-32">
+                                              <Label htmlFor="receiptNoInput">Receipt No.</Label>
                                               <Input 
-                                                id="paymentAmount" 
-                                                type="number" 
-                                                className="pl-8" 
-                                                placeholder="Amount" 
-                                                value={paymentAmount}
-                                                onChange={(e) => setPaymentAmount(e.target.value)}
+                                                id="receiptNoInput" 
+                                                type="text" 
+                                                placeholder="e.g. 1, 1.2" 
+                                                value={receiptNoInput}
+                                                onChange={(e) => setReceiptNoInput(e.target.value)}
+                                              />
+                                            </div>
+                                            <div className="w-36">
+                                              <Label htmlFor="paymentDate">Payment Date</Label>
+                                              <Input 
+                                                id="paymentDate" 
+                                                type="date" 
+                                                value={paymentDate}
+                                                onChange={(e) => setPaymentDate(e.target.value)}
                                               />
                                             </div>
                                           </div>
-                                          <div className="w-28 sm:w-32">
-                                            <Label htmlFor="receiptNoInput">Receipt No.</Label>
-                                            <Input 
-                                              id="receiptNoInput" 
-                                              type="text" 
-                                              placeholder="e.g. 1, 1.2" 
-                                              value={receiptNoInput}
-                                              onChange={(e) => setReceiptNoInput(e.target.value)}
-                                            />
-                                          </div>
-                                          <div className="w-36">
-                                            <Label htmlFor="paymentDate">Payment Date</Label>
-                                            <Input 
-                                              id="paymentDate" 
-                                              type="date" 
-                                              value={paymentDate}
-                                              onChange={(e) => setPaymentDate(e.target.value)}
-                                            />
-                                          </div>
-                                        </div>
-                                        <div className="flex flex-wrap items-end gap-4">
-                                          <div className="min-w-[140px]">
-                                            <Label htmlFor="paymentMode">Payment Mode</Label>
-                                            <select
-                                              id="paymentMode"
-                                              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                              value={paymentMode}
-                                              onChange={(e) => setPaymentMode(e.target.value as PaymentMode)}
-                                            >
-                                              <option value="cash">Cash</option>
-                                              <option value="upi">UPI</option>
-                                              <option value="card">Card</option>
-                                              <option value="bank_transfer">Bank Transfer</option>
-                                              <option value="cheque">Cheque</option>
-                                              <option value="other">Other</option>
-                                            </select>
-                                          </div>
-                                          {(paymentMode === 'upi' || paymentMode === 'card' || paymentMode === 'bank_transfer' || paymentMode === 'other') && (
-                                            <div className="flex-1 min-w-[140px]">
-                                              <Label htmlFor="paymentTransactionId">
-                                                {paymentMode === 'card'
-                                                  ? 'Card / Txn ID'
-                                                  : paymentMode === 'bank_transfer'
-                                                  ? 'Bank Reference / UTR'
-                                                  : paymentMode === 'other'
-                                                  ? 'Reference / Note'
-                                                  : 'Transaction ID'}{' '}
-                                                <span className="text-muted-foreground text-xs">(optional)</span>
-                                              </Label>
-                                              <Input
-                                                id="paymentTransactionId"
-                                                type="text"
-                                                placeholder={
-                                                  paymentMode === 'card'
-                                                    ? 'e.g. CARD-REF-1234'
+                                          <div className="flex flex-wrap items-end gap-4">
+                                            <div className="min-w-[140px]">
+                                              <Label htmlFor="paymentMode">Payment Mode</Label>
+                                              <select
+                                                id="paymentMode"
+                                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                                value={paymentMode}
+                                                onChange={(e) => setPaymentMode(e.target.value as PaymentMode)}
+                                              >
+                                                <option value="cash">Cash</option>
+                                                <option value="upi">UPI</option>
+                                                <option value="card">Card</option>
+                                                <option value="bank_transfer">Bank Transfer</option>
+                                                <option value="cheque">Cheque</option>
+                                                <option value="other">Other</option>
+                                              </select>
+                                            </div>
+                                            {(paymentMode === 'upi' || paymentMode === 'card' || paymentMode === 'bank_transfer' || paymentMode === 'other') && (
+                                              <div className="flex-1 min-w-[140px]">
+                                                <Label htmlFor="paymentTransactionId">
+                                                  {paymentMode === 'card'
+                                                    ? 'Card / Txn ID'
                                                     : paymentMode === 'bank_transfer'
-                                                    ? 'e.g. UTR123456789'
-                                                    : 'e.g. TXN123456'
-                                                }
-                                                value={paymentTransactionId}
-                                                onChange={(e) => setPaymentTransactionId(e.target.value)}
-                                              />
-                                            </div>
-                                          )}
-                                          {paymentMode === 'cheque' && (
-                                            <>
-                                              <div className="flex-1 min-w-[120px]">
-                                                <Label htmlFor="paymentChequeNo">Cheque No. <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                                                    ? 'Bank Reference / UTR'
+                                                    : paymentMode === 'other'
+                                                    ? 'Reference / Note'
+                                                    : 'Transaction ID'}{' '}
+                                                  <span className="text-muted-foreground text-xs">(optional)</span>
+                                                </Label>
                                                 <Input
-                                                  id="paymentChequeNo"
+                                                  id="paymentTransactionId"
                                                   type="text"
-                                                  placeholder="e.g. 000123"
-                                                  value={paymentChequeNo}
-                                                  onChange={(e) => setPaymentChequeNo(e.target.value)}
+                                                  placeholder={
+                                                    paymentMode === 'card'
+                                                      ? 'e.g. CARD-REF-1234'
+                                                      : paymentMode === 'bank_transfer'
+                                                      ? 'e.g. UTR123456789'
+                                                      : 'e.g. TXN123456'
+                                                  }
+                                                  value={paymentTransactionId}
+                                                  onChange={(e) => setPaymentTransactionId(e.target.value)}
                                                 />
                                               </div>
-                                              <div className="min-w-[140px]">
-                                                <Label htmlFor="paymentChequeDate">Cheque Date <span className="text-muted-foreground text-xs">(optional)</span></Label>
-                                                <Input
-                                                  id="paymentChequeDate"
-                                                  type="date"
-                                                  value={paymentChequeDate}
-                                                  onChange={(e) => setPaymentChequeDate(e.target.value)}
-                                                />
-                                              </div>
-                                            </>
-                                          )}
+                                            )}
+                                            {paymentMode === 'cheque' && (
+                                              <>
+                                                <div className="flex-1 min-w-[120px]">
+                                                  <Label htmlFor="paymentChequeNo">Cheque No. <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                                                  <Input
+                                                    id="paymentChequeNo"
+                                                    type="text"
+                                                    placeholder="e.g. 000123"
+                                                    value={paymentChequeNo}
+                                                    onChange={(e) => setPaymentChequeNo(e.target.value)}
+                                                  />
+                                                </div>
+                                                <div className="min-w-[140px]">
+                                                  <Label htmlFor="paymentChequeDate">Cheque Date <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                                                  <Input
+                                                    id="paymentChequeDate"
+                                                    type="date"
+                                                    value={paymentChequeDate}
+                                                    onChange={(e) => setPaymentChequeDate(e.target.value)}
+                                                  />
+                                                </div>
+                                              </>
+                                            )}
+                                          </div>
+                                          <Button onClick={handleAddPayment}>Record Payment</Button>
                                         </div>
-                                        <Button onClick={handleAddPayment}>Record Payment</Button>
-                                      </div>
+                                      )}
 
                                       
                                       <div>
@@ -9774,6 +9930,98 @@ const AdminDashboard = () => {
               </div>
             )}
           </div>
+        {/* Close Student (Left Midway) Dialog */}
+        <Dialog open={isCloseStudentModalOpen} onOpenChange={setIsCloseStudentModalOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-lg font-bold text-rose-600 dark:text-rose-400">
+                <UserMinus className="h-5 w-5" /> Close Student (Left Midway)
+              </DialogTitle>
+            </DialogHeader>
+
+            {selectedStudentForFees && feeRecord && (() => {
+              const downPayment = Number(feeRecord.downPayment) || 0;
+              const paymentsTotal = (feeRecord.payments || []).reduce((sum, p) => sum + p.amount, 0);
+              const totalPaid = downPayment + paymentsTotal;
+              const originalTotal = feeRecord.originalTotalFees || feeRecord.totalFees || 0;
+              const txnCount = (feeRecord.payments?.length || 0) + (downPayment > 0 ? 1 : 0);
+
+              return (
+                <div className="space-y-4 py-2">
+                  <p className="text-xs text-muted-foreground">
+                    When a student leaves the academy before course completion, closing their account settles the fees till the last transaction instead of demanding full fees, clearing remaining dues to ₹0 and marking their status as <strong>Full Settled</strong>.
+                  </p>
+
+                  {/* Summary Box */}
+                  <div className="p-3.5 rounded-xl border bg-accent/40 space-y-2 text-xs">
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground">Student Name:</span>
+                      <span className="font-bold text-foreground text-sm">{selectedStudentForFees.name}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground">Original Course Fees:</span>
+                      <span className="font-semibold line-through text-muted-foreground">₹{originalTotal.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground">Paid Till Last Txn ({txnCount} txn{txnCount !== 1 ? 's' : ''}):</span>
+                      <span className="font-bold text-green-600 dark:text-green-400 text-sm">₹{totalPaid.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="border-t pt-2 flex justify-between items-center font-bold text-sm">
+                      <span className="text-foreground">Settled Fees (Till Last Txn):</span>
+                      <span className="text-teal-600 dark:text-teal-400 font-mono text-base">₹{totalPaid.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-muted-foreground">Remaining Balance Due:</span>
+                      <span className="font-bold text-teal-600 dark:text-teal-400">₹0 (Full Settled)</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <Label htmlFor="closeStudentDate" className="text-xs font-semibold">Leaving / Close Date</Label>
+                      <Input
+                        id="closeStudentDate"
+                        type="date"
+                        value={closeStudentDate}
+                        onChange={(e) => setCloseStudentDate(e.target.value)}
+                        className="mt-1 h-9 text-xs"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="closeStudentReason" className="text-xs font-semibold">Reason / Note <span className="text-muted-foreground font-normal">(Optional)</span></Label>
+                      <Input
+                        id="closeStudentReason"
+                        placeholder="e.g. Left course midway, relocated, dropped out"
+                        value={closeStudentReason}
+                        onChange={(e) => setCloseStudentReason(e.target.value)}
+                        className="mt-1 h-9 text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-300">
+                    <strong>Note:</strong> Total fees will be adjusted to ₹{totalPaid.toLocaleString('en-IN')} (amount paid till last transaction). All remaining installments will be settled with ₹0 pending balance.
+                  </div>
+
+                  <DialogFooter className="gap-2 sm:gap-0 pt-2">
+                    <Button variant="ghost" onClick={() => setIsCloseStudentModalOpen(false)} disabled={isClosingStudent}>
+                      Cancel
+                    </Button>
+                    <Button 
+                      variant="destructive" 
+                      onClick={handleConfirmCloseStudent}
+                      disabled={isClosingStudent}
+                      className="gap-1.5"
+                    >
+                      <CheckCircle2 className="h-4 w-4" /> {isClosingStudent ? "Settling..." : "Confirm & Full Settle"}
+                    </Button>
+                  </DialogFooter>
+                </div>
+              );
+            })()}
+          </DialogContent>
+        </Dialog>
+
         {/* Installment Schedule Popup Dialog */}
         <Dialog open={isInstallmentModalOpen} onOpenChange={setIsInstallmentModalOpen}>
           <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
@@ -9804,10 +10052,19 @@ const AdminDashboard = () => {
 
               return (
                 <div className="space-y-4 pt-1">
+                  {feeRecord.isClosed && (
+                    <div className="p-3 bg-teal-500/10 border border-teal-500/30 rounded-xl flex items-center gap-2.5 text-xs text-teal-800 dark:text-teal-200">
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-teal-600 dark:text-teal-400" />
+                      <span>
+                        Student left midway. Fee account is <strong>Full Settled</strong> till last transaction (₹{totalPaid.toLocaleString('en-IN')}). Outstanding balance cleared to ₹0.
+                      </span>
+                    </div>
+                  )}
+
                   {/* Summary Overview Grid */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     <div className="bg-accent/40 border rounded-xl p-2.5 text-center">
-                      <p className="text-[10px] text-muted-foreground uppercase font-semibold">Total Fees</p>
+                      <p className="text-[10px] text-muted-foreground uppercase font-semibold">{feeRecord.isClosed ? "Settled Total" : "Total Fees"}</p>
                       <p className="text-base font-bold text-foreground">₹{total.toLocaleString('en-IN')}</p>
                     </div>
                     <div className="bg-accent/40 border rounded-xl p-2.5 text-center">
@@ -9818,9 +10075,13 @@ const AdminDashboard = () => {
                       <p className="text-[10px] text-green-700 dark:text-green-400 uppercase font-semibold">Total Paid</p>
                       <p className="text-base font-bold text-green-600 dark:text-green-400">₹{totalPaid.toLocaleString('en-IN')}</p>
                     </div>
-                    <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-2.5 text-center">
-                      <p className="text-[10px] text-red-700 dark:text-red-400 uppercase font-semibold">Balance Due</p>
-                      <p className="text-base font-bold text-red-600 dark:text-red-400">₹{remainingBalance.toLocaleString('en-IN')}</p>
+                    <div className={`${feeRecord.isClosed ? "bg-teal-500/10 border-teal-500/20" : "bg-red-500/10 border-red-500/20"} border rounded-xl p-2.5 text-center`}>
+                      <p className={`text-[10px] uppercase font-semibold ${feeRecord.isClosed ? "text-teal-700 dark:text-teal-400" : "text-red-700 dark:text-red-400"}`}>
+                        {feeRecord.isClosed ? "Status" : "Balance Due"}
+                      </p>
+                      <p className={`text-base font-bold ${feeRecord.isClosed ? "text-teal-600 dark:text-teal-400" : "text-red-600 dark:text-red-400"}`}>
+                        {feeRecord.isClosed ? "Full Settled (₹0)" : `₹${remainingBalance.toLocaleString('en-IN')}`}
+                      </p>
                     </div>
                   </div>
 
@@ -9861,9 +10122,15 @@ const AdminDashboard = () => {
                             </span>
                           )}
                           {inst.status === 'pending' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                              Due
-                            </span>
+                            feeRecord.isClosed ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300">
+                                Settled (Left)
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                Due
+                              </span>
+                            )
                           )}
                         </div>
                       </div>
@@ -11060,8 +11327,8 @@ const AdminDashboard = () => {
                   </div>
                 </div>
                 <div className="mt-4 text-center">
-                  <span className="inline-block bg-gray-900 text-white text-xs font-bold uppercase tracking-widest px-4 py-1 rounded-sm">
-                    Fee Installment Schedule & Statement
+                  <span className={`inline-block ${feeRecord.isClosed ? 'bg-teal-800' : 'bg-gray-900'} text-white text-xs font-bold uppercase tracking-widest px-4 py-1 rounded-sm`}>
+                    {feeRecord.isClosed ? 'Fee Statement - Full Settled (Student Left Midway)' : 'Fee Installment Schedule & Statement'}
                   </span>
                 </div>
               </div>
@@ -11095,8 +11362,11 @@ const AdminDashboard = () => {
               {/* Structure Overview Box */}
               <div className="grid grid-cols-4 gap-3 mb-6 p-3 bg-gray-50 border border-gray-300 rounded text-center text-sm">
                 <div>
-                  <p className="text-xs text-gray-500 uppercase">Total Course Fees</p>
+                  <p className="text-xs text-gray-500 uppercase">{feeRecord.isClosed ? 'Settled Fees' : 'Total Course Fees'}</p>
                   <p className="text-base font-bold text-gray-900">₹{feeRecord.totalFees.toLocaleString('en-IN')}</p>
+                  {feeRecord.isClosed && feeRecord.originalTotalFees && (
+                    <p className="text-[10px] text-gray-400 line-through">Orig: ₹{feeRecord.originalTotalFees.toLocaleString('en-IN')}</p>
+                  )}
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 uppercase">Down Payment</p>
@@ -11108,7 +11378,9 @@ const AdminDashboard = () => {
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 uppercase">Balance Due</p>
-                  <p className="text-base font-bold text-red-600">₹{balanceDue.toLocaleString('en-IN')}</p>
+                  <p className={`text-base font-bold ${feeRecord.isClosed ? 'text-teal-700' : 'text-red-600'}`}>
+                    {feeRecord.isClosed ? '₹0 (Full Settled)' : `₹${balanceDue.toLocaleString('en-IN')}`}
+                  </p>
                 </div>
               </div>
 
@@ -11138,9 +11410,10 @@ const AdminDashboard = () => {
                           <span className={`inline-block px-2 py-0.5 text-xs font-bold uppercase rounded ${
                             inst.status === 'paid' ? 'bg-green-100 text-green-800' :
                             inst.status === 'partial' ? 'bg-yellow-100 text-yellow-800' :
+                            feeRecord.isClosed ? 'bg-teal-100 text-teal-800' :
                             'bg-gray-100 text-gray-700'
                           }`}>
-                            {inst.status}
+                            {inst.status === 'paid' ? 'Paid' : inst.status === 'partial' ? 'Partial' : feeRecord.isClosed ? 'Settled (Left)' : 'Due'}
                           </span>
                         </td>
                       </tr>
